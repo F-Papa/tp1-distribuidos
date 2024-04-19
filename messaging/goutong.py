@@ -1,0 +1,28 @@
+"""
+Goutong is a middleware that abstracts MOM (Message Oriented Middleware) for the system.
+It uses RabbitMQ.
+"""
+
+import pika
+from typing import Callable
+
+class Goutong():
+    def __init__(self):
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbit"))
+        self.channel = connection.channel()
+
+    def add_queues(self, *args):
+        for queue_name in args:
+            self.channel.queue_declare(queue=queue_name)
+
+    def listen(self):
+        self.channel.start_consuming()
+
+    def send_to_queue(self, queue_name: str, message: str):
+        self.channel.basic_publish(exchange='',
+                                  routing_key=queue_name,
+                                  body=message)
+
+    def set_callback(self, queue_name: str, callback: Callable, args: tuple = ()):
+        custom_callback = lambda ch, method, properties, body: callback(ch, method, properties, body, *args) 
+        self.channel.basic_consume(queue=queue_name, on_message_callback=custom_callback, auto_ack=True)
