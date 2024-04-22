@@ -1,14 +1,26 @@
 # Instructions
 
-1) Run the `rabbit.sh` script to start RabbitMQ.
-> $ ./rabbit.sh
-2) Start the filters and watch the logs with docker compose
-> $ docker compose up -d && docker compose logs -f
+1) Create the network if it is the first time running the system
+> $ make network-create
 
+2) Start RabbitMQ.
+> $ make rabbit-up
+
+3) Build the System
+> $ make filters-build 
+
+4) Run the System
+> $ make filters-up
+
+5) Build the boundary
+> $ make boundary-build 
+
+4) Run the Boundary
+> $ make boundary-up
 
 # Shutting the system down
 
-1) Kill the filters with docker compose.
-> $ docker compose down -t 0
-2) Shutdown RabbitMQ
-> $ docker kill rabbit
+1) Terminate the filters.
+> $ make filters-down
+
+2) Shutdown RabbitMQ and Boundary Containers
