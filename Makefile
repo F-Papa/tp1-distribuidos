@@ -20,5 +20,5 @@ build-boundary:.
 	docker build -f ./Dockerfile -t boundary .
 	
 boundary:
-	docker run -it -v ./boundary.py:/main.py -v ./data/books_data.csv:/books.csv -v ./data/Books_ratings.csv:/reviews.csv --rm --network tp1_testing_net boundary
+	docker run -it -e LOGGING_LEVEL=INFO -v ./boundary.py:/main.py -v ./data/books_data.csv:/books.csv -v ./data/Books_ratings.csv:/reviews.csv --rm --network tp1_testing_net boundary
 
