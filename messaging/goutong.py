@@ -5,6 +5,7 @@ It uses RabbitMQ.
 
 import pika
 from typing import Callable
+from messaging.message import Message
 
 class Goutong():
     def __init__(self):
@@ -18,11 +19,11 @@ class Goutong():
     def listen(self):
         self.channel.start_consuming()
 
-    def send_to_queue(self, queue_name: str, message: str):
+    def send_to_queue(self, queue_name: str, message: Message):
         self.channel.basic_publish(exchange='',
                                   routing_key=queue_name,
-                                  body=message)
+                                  body=message.marshal())
 
     def set_callback(self, queue_name: str, callback: Callable, args: tuple = ()):
-        custom_callback = lambda ch, method, properties, body: callback(ch, method, properties, body, *args) 
+        custom_callback = lambda ch, method, properties, body: callback(self, Message.unmarshal(body.decode()), *args) 
         self.channel.basic_consume(queue=queue_name, on_message_callback=custom_callback, auto_ack=True)

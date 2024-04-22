@@ -1,4 +1,5 @@
 from messaging.goutong import Goutong
+from messaging.message import Message
 import csv, json
 
 TITLE_FILTER_QUEUE = 'title_filter_queue'
@@ -28,11 +29,14 @@ def distributed_computer_books(books_path: str):
         reader = csv.DictReader(csvfile)
         for row in reader:
             title = row["Title"]
-            date = _parse_year(row["publishedDate"])
+            year = _parse_year(row["publishedDate"])
             categories = _parse_categories(row["categories"])
-            msg = json.dumps({"title": title, "date": date, "categories": categories})
+            book_data = {"title": title, "year": year, "categories": categories}
+            msg_content = {"data": book_data}
+            msg = Message(msg_content)
             messaging.send_to_queue(TITLE_FILTER_QUEUE, msg)
-        messaging.send_to_queue(TITLE_FILTER_QUEUE, "EOF")
+        
+        messaging.send_to_queue(TITLE_FILTER_QUEUE, Message({"EOF":True}))	
 
 # Query2
 def query2():

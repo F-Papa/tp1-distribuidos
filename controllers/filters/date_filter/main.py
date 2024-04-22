@@ -1,5 +1,6 @@
 from os import environ
 from messaging.goutong import Goutong
+from messaging.message import Message
 import json
 import logging
 
@@ -7,7 +8,7 @@ INPUT_QUEUE = 'date_filter_queue'
 OUTPUT_QUEUE = 'category_filter_queue'
 
 class FilterConfig():
-    def __init__(self, lower_bound: str, upper_bound: str, logging_level: str):
+    def __init__(self, lower_bound: int, upper_bound: int, logging_level: str):
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
         self.logging_level = logging_level
@@ -44,25 +45,25 @@ def main():
     
     messaging = Goutong()
     messaging.add_queues(INPUT_QUEUE, OUTPUT_QUEUE)
-    messaging.set_callback(INPUT_QUEUE, callback_filter, (messaging, filter_config))
+    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config,))
     messaging.listen()
     
-def callback_filter(channel, method, properties, body, messaging: Goutong, config: FilterConfig):
-    msg = body.decode()
-    logging.debug(f"Received: {msg}")
+def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
+    logging.debug(f"Received: {msg.marshal()}")
 
     # Forward EOF and Keep Consuming
-    if msg == "EOF":
-        messaging.send_to_queue(OUTPUT_QUEUE, "EOF")
+    if msg.has_key("EOF"):
+        messaging.send_to_queue(OUTPUT_QUEUE, msg)
         return
     
-    book_data = json.loads(msg)
-    year = book_data["date"]
+    year = msg.get("data").get("year")
 
     # Filter
+    logging.debug(f"Checking if {year} is between {config.lower_bound} and {config.upper_bound}")
+
     if config.lower_bound <= year <= config.upper_bound:
-        messaging.send_to_queue(OUTPUT_QUEUE, json.dumps(book_data))
-        logging.debug(f"Passed: {book_data}")
+        messaging.send_to_queue(OUTPUT_QUEUE, msg)
+        logging.debug(f"Passed: {msg.marshal()}")
 
 if __name__ == "__main__":
     main()
