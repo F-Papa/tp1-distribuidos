@@ -12,23 +12,22 @@ services:
   #   networks:
   #     - testing_net
 
-  boundary:
-    container_name: boundary
-    image: boundary:latest
-    entrypoint: python3 main.py --books books.csv --reviews reviews.csv
-    environment:
-      - LOGGING_LEVEL=DEBUG
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./boundary.py:/main.py
-      - ./controllers/io/input_controller.py:/controllers/io/input_controller.py
-      - ./controllers/io/output_controller.py:/controllers/io/output_controller.py
-      - ./messaging/goutong.py:/messaging/goutong.py
-      - ./data/books_data.csv:/books.csv
-      - ./data/Books_ratings.csv:/reviews.csv
+  # boundary:
+  #   container_name: boundary
+  #   image: boundary:latest
+  #   entrypoint: python3 main.py --books books.csv --reviews reviews.csv
+  #   environment:
+  #     - LOGGING_LEVEL=DEBUG
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./data/books_data.csv:/books.csv
+  #     - ./data/Books_ratings.csv:/reviews.csv
 
   q1_filter1:
+    build: 
+      context: ./
+      dockerfile: ./controllers/q1_filter/Dockerfile
     container_name: q1_filter1
     image: q1_filter:latest
     entrypoint: python3 main.py
@@ -41,11 +40,11 @@ services:
       - FILTER_NAME=q1_filter1
     networks:
       - tp1_testing_net
-    volumes:
-      - ./controllers/q1_filter/main.py:/main.py
-      - ./messaging/goutong.py:/messaging/goutong.py
 
   q1_filter2:
+    build: 
+      context: ./
+      dockerfile: ./controllers/q1_filter/Dockerfile
     container_name: q1_filter2
     image: q1_filter:latest
     entrypoint: python3 main.py
@@ -58,11 +57,11 @@ services:
       - FILTER_NAME=q1_filter2
     networks:
       - tp1_testing_net
-    volumes:
-      - ./controllers/q1_filter/main.py:/main.py
-      - ./messaging/goutong.py:/messaging/goutong.py
 
   q1_filter3:
+    build: 
+      context: ./
+      dockerfile: ./controllers/q1_filter/Dockerfile
     container_name: q1_filter3
     image: q1_filter:latest
     entrypoint: python3 main.py
@@ -75,11 +74,11 @@ services:
       - FILTER_NAME=q1_filter3
     networks:
       - tp1_testing_net
-    volumes:
-      - ./controllers/q1_filter/main.py:/main.py
-      - ./messaging/goutong.py:/messaging/goutong.py
 
   q1_filter4:
+    build: 
+      context: ./
+      dockerfile: ./controllers/q1_filter/Dockerfile
     container_name: q1_filter4
     image: q1_filter:latest
     entrypoint: python3 main.py
@@ -92,11 +91,11 @@ services:
       - FILTER_NAME=q1_filter4
     networks:
       - tp1_testing_net
-    volumes:
-      - ./controllers/q1_filter/main.py:/main.py
-      - ./messaging/goutong.py:/messaging/goutong.py
 
   q1_filter5:
+    build: 
+      context: ./
+      dockerfile: ./controllers/q1_filter/Dockerfile
     container_name: q1_filter5
     image: q1_filter:latest
     entrypoint: python3 main.py
@@ -109,9 +108,6 @@ services:
       - FILTER_NAME=q1_filter5
     networks:
       - tp1_testing_net
-    volumes:
-      - ./controllers/q1_filter/main.py:/main.py
-      - ./messaging/goutong.py:/messaging/goutong.py
 
 networks:
   tp1_testing_net:
