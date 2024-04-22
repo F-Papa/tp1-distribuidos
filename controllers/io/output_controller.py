@@ -1,6 +1,8 @@
 import logging
 from messaging.goutong import Goutong
 import sys
+import time
+import json
 
 class EndOfQuery(Exception):
     pass
@@ -11,8 +13,12 @@ def callback_display_results(channel, method, properties, body):
     msg = body.decode()
     if msg == "EOF":
         logging.info("End of query")
+        time.sleep(1)
         raise EndOfQuery
-    logging.info(msg)
+    
+    # qué informacion se muestra depende de la query. por ahora solo el título del libro filtrado (query 1)
+    title = json.loads(msg)["title"]
+    logging.info(title)
 
 def display_results():
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')

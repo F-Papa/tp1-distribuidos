@@ -6,7 +6,6 @@ import multiprocessing.process
 from os import environ
 from controllers.io import output_controller, input_controller
 
-OUTPUT_QUEUE = 'books_queue'
 
 class BoundaryConfig():
     def __init__(self, logging_level: str):

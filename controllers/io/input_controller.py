@@ -1,7 +1,7 @@
 from messaging.goutong import Goutong
 import csv, json
 
-OUTPUT_QUEUE = 'books_queue'
+TITLE_FILTER_QUEUE = 'title_filter_queue'
 
 def _parse_year(year_str: str) -> int:
     if year_str == "":
@@ -22,7 +22,7 @@ def _parse_categories(categories_str: str) -> list:
 def distributed_computer_books(books_path: str):
     # Messaging Middleware
     messaging = Goutong()
-    messaging.add_queues(OUTPUT_QUEUE)
+    messaging.add_queues(TITLE_FILTER_QUEUE)
     
     with open(books_path, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -31,8 +31,8 @@ def distributed_computer_books(books_path: str):
             date = _parse_year(row["publishedDate"])
             categories = _parse_categories(row["categories"])
             msg = json.dumps({"title": title, "date": date, "categories": categories})
-            messaging.send_to_queue(OUTPUT_QUEUE, msg)
-        messaging.send_to_queue(OUTPUT_QUEUE, "EOF")
+            messaging.send_to_queue(TITLE_FILTER_QUEUE, msg)
+        messaging.send_to_queue(TITLE_FILTER_QUEUE, "EOF")
 
 # Query2
 def query2():
