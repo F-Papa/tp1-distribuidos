@@ -9,13 +9,11 @@ services:
     image: date_filter:latest
     entrypoint: python3 main.py
     environment:
-      - LOWER_BOUND=2000
-      - UPPER_BOUND=2023
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=date_filter1
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/date_filter/config.ini:/config.ini
 
   date_filter2:
     build:
@@ -25,13 +23,11 @@ services:
     image: date_filter:latest
     entrypoint: python3 main.py
     environment:
-      - LOWER_BOUND=2000
-      - UPPER_BOUND=2023
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=date_filter2
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/date_filter/config.ini:/config.ini
 
   date_filter3:
     build:
@@ -41,14 +37,12 @@ services:
     image: date_filter:latest
     entrypoint: python3 main.py
     environment:
-      - LOWER_BOUND=2000
-      - UPPER_BOUND=2023
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=date_filter3
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
-
+    volumes:
+      - ./controllers/filters/date_filter/config.ini:/config.ini
+      
   category_filter1:
     build:
       context: ./
@@ -57,12 +51,12 @@ services:
     image: category_filter:latest
     entrypoint: python3 main.py
     environment:
-      - CATEGORY=Computers
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=category_filter1
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/category_filter/config.ini:/config.ini
+    
 
   category_filter2:
     build:
@@ -72,12 +66,11 @@ services:
     image: category_filter:latest
     entrypoint: python3 main.py
     environment:
-      - CATEGORY=Computers
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=category_filter2
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/category_filter/config.ini:/config.ini
 
   category_filter3:
     build:
@@ -87,12 +80,11 @@ services:
     image: category_filter:latest
     entrypoint: python3 main.py
     environment:
-      - CATEGORY=Computers
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=category_filter3
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/category_filter/config.ini:/config.ini
 
   title_filter1:
     build:
@@ -102,13 +94,12 @@ services:
     image: title_filter:latest
     entrypoint: python3 main.py
     environment:
-      - TITLE_KEYWORD=distributed
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=title_filter1
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
-
+    volumes:
+      - ./controllers/filters/title_filter/config.ini:/config.ini
+      
   title_filter2:
     build:
       context: ./
@@ -117,12 +108,11 @@ services:
     image: title_filter:latest
     entrypoint: python3 main.py
     environment:
-      - TITLE_KEYWORD=distributed
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=title_filter2
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/title_filter/config.ini:/config.ini
 
   title_filter3:
     build:
@@ -132,12 +122,11 @@ services:
     image: title_filter:latest
     entrypoint: python3 main.py
     environment:
-      - TITLE_KEYWORD=distributed
-      - LOGGING_LEVEL=INFO
-      - FILTER_NAME=title_filter3
       - ITEMS_PER_BATCH=100
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/filters/title_filter/config.ini:/config.ini
 
 networks:
   tp1_testing_net:

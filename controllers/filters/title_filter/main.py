@@ -1,44 +1,65 @@
 from os import environ
+import configparser
 from messaging.goutong import Goutong
+from typing import Any
 import logging
 
 from messaging.message import Message
 
 INPUT_QUEUE = "title_filter_queue"
 OUTPUT_QUEUE = "date_filter_queue"
-DEFAULT_ITEMS_PER_BATCH = 50
 
 
 class FilterConfig:
+    required = ["TITLE_KEYWORD", "LOGGING_LEVEL", "ITEMS_PER_BATCH"]
+
     def __init__(self, title_keyword: str, logging_level: str, items_per_batch: int):
-        self.title_keyword = title_keyword
-        self.logging_level = logging_level
-        self.items_per_batch = items_per_batch
+        self.properties = {
+            "TITLE_KEYWORD": title_keyword,
+            "LOGGING_LEVEL": logging_level,
+            "ITEMS_PER_BATCH": items_per_batch,
+        }
 
+    def get(self, key) -> Any:
+        value = self.properties.get(key)
+        if not value:
+            raise ValueError(f"Invalid property: {key}")
+        return value
 
-def get_config_from_env() -> FilterConfig:
-    required = ["TITLE_KEYWORD"]
+    def update(self, key, value):
+        if key not in self.properties:
+            raise ValueError(f"Invalid property: {key}")
+        self.properties[key] = value
 
-    for key in required:
-        if not environ.get(key):
-            raise ValueError(f"Missing required environment variable: {key}")
+    def validate(self):
+        for k in self.required:
+            if self.properties.get(k) is None:
+                raise ValueError(f"Missing required property: {k}")
 
-    if not environ.get("LOGGING_LEVEL"):
-        logging.warning("No logging level specified, defaulting to ERROR")
+    def update_from_env(self):
+        for key in FilterConfig.required:
+            value = environ.get(key)
+            if value is not None:
+                self.update(key, environ.get(key))
 
-    if not environ.get("ITEMS_PER_BATCH"):
-        logging.warning("No items per batch specified, defaulting to ")
+    @classmethod
+    def from_file(cls, path: str):
+        config = configparser.ConfigParser()
+        config.read(path)
+        return FilterConfig(
+            title_keyword=config["FILTER"]["TITLE_KEYWORD"],
+            logging_level=config["FILTER"]["LOGGING_LEVEL"],
+            items_per_batch=int(config["FILTER"]["ITEMS_PER_BATCH"]),
+        )
 
-    return FilterConfig(
-        title_keyword=environ.get("TITLE_KEYWORD", ""),
-        logging_level=environ.get("LOGGING_LEVEL", "ERROR"),
-        items_per_batch=int(environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH)),
-    )
+    def __str__(self) -> str:
+        formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
+        return f"FilterConfig({formatted})"
 
 
 def config_logging(filter_config: FilterConfig):
     # Filter logging
-    level = getattr(logging, filter_config.logging_level)
+    level = filter_config.get("LOGGING_LEVEL")
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -51,9 +72,12 @@ def config_logging(filter_config: FilterConfig):
 
 
 def main():
-    filter_config = get_config_from_env()
+    filter_config = FilterConfig.from_file("config.ini")
+    filter_config.update_from_env()
+    filter_config.validate()
     config_logging(filter_config)
-    logging.info("Filter is up and running!")
+
+    logging.info(filter_config)
 
     messaging = Goutong()
     messaging.add_queues(INPUT_QUEUE, OUTPUT_QUEUE)
@@ -80,8 +104,8 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
 
     for book in books:
         title = book.get("title")
-        if config.title_keyword in title.lower():
-            if len(batch) < config.items_per_batch:
+        if config.get("TITLE_KEYWORD") in title:
+            if len(batch) < config.get("items_per_batch"):
                 batch.append(book)
             else:
                 _send_batch(messaging, batch)
