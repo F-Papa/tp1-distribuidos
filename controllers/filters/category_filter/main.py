@@ -11,14 +11,13 @@ OUTPUT_QUEUE = "results_queue"
 
 
 class FilterConfig:
-    required = ["CATEGORY", "LOGGING_LEVEL", "ITEMS_PER_BATCH"]
+    required = {"CATEGORY": str, "LOGGING_LEVEL": str, "ITEMS_PER_BATCH": int}
 
-    def __init__(self, category: str, logging_level: str, items_per_batch: int):
-        self.properties = {
-            "CATEGORY": category,
-            "LOGGING_LEVEL": logging_level,
-            "ITEMS_PER_BATCH": items_per_batch,
-        }
+    def __init__(self, config: dict):
+        self.properties = {}
+        for key, value_type in self.required.items():
+            if key in config:
+                self.properties[key] = value_type(config[key])
 
     def get(self, key) -> Any:
         value = self.properties.get(key)
@@ -27,30 +26,29 @@ class FilterConfig:
         return value
 
     def update(self, key, value):
-        if key not in self.properties:
+        if key not in self.required:
             raise ValueError(f"Invalid property: {key}")
-        self.properties[key] = value
+
+        value_type = self.required[key]
+        self.properties[key] = value_type(value)
 
     def validate(self):
-        for k in self.required:
-            if self.properties.get(k) is None:
-                raise ValueError(f"Missing required property: {k}")
+        for key, value_type in self.required.items():
+            if not isinstance(self.properties.get(key), value_type):
+                raise ValueError(f"Missing or invalid property: {key}")
 
     def update_from_env(self):
         for key in FilterConfig.required:
             value = environ.get(key)
             if value is not None:
-                self.update(key, environ.get(key))
+                self.update(key, value)
 
     @classmethod
     def from_file(cls, path: str):
         config = configparser.ConfigParser()
         config.read(path)
-        return FilterConfig(
-            category=config["FILTER"]["CATEGORY"],
-            logging_level=config["FILTER"]["LOGGING_LEVEL"],
-            items_per_batch=int(config["FILTER"]["ITEMS_PER_BATCH"]),
-        )
+        config_dict = {k.upper(): v for k, v in config["FILTER"].items()}
+        return FilterConfig(config=config_dict)
 
     def __str__(self) -> str:
         formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
@@ -105,8 +103,8 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
 
     for book in books:
         categories = book.get("categories")
-        if config.get("category") in categories:
-            if len(batch) < config.get("items_per_batch"):
+        if config.get("CATEGORY") in categories:
+            if len(batch) < config.get("ITEMS_PER_BATCH"):
                 batch.append(book)
             else:
                 _send_batch(messaging, batch)

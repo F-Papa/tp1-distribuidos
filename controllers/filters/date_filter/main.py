@@ -5,26 +5,24 @@ from typing import Any
 import configparser
 import logging
 
-INPUT_QUEUE = "date_filter_queue"
+FILTER_TYPE = "date_filter"
 OUTPUT_QUEUE = "category_filter_queue"
 
 
 class FilterConfig:
-    required = ["LOWER_BOUND", "UPPER_BOUND", "LOGGING_LEVEL", "ITEMS_PER_BATCH"]
+    required = {
+        "FILTER_NUMBER": int,
+        "LOWER_BOUND": int,
+        "UPPER_BOUND": int,
+        "LOGGING_LEVEL": str,
+        "ITEMS_PER_BATCH": int,
+    }
 
-    def __init__(
-        self,
-        lower_bound: int,
-        upper_bound: int,
-        logging_level: str,
-        items_per_batch: int,
-    ):
-        self.properties = {
-            "LOWER_BOUND": lower_bound,
-            "UPPER_BOUND": upper_bound,
-            "LOGGING_LEVEL": logging_level,
-            "ITEMS_PER_BATCH": items_per_batch,
-        }
+    def __init__(self, config: dict):
+        self.properties = {}
+        for key, value_type in self.required.items():
+            if key in config:
+                self.properties[key] = value_type(config[key])
 
     def get(self, key) -> Any:
         value = self.properties.get(key)
@@ -33,31 +31,29 @@ class FilterConfig:
         return value
 
     def update(self, key, value):
-        if key not in self.properties:
+        if key not in self.required:
             raise ValueError(f"Invalid property: {key}")
-        self.properties[key] = value
+
+        value_type = self.required[key]
+        self.properties[key] = value_type(value)
 
     def validate(self):
-        for k in self.required:
-            if self.properties.get(k) is None:
-                raise ValueError(f"Missing required property: {k}")
+        for key, value_type in self.required.items():
+            if not isinstance(self.properties.get(key), value_type):
+                raise ValueError(f"Missing or invalid property: {key}")
 
     def update_from_env(self):
         for key in FilterConfig.required:
             value = environ.get(key)
             if value is not None:
-                self.update(key, environ.get(key))
+                self.update(key, value)
 
     @classmethod
     def from_file(cls, path: str):
         config = configparser.ConfigParser()
         config.read(path)
-        return FilterConfig(
-            lower_bound=int(config["FILTER"]["LOWER_BOUND"]),
-            upper_bound=int(config["FILTER"]["UPPER_BOUND"]),
-            logging_level=config["FILTER"]["LOGGING_LEVEL"],
-            items_per_batch=int(config["FILTER"]["ITEMS_PER_BATCH"]),
-        )
+        config_dict = {k.upper(): v for k, v in config["FILTER"].items()}
+        return FilterConfig(config=config_dict)
 
     def __str__(self) -> str:
         formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
@@ -87,8 +83,9 @@ def main():
     logging.info(filter_config)
 
     messaging = Goutong()
-    messaging.add_queues(INPUT_QUEUE, OUTPUT_QUEUE)
-    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config,))
+    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+    messaging.add_queues(input_queue_name, OUTPUT_QUEUE)
+    messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
     messaging.listen()
 
 

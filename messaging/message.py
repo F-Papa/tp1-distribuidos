@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+
 class Message:
     def __init__(self, content: dict):
         self.content = content
@@ -13,8 +14,7 @@ class Message:
 
     def marshal(self):
         return json.dumps(self.content)
-    
+
     @classmethod
     def unmarshal(cls, marshalled_msg: str):
         return Message(json.loads(marshalled_msg))
-        

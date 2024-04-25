@@ -1,6 +1,21 @@
 version: '3.9'
 name: 'filters'
 services:
+
+  date_filter_barrier:
+    build:
+      context: ./
+      dockerfile: ./controllers/barrier/Dockerfile
+    container_name: date_filter_barrier
+    image: barrier:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_TYPE=date_filter
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=DEBUG
+    networks:
+      - tp1_testing_net
+
   date_filter1:
     build:
       context: ./
@@ -10,6 +25,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
@@ -24,6 +40,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=2
     networks:
       - tp1_testing_net
     volumes:
@@ -38,11 +55,12 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=3
     networks:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/date_filter/config.ini:/config.ini
-      
+
   category_filter1:
     build:
       context: ./
@@ -57,7 +75,6 @@ services:
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
     
-
   category_filter2:
     build:
       context: ./
