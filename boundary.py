@@ -20,7 +20,7 @@ def get_config_from_env() -> BoundaryConfig:
     )
 
 def config_logging(boundary_config: BoundaryConfig):
-    # Boundary Loggign
+    # Boundary Logging
     level = getattr(logging, boundary_config.logging_level)
     logging.basicConfig(level=level, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
    
