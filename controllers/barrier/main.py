@@ -5,65 +5,15 @@ It also works as a threading barrier, forwarding EOF messages to the next filter
 
 from os import environ
 from typing import Any
+from utils.config_loader import Configuration
 import logging
 
 from messaging.message import Message
 from messaging.goutong import Goutong
 
 
-class BarrierConfig:
-    required = ["FILTER_COUNT", "LOGGING_LEVEL"]
-
-    def __init__(
-        self,
-        filter_count: int,
-        logging_level: str,
-        filter_type: str,
-    ):
-        self.properties = {
-            "FILTER_COUNT": filter_count,
-            "LOGGING_LEVEL": logging_level,
-            "FILTER_TYPE": filter_type,
-        }
-
-    def get(self, key) -> Any:
-        value = self.properties.get(key)
-        if not value:
-            raise ValueError(f"Invalid property: {key}")
-        return value
-
-    def update(self, key, value):
-        if key not in self.properties:
-            raise ValueError(f"Invalid property: {key}")
-        self.properties[key] = value
-
-    def validate(self):
-        for k in self.required:
-            if self.properties.get(k) is None:
-                raise ValueError(f"Missing required property: {k}")
-
-    @classmethod
-    def from_env(cls):
-        logging_level = environ.get("LOGGING_LEVEL")
-        filter_count = environ.get("FILTER_COUNT")
-        filter_type = environ.get("FILTER_TYPE")
-
-        if logging_level is None or filter_count is None or filter_type is None:
-            raise ValueError("Missing required environment variables")
-
-        return BarrierConfig(
-            filter_count=int(filter_count),
-            logging_level=logging_level,
-            filter_type=filter_type,
-        )
-
-    def __str__(self) -> str:
-        formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
-        return f"BarrierConfig({formatted})"
-
-
 class Barrier:
-    def __init__(self, barrier_config: BarrierConfig, messaging: Goutong):
+    def __init__(self, barrier_config: Configuration, messaging: Goutong):
         self.barrier_config = barrier_config
         self.current_queue = 0
         self.eof_count = 0
@@ -137,8 +87,11 @@ def config_logging(level: str):
 def main():
     messaging = Goutong()
     config_logging("DEBUG")
-    barrier_config = BarrierConfig.from_env()
+    logging.info("Loading Config...")
+    required = {"FILTER_COUNT": int, "LOGGING_LEVEL": str, "FILTER_TYPE": str}
+    barrier_config = Configuration.from_env(required, "config.ini")
     barrier_config.validate()
+    config_logging(barrier_config.get("LOGGING_LEVEL"))
     barrier = Barrier(barrier_config, messaging)
     logging.info(barrier_config)
     barrier.start()

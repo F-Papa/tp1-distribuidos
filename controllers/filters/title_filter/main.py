@@ -1,63 +1,11 @@
-from os import environ
-import configparser
 from messaging.goutong import Goutong
-from typing import Any
 import logging
 
 from messaging.message import Message
+from utils.config_loader import Configuration
 
 FILTER_TYPE = "title_filter"
 EOF_QUEUE = "title_filter_eof"
-
-
-class FilterConfig:
-    required = {
-        "FILTER_NUMBER": int,
-        "TITLE_KEYWORD": str,
-        "LOGGING_LEVEL": str,
-        "ITEMS_PER_BATCH": int,
-    }
-
-    def __init__(self, config: dict):
-        self.properties = {}
-        for key, value_type in self.required.items():
-            if key in config:
-                self.properties[key] = value_type(config[key])
-
-    def get(self, key) -> Any:
-        value = self.properties.get(key)
-        if not value:
-            raise ValueError(f"Invalid property: {key}")
-        return value
-
-    def update(self, key, value):
-        if key not in self.required:
-            raise ValueError(f"Invalid property: {key}")
-
-        value_type = self.required[key]
-        self.properties[key] = value_type(value)
-
-    def validate(self):
-        for key, value_type in self.required.items():
-            if not isinstance(self.properties.get(key), value_type):
-                raise ValueError(f"Missing or invalid property: {key}")
-
-    def update_from_env(self):
-        for key in FilterConfig.required:
-            value = environ.get(key)
-            if value is not None:
-                self.update(key, value)
-
-    @classmethod
-    def from_file(cls, path: str):
-        config = configparser.ConfigParser()
-        config.read(path)
-        config_dict = {k.upper(): v for k, v in config["FILTER"].items()}
-        return FilterConfig(config=config_dict)
-
-    def __str__(self) -> str:
-        formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
-        return f"FilterConfig({formatted})"
 
 
 def config_logging(level: str):
@@ -76,7 +24,13 @@ def config_logging(level: str):
 def main():
     config_logging("DEBUG")
     logging.info("Loading Config...")
-    filter_config = FilterConfig.from_file("config.ini")
+    required = {
+        "FILTER_NUMBER": int,
+        "TITLE_KEYWORD": str,
+        "LOGGING_LEVEL": str,
+        "ITEMS_PER_BATCH": int,
+    }
+    filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
     config_logging(filter_config.get("LOGGING_LEVEL"))
@@ -103,7 +57,7 @@ def _send_EOF(messaging: Goutong, route: list):
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
-def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
+def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
     route = msg.get("route")
