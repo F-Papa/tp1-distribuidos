@@ -7,6 +7,7 @@ import logging
 
 FILTER_TYPE = "date_filter"
 OUTPUT_QUEUE = "category_filter_queue"
+EOF_QUEUE = "date_filter_eof"
 
 
 class FilterConfig:
@@ -60,9 +61,8 @@ class FilterConfig:
         return f"FilterConfig({formatted})"
 
 
-def config_logging(filter_config: FilterConfig):
+def config_logging(level: str):
     # Filter logging
-    level = filter_config.get("LOGGING_LEVEL")
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -75,10 +75,12 @@ def config_logging(filter_config: FilterConfig):
 
 
 def main():
+    config_logging("DEBUG")
+    logging.info("Loading Config...")
     filter_config = FilterConfig.from_file("config.ini")
     filter_config.update_from_env()
     filter_config.validate()
-    config_logging(filter_config)
+    # config_logging(filter_config.get("LOGGING_LEVEL"))
 
     logging.info(filter_config)
 
@@ -101,7 +103,7 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
 
     # Forward EOF and Keep Consuming
     if msg.has_key("EOF"):
-        messaging.send_to_queue(OUTPUT_QUEUE, msg)
+        messaging.send_to_queue(EOF_QUEUE, msg)
         return
 
     books = msg.get("data")
@@ -109,7 +111,9 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
 
     for book in books:
         year = book.get("year")
-        if config.get("LOWER_BOUND") <= year <= config.get("UPPER_BOUND"):
+        lower_bound = config.get("LOWER_BOUND")
+        upper_bound = config.get("UPPER_BOUND")
+        if lower_bound <= year <= upper_bound:
             if len(batch) < config.get("ITEMS_PER_BATCH"):
                 batch.append(book)
             else:

@@ -54,7 +54,7 @@ class BarrierConfig:
 
     def __str__(self) -> str:
         formatted = ", ".join([f"{k}={v}" for k, v in self.properties.items()])
-        return f"FilterConfig({formatted})"
+        return f"BarrierConfig({formatted})"
 
 
 class Barrier:
@@ -76,6 +76,8 @@ class Barrier:
         # Add queues and broadcast group
         self.messaging.add_queues(self.eof_queue_name)
         self.messaging.add_queues(self.input_queue_name)
+        self.messaging.add_queues(*self.filter_queues)
+
         self.messaging.add_broadcast_group(
             self.broadcast_group_name, self.filter_queues
         )
@@ -114,9 +116,21 @@ class Barrier:
         self.increase_current_queue_index()
 
 
+def config_logging(level: str):
+    # Filter logging
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Hide pika logs
+    pika_logger = logging.getLogger("pika")
+    pika_logger.setLevel(logging.ERROR)
+
 def main():
     messaging = Goutong()
-
+    config_logging("DEBUG")
     barrier_config = BarrierConfig.from_env()
     barrier_config.validate()
     barrier = Barrier(barrier_config, messaging)

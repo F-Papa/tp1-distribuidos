@@ -48,7 +48,6 @@ class FilterConfig:
         config = configparser.ConfigParser()
         config.read(path)
         config_dict = {k.upper(): v for k, v in config["FILTER"].items()}
-        logging.info(f"config_dict: {config_dict}")
         return FilterConfig(config=config_dict)
 
     def __str__(self) -> str:
@@ -56,9 +55,8 @@ class FilterConfig:
         return f"FilterConfig({formatted})"
 
 
-def config_logging(filter_config: FilterConfig):
+def config_logging(level: str):
     # Filter logging
-    level = filter_config.get("LOGGING_LEVEL")
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -71,10 +69,12 @@ def config_logging(filter_config: FilterConfig):
 
 
 def main():
+    config_logging("DEBUG")
+    logging.info("Loading Config...")
     filter_config = FilterConfig.from_file("config.ini")
     filter_config.update_from_env()
     filter_config.validate()
-    config_logging(filter_config)
+    # config_logging(filter_config.get("LOGGING_LEVEL"))
 
     logging.info(filter_config)
 
@@ -92,7 +92,7 @@ def _send_batch(messaging: Goutong, batch: list):
 
 
 def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
-    logging.debug(f"Received: {msg.marshal()}")
+    # logging.debug(f"Received: {msg.marshal()}")
     # Forward EOF and Keep Consuming
     if msg.has_key("EOF"):
         messaging.send_to_queue(OUTPUT_QUEUE, msg)
@@ -102,13 +102,15 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
     batch = []
 
     for book in books:
+
         title = book.get("title")
-        if config.get("TITLE_KEYWORD") in title:
+        if config.get("TITLE_KEYWORD").lower() in title.lower():
             if len(batch) < config.get("ITEMS_PER_BATCH"):
                 batch.append(book)
             else:
                 _send_batch(messaging, batch)
                 batch = []
+
     if len(batch) > 0:
         _send_batch(messaging, batch)
 

@@ -30,6 +30,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/date_filter/config.ini:/config.ini
+      - ./controllers/filters/date_filter/main.py:/main.py
 
   date_filter2:
     build:
@@ -45,6 +46,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/date_filter/config.ini:/config.ini
+      - ./controllers/filters/date_filter/main.py:/main.py
 
   date_filter3:
     build:
@@ -60,6 +62,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/date_filter/config.ini:/config.ini
+      - ./controllers/filters/date_filter/main.py:/main.py
 
   category_filter1:
     build:
@@ -74,6 +77,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
+      - ./controllers/filters/category_filter/main.py:/main.py
     
   category_filter2:
     build:
@@ -88,6 +92,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
+      - ./controllers/filters/category_filter/main.py:/main.py
 
   category_filter3:
     build:
@@ -102,6 +107,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
+      - ./controllers/filters/category_filter/main.py:/main.py
 
   title_filter1:
     build:
@@ -116,6 +122,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/title_filter/config.ini:/config.ini
+      - ./controllers/filters/title_filter/main.py:/main.py
       
   title_filter2:
     build:
@@ -130,6 +137,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/title_filter/config.ini:/config.ini
+      - ./controllers/filters/title_filter/main.py:/main.py
 
   title_filter3:
     build:
@@ -144,6 +152,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/title_filter/config.ini:/config.ini
+      - ./controllers/filters/title_filter/main.py:/main.py
 
 networks:
   tp1_testing_net:

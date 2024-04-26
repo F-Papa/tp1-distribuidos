@@ -55,9 +55,8 @@ class FilterConfig:
         return f"FilterConfig({formatted})"
 
 
-def config_logging(filter_config: FilterConfig):
+def config_logging(level: str):
     # Filter logging
-    level = filter_config.get("LOGGING_LEVEL")
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -70,10 +69,12 @@ def config_logging(filter_config: FilterConfig):
 
 
 def main():
+    config_logging("DEBUG")
+    logging.info("Loading Config...")
     filter_config = FilterConfig.from_file("config.ini")
     filter_config.update_from_env()
     filter_config.validate()
-    config_logging(filter_config)
+    config_logging(filter_config.get("LOGGING_LEVEL"))
 
     logging.info(filter_config)
 
