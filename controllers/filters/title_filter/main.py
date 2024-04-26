@@ -9,6 +9,9 @@ EOF_QUEUE = "title_filter_eof"
 
 
 def config_logging(level: str):
+
+    level = getattr(logging, level)
+
     # Filter logging
     logging.basicConfig(
         level=level,
@@ -22,19 +25,18 @@ def config_logging(level: str):
 
 
 def main():
-    config_logging("DEBUG")
-    logging.info("Loading Config...")
     required = {
         "FILTER_NUMBER": int,
         "TITLE_KEYWORD": str,
         "LOGGING_LEVEL": str,
         "ITEMS_PER_BATCH": int,
     }
+
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
-    config_logging(filter_config.get("LOGGING_LEVEL"))
 
+    config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
     messaging = Goutong()

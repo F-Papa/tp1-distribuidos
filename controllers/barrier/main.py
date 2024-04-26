@@ -73,6 +73,9 @@ class Barrier:
 
 
 def config_logging(level: str):
+
+    level = getattr(logging, level)
+
     # Filter logging
     logging.basicConfig(
         level=level,
@@ -84,16 +87,17 @@ def config_logging(level: str):
     pika_logger = logging.getLogger("pika")
     pika_logger.setLevel(logging.ERROR)
 
+
 def main():
-    messaging = Goutong()
-    config_logging("DEBUG")
-    logging.info("Loading Config...")
     required = {"FILTER_COUNT": int, "LOGGING_LEVEL": str, "FILTER_TYPE": str}
     barrier_config = Configuration.from_env(required, "config.ini")
     barrier_config.validate()
+
     config_logging(barrier_config.get("LOGGING_LEVEL"))
-    barrier = Barrier(barrier_config, messaging)
     logging.info(barrier_config)
+
+    messaging = Goutong()
+    barrier = Barrier(barrier_config, messaging)
     barrier.start()
 
 
