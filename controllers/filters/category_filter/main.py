@@ -6,12 +6,17 @@ import logging
 
 from messaging.message import Message
 
-INPUT_QUEUE = "category_filter_queue"
-OUTPUT_QUEUE = "results_queue"
+FILTER_TYPE = "category_filter"
+EOF_QUEUE = "category_filter_eof"
 
 
 class FilterConfig:
-    required = {"CATEGORY": str, "LOGGING_LEVEL": str, "ITEMS_PER_BATCH": int}
+    required = {
+        "FILTER_NUMBER": int,
+        "CATEGORY": str,
+        "LOGGING_LEVEL": str,
+        "ITEMS_PER_BATCH": int,
+    }
 
     def __init__(self, config: dict):
         self.properties = {}
@@ -79,24 +84,34 @@ def main():
     logging.info(filter_config)
 
     messaging = Goutong()
-    messaging.add_queues(INPUT_QUEUE, OUTPUT_QUEUE)
-    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config,))
+    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+    messaging.add_queues(input_queue_name)
+    messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
     messaging.listen()
 
 
-def _send_batch(messaging: Goutong, batch: list):
-    msg_content = {"data": batch}
+def _send_batch(messaging: Goutong, batch: list, route: list):
+    msg_content = {"data": batch, "route": route}
     msg = Message(msg_content)
-    messaging.send_to_queue(OUTPUT_QUEUE, msg)
-    logging.debug(f"Passed: {msg.marshal()}")
+    messaging.send_to_queue(route[0], msg)
+    logging.debug(f"Sent Data to: {route[0]}")
+
+
+def _send_EOF(messaging: Goutong, route: list):
+    msg = Message({"EOF": True, "route": route})
+    messaging.send_to_queue(EOF_QUEUE, msg)
+    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
 def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
-    logging.debug(f"Received: {msg.marshal()}")
+    # logging.debug(f"Received: {msg.marshal()}")
 
-    # Forward EOF and Keep Consuming
-    if msg.get("EOF"):
-        messaging.send_to_queue(OUTPUT_QUEUE, msg)
+    route = msg.get("route")
+    route.pop(0)
+
+    if msg.has_key("EOF"):
+        # Forward EOF and Keep Consuming
+        _send_EOF(messaging, route)
         return
 
     books = msg.get("data")
@@ -108,10 +123,10 @@ def callback_filter(messaging: Goutong, msg: Message, config: FilterConfig):
             if len(batch) < config.get("ITEMS_PER_BATCH"):
                 batch.append(book)
             else:
-                _send_batch(messaging, batch)
+                _send_batch(messaging, batch, route)
                 batch = []
     if len(batch) > 0:
-        _send_batch(messaging, batch)
+        _send_batch(messaging, batch, route)
 
 
 if __name__ == "__main__":

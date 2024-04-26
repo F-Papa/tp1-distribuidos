@@ -12,9 +12,11 @@ services:
     environment:
       - FILTER_TYPE=date_filter
       - FILTER_COUNT=3
-      - LOGGING_LEVEL=DEBUG
+      - LOGGING_LEVEL=INFO
     networks:
       - tp1_testing_net
+    volumes:
+      - ./controllers/barrier/main.py:/main.py
 
   date_filter1:
     build:
@@ -64,6 +66,22 @@ services:
       - ./controllers/filters/date_filter/config.ini:/config.ini
       - ./controllers/filters/date_filter/main.py:/main.py
 
+  category_filter_barrier:
+    build:
+      context: ./
+      dockerfile: ./controllers/barrier/Dockerfile
+    container_name: category_filter_barrier
+    image: barrier:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_TYPE=category_filter
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=INFO
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/barrier/main.py:/main.py
+
   category_filter1:
     build:
       context: ./
@@ -73,6 +91,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
@@ -88,6 +107,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=2
     networks:
       - tp1_testing_net
     volumes:
@@ -103,12 +123,29 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=3
     networks:
       - tp1_testing_net
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
       - ./controllers/filters/category_filter/main.py:/main.py
 
+  title_filter_barrier:
+    build:
+      context: ./
+      dockerfile: ./controllers/barrier/Dockerfile
+    container_name: title_filter_barrier
+    image: barrier:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_TYPE=title_filter
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=INFO
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/barrier/main.py:/main.py
+  
   title_filter1:
     build:
       context: ./
@@ -118,6 +155,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
@@ -133,6 +171,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=2
     networks:
       - tp1_testing_net
     volumes:
@@ -148,6 +187,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - ITEMS_PER_BATCH=100
+      - FILTER_NUMBER=3
     networks:
       - tp1_testing_net
     volumes:

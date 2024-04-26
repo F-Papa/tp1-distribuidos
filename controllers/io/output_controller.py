@@ -15,7 +15,6 @@ INPUT_QUEUE = "results_queue"
 def callback_display_results(messaging: Goutong, msg: Message):
     if msg.has_key("EOF"):
         logging.info("End of query")
-        time.sleep(1)
         raise EndOfQuery
 
     # qué informacion se muestra depende de la query. por ahora solo el título del libro filtrado (query 1)

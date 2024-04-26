@@ -1,3 +1,8 @@
+"""
+A Barrier controller that distributes data to multiple filters in a round-robin fashion. 
+It also works as a threading barrier, forwarding EOF messages to the next filter in the chain once all filters have processed the data.
+"""
+
 from os import environ
 from typing import Any
 import logging
@@ -95,8 +100,8 @@ class Barrier:
         if self.eof_count == self.barrier_config.get("FILTER_COUNT"):
             # Forward EOF
             logging.debug("Forwarding EOF")
-            next_queue = "category_filter_queue"
-            self.messaging.send_to_queue(next_queue, msg)
+            route = msg.get("route")
+            self.messaging.send_to_queue(route[0], msg)
             self.eof_count = 0
 
     def increase_current_queue_index(self):
@@ -105,7 +110,7 @@ class Barrier:
         )
 
     def distribute_data(self, _messaging: Goutong, msg: Message):
-        logging.debug(f"Received: {msg.marshal()}")
+        # logging.debug(f"Received: {msg.marshal()}")
 
         if msg.has_key("EOF"):
             self.messaging.broadcast_to_group(self.broadcast_group_name, msg)
@@ -113,6 +118,7 @@ class Barrier:
 
         # round-robin data
         self.messaging.send_to_queue(self.filter_queues[self.current_queue], msg)
+        # logging.debug(f"Passed to: {self.filter_queues[self.current_queue]}")
         self.increase_current_queue_index()
 
 
