@@ -3,7 +3,7 @@ PWD := $(shell pwd)
 
 BOUNDARY_ITEMS_PER_BATCH := 100
 BOOKS_ENTITY := ./data/books_data.csv
-REVIEWS_ENTITY := ./data/Books_ratings.csv
+REVIEWS_ENTITY := ./data/Books_rating.csv
 
 network-create:
 	docker network create tp1_testing_net
@@ -21,7 +21,7 @@ filters-logs:
 	docker compose -f ./docker-compose.yml logs -f
 
 filters-down:
-	docker compose -f ./docker-compose.yml down
+	docker compose -f ./docker-compose.yml down -t 0
 
 boundary-up:
 	docker run -it -e LOGGING_LEVEL=INFO -v ITEMS_PER_BATCH=$(BOUNDARY_ITEMS_PER_BATCH) -v ./boundary.py:/main.py -v $(BOOKS_ENTITY):/books.csv -v $(REVIEWS_ENTITY):/reviews.csv --rm --network tp1_testing_net boundary
