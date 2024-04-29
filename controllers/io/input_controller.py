@@ -52,37 +52,44 @@ def _declare_queues(messaging: Goutong):
 
 
 # Query1
-def distributed_computer_books(books_path: str):
-    # Messaging Middleware
-    items_per_batch = int(os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH))
-    messaging = Goutong()
-    messaging.add_queues(OUTPUT_QUEUE)
-    _declare_queues(messaging)
-    route = [
-        "title_filter_queue",
-        "date_filter_queue",
-        "category_filter_queue",
-        "results_queue",
-    ]
+def distributed_computer_books(books_path: str, shutting_down):
+    if not shutting_down.value:
+        # Messaging Middleware
+        items_per_batch = int(os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH))
+        messaging = Goutong()
+        messaging.add_queues(OUTPUT_QUEUE)
+        _declare_queues(messaging)
+        route = [
+            "title_filter_queue",
+            "date_filter_queue",
+            "category_filter_queue",
+            "results_queue",
+        ]
 
-    with open(books_path, newline="") as csvfile:
-        batch = []
-        reader = csv.DictReader(csvfile)
+    if not shutting_down.value:
+        with open(books_path, newline="") as csvfile:
+            batch = []
+            reader = csv.DictReader(csvfile)
 
-        for row in reader:
-            if len(batch) < items_per_batch:
-                title = row["Title"]
-                year = _parse_year(row["publishedDate"])
-                categories = _parse_categories(row["categories"])
+            for row in reader:
+                if len(batch) < items_per_batch:
+                    title = row["Title"]
+                    year = _parse_year(row["publishedDate"])
+                    categories = _parse_categories(row["categories"])
 
-                batch.append({"title": title, "year": year, "categories": categories})
-            else:
-                _send_batch(messaging, batch, route)
-                batch = []
-        if len(batch) > 0:
-            _send_batch(messaging, batch, route)
-
-        messaging.send_to_queue(OUTPUT_QUEUE, Message({"EOF": True, "route": route}))
+                    batch.append({"title": title, "year": year, "categories": categories})
+                else:
+                    if shutting_down.value:
+                        break
+                    _send_batch(messaging, batch, route)
+                    batch = []
+            if not shutting_down.value:
+                if len(batch) > 0:
+                    _send_batch(messaging, batch, route)
+            if not shutting_down.value:
+                messaging.send_to_queue(OUTPUT_QUEUE, Message({"EOF": True, "route": route}))
+    
+    logging.info("Input Controller Shutting Down")
 
 
 # Query2
