@@ -10,8 +10,8 @@ from messaging.message import Message
 
 class Goutong:
     def __init__(self):
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbit"))
-        self.channel = connection.channel()
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbit"))
+        self.channel = self.connection.channel()
 
     def add_queues(self, *args):
         for queue_name in args:
@@ -42,3 +42,7 @@ class Goutong:
         self.channel.exchange_declare(exchange=group_name, exchange_type="fanout")
         for queue_name in queue_names:
             self.channel.queue_bind(exchange=group_name, queue=queue_name)
+
+    def close(self):
+        self.channel.close()
+        self.connection.close()

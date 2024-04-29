@@ -3,18 +3,15 @@ A Barrier controller that distributes data to multiple filters in a round-robin 
 It also works as a threading barrier, forwarding EOF messages to the next filter in the chain once all filters have processed the data.
 """
 
-from os import environ
-from typing import Any
 from utils.config_loader import Configuration
 import logging
 import signal
 
 from messaging.message import Message
 from messaging.goutong import Goutong
+from exceptions.shutting_down import ShuttingDown
 
 CONTROL_GROUP = "CONTROL"
-class ShuttingDown(Exception):
-    pass
 
 class Barrier:
     def __init__(self, barrier_config: Configuration, messaging: Goutong):
@@ -60,6 +57,8 @@ class Barrier:
                 self.messaging.listen()
             except ShuttingDown:
                 logging.debug("Shutting Down Message Received Via Broadcast")
+            finally:
+                self.messaging.close()                
         logging.info("Shutting Down.")
 
     def eof_received(self, _messaging: Goutong, msg: Message):

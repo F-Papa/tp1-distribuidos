@@ -1,9 +1,11 @@
 from messaging.goutong import Goutong
+from exceptions.shutting_down import ShuttingDown
 import logging
 import signal
 
 from messaging.message import Message
 from utils.config_loader import Configuration
+from exceptions.shutting_down import ShuttingDown
 
 FILTER_TYPE = "title_filter"
 EOF_QUEUE = "title_filter_eof"
@@ -68,10 +70,10 @@ def main():
             messaging.listen()
         except ShuttingDown:
             logging.debug("Shutdown Message Received via Control Broadcast")
+        finally:
+            messaging.close()            
     logging.info("Shutting Down.")
 
-class ShuttingDown(Exception):
-    pass
 
 def callback_control(messaging: Goutong, msg: Message):
     if msg.has_key("ShutDown"):

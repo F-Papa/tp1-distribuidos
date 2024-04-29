@@ -1,3 +1,5 @@
+import signal
+from exceptions.shutting_down import ShuttingDown
 from messaging.goutong import Goutong
 from messaging.message import Message
 import csv, os
@@ -5,6 +7,14 @@ import logging
 
 OUTPUT_QUEUE = "title_filter_queue"
 DEFAULT_ITEMS_PER_BATCH = 50
+CONTROL_GROUP = "CONTROL"
+
+
+def sigterm_handler(messaging: Goutong):
+    logging.info("Child process received SIGTERM. Initiating Graceful Shutdown.")
+    msg = Message({"ShutDown": True})
+    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    raise ShuttingDown
 
 
 def _parse_year(year_str: str) -> int:
@@ -53,10 +63,23 @@ def _declare_queues(messaging: Goutong):
 
 # Query1
 def distributed_computer_books(books_path: str, shutting_down):
-    if not shutting_down.value:
+    messaging = Goutong()
+    signal.signal(signal.SIGTERM,lambda sig, frame: sigterm_handler(messaging,))
+    logging.info("Executing query: Distributed Computer Books Between Years 2000 and 2023")
+    try:
+        distributed_computer_books_aux(books_path, messaging, shutting_down)
+    except ShuttingDown:
+        pass
+    finally:
+        messaging.close()
+        logging.info("Child process terminated successfully")
+
+
+def distributed_computer_books_aux(books_path: str, messaging: Goutong, shutting_down):
+    if shutting_down.value == 0:
         # Messaging Middleware
         items_per_batch = int(os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH))
-        messaging = Goutong()
+
         messaging.add_queues(OUTPUT_QUEUE)
         _declare_queues(messaging)
         route = [
@@ -66,7 +89,7 @@ def distributed_computer_books(books_path: str, shutting_down):
             ("results_queue", ""),
         ]
         
-    if not shutting_down.value:
+    if shutting_down.value == 0:
         with open(books_path, newline="") as csvfile:
             batch = []
             reader = csv.DictReader(csvfile)
@@ -79,7 +102,7 @@ def distributed_computer_books(books_path: str, shutting_down):
 
                     batch.append({"title": title, "year": year, "categories": categories})
                 else:
-                    if shutting_down.value:
+                    if shutting_down.value == 1:
                         break
                     _send_batch(messaging, batch, route)
                     batch = []
@@ -88,8 +111,6 @@ def distributed_computer_books(books_path: str, shutting_down):
                     _send_batch(messaging, batch, route)
             if not shutting_down.value:
                 messaging.send_to_queue(OUTPUT_QUEUE, Message({"EOF": True, "route": route}))
-    
-    logging.info("Input Controller Shutting Down")
 
 
 # Query2
