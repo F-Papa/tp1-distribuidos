@@ -44,5 +44,11 @@ class Goutong:
             self.channel.queue_bind(exchange=group_name, queue=queue_name)
 
     def close(self):
-        self.channel.close()
-        self.connection.close()
+        self.channel.stop_consuming()
+        if self.connection.is_open:
+            try:
+                self.connection.close()
+            except Exception as e:
+                # Already closed by another Node
+                pass
+        
