@@ -1,11 +1,23 @@
 from messaging.goutong import Goutong
 from utils.config_loader import Configuration
 import logging
+import signal
 
 from messaging.message import Message
 
 FILTER_TYPE = "category_filter"
 EOF_QUEUE = "category_filter_eof"
+
+CONTROL_GROUP = "CONTROL"
+
+shutting_down = False
+
+# Graceful Shutdown
+def sigterm_handler(messaging: Goutong, control_group_name: str):
+    logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
+    shutting_down = True
+    msg = Message({"ShutDown": True})
+    messaging.broadcast_to_group(control_group_name, msg)
 
 
 def config_logging(level: str):
@@ -39,11 +51,33 @@ def main():
     logging.info(filter_config)
 
     messaging = Goutong()
-    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
-    messaging.add_queues(input_queue_name)
-    messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
-    messaging.listen()
 
+    control_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
+    messaging.add_queues(control_queue_name)
+    messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
+    messaging.set_callback(control_queue_name, callback_control, ())
+
+    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging, CONTROL_GROUP))
+
+    if not shutting_down:
+        input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+        messaging.add_queues(input_queue_name)
+        messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
+    
+    if not shutting_down:
+        try:
+            messaging.listen()
+        except ShuttingDown:
+            logging.debug("Shutdown Message Received via Control Broadcast")
+    logging.info("Shutting Down.")
+
+class ShuttingDown(Exception):
+    pass
+
+def callback_control(messaging: Goutong, msg: Message):
+    if msg.has_key("ShutDown"):
+        shutting_down = True
+        raise ShuttingDown
 
 def _send_batch(messaging: Goutong, batch: list, route: list):
     msg_content = {"data": batch, "route": route}
