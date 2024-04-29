@@ -60,12 +60,12 @@ def distributed_computer_books(books_path: str, shutting_down):
         messaging.add_queues(OUTPUT_QUEUE)
         _declare_queues(messaging)
         route = [
-            "title_filter_queue",
-            "date_filter_queue",
-            "category_filter_queue",
-            "results_queue",
+            ("title_filter_queue", "distributed"),
+            ("date_filter_queue", [2000, 2023]),
+            ("category_filter_queue", "Computers"),
+            ("results_queue", ""),
         ]
-
+        
     if not shutting_down.value:
         with open(books_path, newline="") as csvfile:
             batch = []

@@ -81,8 +81,8 @@ def callback_control(messaging: Goutong, msg: Message):
 def _send_batch(messaging: Goutong, batch: list, route: list):
     msg_content = {"data": batch, "route": route}
     msg = Message(msg_content)
-    messaging.send_to_queue(route[0], msg)
-    logging.debug(f"Sent Data to: {route[0]}")
+    messaging.send_to_queue(route[0][0], msg)
+    logging.debug(f"Sent Data to: {route[0][0]}")
 
 
 def _send_EOF(messaging: Goutong, route: list):
@@ -95,7 +95,8 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
     route = msg.get("route")
-    route.pop(0)
+    current_filter, params = route.pop(0)
+    config.update("TITLE_KEYWORD", params)
 
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming

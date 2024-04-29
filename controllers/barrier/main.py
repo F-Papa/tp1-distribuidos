@@ -69,7 +69,7 @@ class Barrier:
             # Forward EOF
             logging.debug("Forwarding EOF")
             route = msg.get("route")
-            self.messaging.send_to_queue(route[0], msg)
+            self.messaging.send_to_queue(route[0][0], msg)
             self.eof_count = 0
 
     def increase_current_queue_index(self):
