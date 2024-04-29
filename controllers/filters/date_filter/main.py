@@ -14,6 +14,7 @@ shutting_down = False
 
 # Graceful Shutdown
 def sigterm_handler(messaging: Goutong):
+    global shutting_down
     logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
     shutting_down = True
     msg = Message({"ShutDown": True})
@@ -75,6 +76,7 @@ def main():
 
 
 def callback_control(messaging: Goutong, msg: Message):
+    global shutting_down
     if msg.has_key("ShutDown"):
         shutting_down = True
         raise ShuttingDown
@@ -98,7 +100,7 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
     route = msg.get("route")
-    current_filter, params = route.pop(0)
+    _, params = route.pop(0)
 
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
