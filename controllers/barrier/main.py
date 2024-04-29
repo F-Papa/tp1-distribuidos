@@ -57,8 +57,7 @@ class Barrier:
                 self.messaging.listen()
             except ShuttingDown:
                 logging.debug("Shutting Down Message Received Via Broadcast")
-            finally:
-                self.messaging.close()                
+        self.messaging.close()                
         logging.info("Shutting Down.")
 
     def eof_received(self, _messaging: Goutong, msg: Message):

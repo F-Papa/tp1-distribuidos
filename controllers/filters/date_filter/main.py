@@ -69,9 +69,9 @@ def main():
         try:
             messaging.listen()
         except ShuttingDown:
-            logging.debug("Shutdown Message Received via Control Broadcast")
-        finally:
-            messaging.close()
+            logging.debug("Shutdown Message Received via Control Broadcast")        
+    
+    messaging.close()
     logging.info("Shutting Down.")
 
 
