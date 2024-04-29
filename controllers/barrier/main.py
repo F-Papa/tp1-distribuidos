@@ -7,10 +7,14 @@ from os import environ
 from typing import Any
 from utils.config_loader import Configuration
 import logging
+import signal
 
 from messaging.message import Message
 from messaging.goutong import Goutong
 
+CONTROL_GROUP = "CONTROL"
+class ShuttingDown(Exception):
+    pass
 
 class Barrier:
     def __init__(self, barrier_config: Configuration, messaging: Goutong):
@@ -18,6 +22,14 @@ class Barrier:
         self.current_queue = 0
         self.eof_count = 0
         self.messaging = messaging
+
+        # Graceful Shutdown Handling
+        self.shutting_down = False
+        control_queue_name = barrier_config.get("FILTER_TYPE") + "_barrier_control"
+        messaging.add_queues(control_queue_name)
+        messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
+        messaging.set_callback(control_queue_name, self.callback_control, ())
+        signal.signal(signal.SIGTERM, lambda sig, frame: self.sigterm_handler(messaging))
 
         self.eof_queue_name = barrier_config.get("FILTER_TYPE") + "_eof"
         self.input_queue_name = barrier_config.get("FILTER_TYPE") + "_queue"
@@ -29,20 +41,26 @@ class Barrier:
             self.filter_queues.append(queue_name)
 
         # Add queues and broadcast group
-        self.messaging.add_queues(self.eof_queue_name)
-        self.messaging.add_queues(self.input_queue_name)
-        self.messaging.add_queues(*self.filter_queues)
+        if not self.shutting_down:
+            self.messaging.add_queues(self.eof_queue_name)
+            self.messaging.add_queues(self.input_queue_name)
+            self.messaging.add_queues(*self.filter_queues)
 
-        self.messaging.add_broadcast_group(
-            self.broadcast_group_name, self.filter_queues
-        )
+            self.messaging.add_broadcast_group(
+                self.broadcast_group_name, self.filter_queues
+            )
 
-        # Set callbacks
-        self.messaging.set_callback(self.input_queue_name, self.distribute_data)
-        self.messaging.set_callback(self.eof_queue_name, self.eof_received)
+            # Set callbacks
+            self.messaging.set_callback(self.input_queue_name, self.distribute_data)
+            self.messaging.set_callback(self.eof_queue_name, self.eof_received)
 
     def start(self):
-        self.messaging.listen()
+        if not self.shutting_down:
+            try:
+                self.messaging.listen()
+            except ShuttingDown:
+                logging.debug("Shutting Down Message Received Via Broadcast")
+        logging.info("Shutting Down.")
 
     def eof_received(self, _messaging: Goutong, msg: Message):
         self.eof_count += 1
@@ -70,7 +88,17 @@ class Barrier:
         self.messaging.send_to_queue(self.filter_queues[self.current_queue], msg)
         # logging.debug(f"Passed to: {self.filter_queues[self.current_queue]}")
         self.increase_current_queue_index()
+    
+    def sigterm_handler(self, messaging: Goutong):
+        logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
+        self.shutting_down = True
+        msg = Message({"ShutDown": True})
+        messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
+    def callback_control(self, messaging: Goutong, msg: Message):
+        if msg.has_key("ShutDown"):
+            self.shutting_down = True
+            raise ShuttingDown
 
 def config_logging(level: str):
 

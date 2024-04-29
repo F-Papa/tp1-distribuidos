@@ -13,11 +13,11 @@ CONTROL_GROUP = "CONTROL"
 shutting_down = False
 
 # Graceful Shutdown
-def sigterm_handler(messaging: Goutong, control_group_name: str):
+def sigterm_handler(messaging: Goutong):
     logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
     shutting_down = True
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(control_group_name, msg)
+    messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
 
 def config_logging(level: str):
@@ -57,7 +57,7 @@ def main():
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging, CONTROL_GROUP))
+    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
     if not shutting_down:
         input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
