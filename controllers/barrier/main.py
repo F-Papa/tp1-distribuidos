@@ -88,7 +88,7 @@ class Barrier:
         self.increase_current_queue_index()
     
     def sigterm_handler(self, messaging: Goutong):
-        logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
+        logging.info('SIGTERM received. Initiating Graceful Shutdown.')
         self.shutting_down = True
         msg = Message({"ShutDown": True})
         messaging.broadcast_to_group(CONTROL_GROUP, msg)

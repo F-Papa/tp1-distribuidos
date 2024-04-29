@@ -13,10 +13,11 @@ CONTROL_GROUP = "CONTROL"
 
 shutting_down = False
 
+
 # Graceful Shutdown
 def sigterm_handler(messaging: Goutong):
     global shutting_down
-    logging.info('SIGTERM received. Iitiating Graceful Shutdown.')
+    logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
     msg = Message({"ShutDown": True})
     messaging.broadcast_to_group(CONTROL_GROUP, msg)
@@ -54,7 +55,9 @@ def main():
 
     messaging = Goutong()
 
-    control_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
+    control_queue_name = (
+        FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
+    )
     messaging.add_queues(control_queue_name)
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
@@ -65,13 +68,13 @@ def main():
         input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
         messaging.add_queues(input_queue_name)
         messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
-    
+
     if not shutting_down:
         try:
             messaging.listen()
         except ShuttingDown:
             logging.debug("Shutdown Message Received via Control Broadcast")
-    
+
     messaging.close()
     logging.info("Shutting Down.")
 
@@ -81,6 +84,7 @@ def callback_control(messaging: Goutong, msg: Message):
     if msg.has_key("ShutDown"):
         shutting_down = True
         raise ShuttingDown
+
 
 def _send_batch(messaging: Goutong, batch: list, route: list):
     msg_content = {"data": batch, "route": route}
@@ -105,9 +109,8 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
         # Forward EOF and Keep Consuming
         _send_EOF(messaging, route)
         return
-    
-    config.update("CATEGORY", params)
 
+    config.update("CATEGORY", params)
 
     books = msg.get("data")
     batch = []
