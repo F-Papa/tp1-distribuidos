@@ -105,6 +105,21 @@ def title_filter_service_text(number: int, items_per_batch: int):
       - ./controllers/filters/title_filter/main.py:/main.py
 """
 
+def decade_counter_service_text():
+    return f"""\
+  decade_counter:
+    build:
+      context: ./
+      dockerfile: ./controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/filters/decade_counter/config.ini:/config.ini
+      - ./controllers/filters/decade_counter/main.py:/main.py
+"""
 
 if __name__ == "__main__":
     # Create the docker-compose.yml file

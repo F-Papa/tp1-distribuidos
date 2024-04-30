@@ -12,22 +12,35 @@ class EndOfQuery(Exception):
 
 INPUT_QUEUE = "results_queue"
 
+NUMBER_OF_QUERIES = 5
+eof_received = 0
+
 def _display_results_q1(data: list):
     for book in data:
         logging.info(f"[Query 1] {book['title']}")
 
+def _display_results_q2(data: list):
+    for author in data:
+        logging.info(f"[Query 2] {author}")
+
 def callback_display_results(messaging: Goutong, msg: Message):
+    global eof_received
     if msg.has_key("EOF"):
-        logging.info("End of query")
-        raise EndOfQuery
+        eof_received += 1
+        logging.info(f"({eof_received}/{NUMBER_OF_QUERIES}) Queries completed.")
+        if eof_received == NUMBER_OF_QUERIES:
+            raise EndOfQuery
+        return
 
     # qué informacion se muestra depende de la query. por ahora solo el título del libro filtrado (query 1)
     query_number = msg.get("query")
     data = msg.get("data")
     if query_number == 1:
         _display_results_q1(data)
+    elif query_number == 2:
+        _display_results_q2(data)
     else:
-        logging.info("Query not supported")
+        logging.info(f"Query {query_number} not supported")
 
 def display_results(messaging: Goutong):
     logging.basicConfig(

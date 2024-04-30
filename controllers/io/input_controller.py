@@ -5,7 +5,7 @@ from messaging.message import Message
 import csv, os
 import logging
 
-DEFAULT_ITEMS_PER_BATCH = 50
+DEFAULT_ITEMS_PER_BATCH = 500
 CONTROL_GROUP = "CONTROL"
 CATEGORY_FILTER = "category_filter_queue"
 
@@ -46,10 +46,10 @@ def _send_batch(messaging: Goutong, batch: list):
     messaging.send_to_queue(queue, msg)
 
     # Query 2
-    # queue = "authors_decades_queue"
-    # data = list(map(_columns_for_query2, batch))
-    # msg = Message({"data": data})
-    # messaging.send_to_queue(queue, msg)
+    queue = "decade_counter_queue"
+    data = list(map(_columns_for_query2, batch))
+    msg = Message({"data": data})
+    messaging.send_to_queue(queue, msg)
 
     # Query 5
     # queue = "category_filter_queue"
@@ -124,7 +124,8 @@ def _feed_data_aux(
             if len(batch) > 0:
                 _send_batch(messaging, batch)
         if not shutting_down.value:
-            messaging.send_to_queue(CATEGORY_FILTER, Message({"EOF": True}))
+            messaging.send_to_queue("date_filter_queue", Message({"EOF": True}))
+            messaging.send_to_queue("decade_counter_queue", Message({"EOF": True}))
 
 
 """
