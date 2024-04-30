@@ -25,7 +25,7 @@ def sigterm_handler(messaging: Goutong, shutting_down):
     logging.info("Main process received SIGTERM. Initiating craceful shutdown.")
     shutting_down.value = 1
     msg = Message({"ShutDown": True})
-    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    messaging.broadcast_to_group(CONTROL_GROUP, msg)
     raise ShuttingDown
 
 
