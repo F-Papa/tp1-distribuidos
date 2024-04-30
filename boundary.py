@@ -25,7 +25,7 @@ def sigterm_handler(messaging: Goutong, shutting_down):
     logging.info("Main process received SIGTERM. Initiating craceful shutdown.")
     shutting_down.value = 1
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
     raise ShuttingDown
 
 
@@ -72,8 +72,7 @@ def main(book_path: str, reviews_path: str):
     )
 
     child_process = multiprocessing.Process(
-        target=input_controller.feed_data, 
-        args=(book_path, reviews_path, shutting_down)
+        target=input_controller.feed_data, args=(book_path, reviews_path, shutting_down)
     )
 
     # Send data to system

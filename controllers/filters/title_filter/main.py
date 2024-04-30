@@ -23,7 +23,7 @@ def sigterm_handler(messaging: Goutong):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
 
 def config_logging(level: str):
@@ -95,6 +95,8 @@ def callback_control(messaging: Goutong, msg: Message):
 def _columns_for_query1(book: dict) -> dict:
     return {
         "title": book["title"],
+        "authors": book["authors"],
+        "publisher": book["publisher"],
         "categories": book["categories"],
     }
 
@@ -133,7 +135,7 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
             if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
                 _send_batch_q1(messaging, batch_q1)
                 batch_q1.clear()
-    
+
     # Send remaining items
     if batch_q1:
         _send_batch_q1(messaging, batch_q1)

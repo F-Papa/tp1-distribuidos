@@ -13,6 +13,7 @@ from exceptions.shutting_down import ShuttingDown
 
 CONTROL_GROUP = "CONTROL"
 
+
 class Barrier:
     def __init__(self, barrier_config: Configuration, messaging: Goutong):
         self.barrier_config = barrier_config
@@ -26,7 +27,9 @@ class Barrier:
         messaging.add_queues(control_queue_name)
         messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
         messaging.set_callback(control_queue_name, self.callback_control, ())
-        signal.signal(signal.SIGTERM, lambda sig, frame: self.sigterm_handler(messaging))
+        signal.signal(
+            signal.SIGTERM, lambda sig, frame: self.sigterm_handler(messaging)
+        )
 
         self.eof_queue_name = barrier_config.get("FILTER_TYPE") + "_eof"
         self.input_queue_name = barrier_config.get("FILTER_TYPE") + "_queue"
@@ -57,7 +60,7 @@ class Barrier:
                 self.messaging.listen()
             except ShuttingDown:
                 logging.debug("Shutting Down Message Received Via Broadcast")
-        self.messaging.close()                
+        self.messaging.close()
         logging.info("Shutting Down.")
 
     def eof_received(self, _messaging: Goutong, msg: Message):
@@ -87,17 +90,18 @@ class Barrier:
         self.messaging.send_to_queue(self.filter_queues[self.current_queue], msg)
         # logging.debug(f"Passed to: {self.filter_queues[self.current_queue]}")
         self.increase_current_queue_index()
-    
+
     def sigterm_handler(self, messaging: Goutong):
-        logging.info('SIGTERM received. Initiating Graceful Shutdown.')
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self.shutting_down = True
         msg = Message({"ShutDown": True})
-        messaging.broadcast_to_group(CONTROL_GROUP, msg)
+        # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
     def callback_control(self, messaging: Goutong, msg: Message):
         if msg.has_key("ShutDown"):
             self.shutting_down = True
             raise ShuttingDown
+
 
 def config_logging(level: str):
 

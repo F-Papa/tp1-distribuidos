@@ -207,6 +207,32 @@ services:
       - ./controllers/filters/decade_counter/config.ini:/config.ini
       - ./controllers/filters/decade_counter/main.py:/main.py
 
+  joiner:
+    build:
+      context: ./
+      dockerfile: ./controllers/filters/joiner/Dockerfile
+    container_name: joiner
+    image: joiner:latest
+    entrypoint: python3 main.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/filters/joiner/config.ini:/config.ini
+      - ./controllers/filters/joiner/main.py:/main.py
+
+  review_counter:
+    build:
+      context: ./
+      dockerfile: ./controllers/filters/review_counter/Dockerfile
+    container_name: review_counter
+    image: review_counter:latest
+    entrypoint: python3 main.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/filters/review_counter/config.ini:/config.ini
+      - ./controllers/filters/review_counter/main.py:/main.py
+
 networks:
   tp1_testing_net:
     external: true

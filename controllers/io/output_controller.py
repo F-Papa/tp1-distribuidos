@@ -15,13 +15,25 @@ INPUT_QUEUE = "results_queue"
 NUMBER_OF_QUERIES = 5
 eof_received = 0
 
+
 def _display_results_q1(data: list):
     for book in data:
-        logging.info(f"[Query 1] {book['title']}")
+        logging.info(
+            f"[Query 1] |Título: {book['title']}. |Autores: {book['authors']} |Editorial: {book['publisher']}"
+        )
+
 
 def _display_results_q2(data: list):
     for author in data:
         logging.info(f"[Query 2] {author}")
+
+
+def _display_results_q3(data: list):
+    for review_info in data:
+        logging.info(
+            f"[Query 3] |Título: {review_info['title']} |Autores: {review_info['authors']}"
+        )
+
 
 def callback_display_results(messaging: Goutong, msg: Message):
     global eof_received
@@ -32,15 +44,18 @@ def callback_display_results(messaging: Goutong, msg: Message):
             raise EndOfQuery
         return
 
-    # qué informacion se muestra depende de la query. por ahora solo el título del libro filtrado (query 1)
+    # que informacion se muestra depende de la query.
     query_number = msg.get("query")
     data = msg.get("data")
     if query_number == 1:
         _display_results_q1(data)
     elif query_number == 2:
         _display_results_q2(data)
+    elif query_number == 3:
+        _display_results_q3(data)
     else:
         logging.info(f"Query {query_number} not supported")
+
 
 def display_results(messaging: Goutong):
     logging.basicConfig(

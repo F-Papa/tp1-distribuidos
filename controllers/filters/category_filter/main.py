@@ -14,7 +14,7 @@ CATEGORY_Q1 = "Computers"
 CATEGORY_Q5 = "Fiction"
 
 OUTPUT_Q1 = "results_queue"
-OUTPUT_Q5 = "joiner_queue"
+OUTPUT_Q5 = "joiner_books_queue"
 
 shutting_down = False
 
@@ -25,7 +25,7 @@ def sigterm_handler(messaging: Goutong):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
 
 def config_logging(level: str):
@@ -98,6 +98,8 @@ def callback_control(messaging: Goutong, msg: Message):
 def _columns_for_query1(book: dict) -> dict:
     return {
         "title": book.get("title"),
+        "authors": book["authors"],
+        "publisher": book["publisher"],
     }
 
 
@@ -116,7 +118,7 @@ def _send_batch_q1(messaging: Goutong, batch: list):
 
 def _send_batch_q5(messaging: Goutong, batch: list):
     data = list(map(_columns_for_query5, batch))
-    msg = Message({"query": 5, "data": data})
+    msg = Message({"query": [5], "data": data})
     # messaging.send_to_queue(OUTPUT_Q5, msg)
     logging.debug(f"Sent Data to: {OUTPUT_Q5}")
 
@@ -135,6 +137,7 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
         _send_EOF(messaging)
         return
 
+    query_id = msg.get("query")
     books = msg.get("data")
     batch_q1 = []
     batch_q5 = []
@@ -143,14 +146,14 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
         categories = book.get("categories")
 
         # Query 1 Flow
-        if CATEGORY_Q1 in categories:
+        if CATEGORY_Q1 in categories and query_id == 1:
             batch_q1.append(book)
             if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
                 _send_batch_q1(messaging, batch_q1)
                 batch_q1.clear()
 
         # Query 5 Flow
-        if CATEGORY_Q5 in categories:
+        if CATEGORY_Q5 in categories and query_id == 5:
             batch_q5.append(book)
             if len(batch_q5) >= config.get("ITEMS_PER_BATCH"):
                 _send_batch_q5(messaging, batch_q5)

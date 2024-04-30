@@ -10,7 +10,9 @@ from messaging.message import Message
 
 class Goutong:
     def __init__(self):
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbit"))
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host="rabbit")
+        )
         self.channel = self.connection.channel()
 
     def add_queues(self, *args):
@@ -44,11 +46,10 @@ class Goutong:
             self.channel.queue_bind(exchange=group_name, queue=queue_name)
 
     def close(self):
-        self.channel.stop_consuming()
+        self.channel.close()
         if self.connection.is_open:
             try:
                 self.connection.close()
             except Exception as e:
                 # Already closed by another Node
                 pass
-        

@@ -1,3 +1,4 @@
+from typing import Any
 from messaging.goutong import Goutong
 from messaging.message import Message
 import logging
@@ -6,11 +7,13 @@ import signal
 from utils.config_loader import Configuration
 from exceptions.shutting_down import ShuttingDown
 
-INPUT_QUEUE = "decade_counter_queue"
-FILTER_TYPE = "decade_counter"
+INPUT_QUEUE = "review_counter_queue"
+FILTER_TYPE = "review_counter"
+EOF_QUEUE = "results_queue"  # ?
 CONTROL_GROUP = "CONTROL"
 
-OUTPUT_Q2 = "results_queue"
+OUTPUT_Q3 = "results_queue"
+OUTPUT_Q4 = "rating_average_queue"
 
 shutting_down = False
 
@@ -55,15 +58,19 @@ def main():
 
     # Set up the queues
     control_queue_name = FILTER_TYPE + "_control"
-    own_queues = [INPUT_QUEUE, control_queue_name, OUTPUT_Q2]
+    own_queues = [INPUT_QUEUE, control_queue_name]
     messaging.add_queues(*own_queues)
+    messaging.add_queues(OUTPUT_Q3, OUTPUT_Q4)
 
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
 
-    decades_per_author = {}
+    reviews_per_title = {}
+    titles_already_sent_to_q3_output = set()
     messaging.set_callback(
-        INPUT_QUEUE, callback_filter, (filter_config, decades_per_author)
+        INPUT_QUEUE,
+        callback_filter,
+        (filter_config, reviews_per_title, titles_already_sent_to_q3_output),
     )
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
@@ -71,6 +78,7 @@ def main():
     # Start listening
     if not shutting_down:
         try:
+            logging.info("Listening for Messages")
             messaging.listen()
         except ShuttingDown:
             logging.debug("Shutdown Message Received via Control Broadcast")
@@ -88,48 +96,56 @@ def callback_control(messaging: Goutong, msg: Message):
 
 def _send_EOF(messaging: Goutong):
     msg = Message({"EOF": True})
-    messaging.send_to_queue(OUTPUT_Q2, msg)
-    logging.debug(f"Sent EOF to: {OUTPUT_Q2}")
+    messaging.send_to_queue(EOF_QUEUE, msg)
+    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
 def callback_filter(
-    messaging: Goutong, msg: Message, config: Configuration, decades_per_author: dict
+    messaging: Goutong,
+    msg: Message,
+    config: Configuration,
+    reviews_per_title: dict,
+    titles_already_sent_to_q3_output: set,
 ):
-    # logging.debug(f"Received: {msg.marshal()}")
 
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_results_q2(messaging, decades_per_author)
+        _send_reviews_over_500(
+            messaging, reviews_per_title, titles_already_sent_to_q3_output
+        )
+        reviews_per_title = {}
+        titles_already_sent_to_q3_output = set()
         _send_EOF(messaging)
         return
 
-    books = msg.get("data")
-    logging.debug(f"Received {len(books)} books")
-    for book in books:
-        decade = book.get("decade")
+    msg_reviews = msg.get("data")
+    for review in msg_reviews:
+        title = review.get("title")
+        if title not in reviews_per_title.keys():
+            reviews_per_title[title] = []
+        reviews_per_title[title].append(review)
 
-        # Query 2 flow
-        for author in book.get("authors"):
-            if author not in decades_per_author.keys():
-                decades_per_author[author] = set()
-            decades_per_author[author].add(decade)
-
-    logging.debug(f"Authors: {len(decades_per_author.keys())}")
-
-
-def _send_results_q2(messaging: Goutong, batch: dict):
-    valid_author = lambda author: repr(author) != "''" and not author.isspace()
-
-    ten_decade_authors = list(
-        filter(
-            lambda author: (len(batch[author]) >= 10) and valid_author(author),
-            batch.keys(),
-        )
+    _send_reviews_over_500(
+        messaging, reviews_per_title, titles_already_sent_to_q3_output
     )
 
-    msg = Message({"query": 2, "data": ten_decade_authors})
-    messaging.send_to_queue(OUTPUT_Q2, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q2}")
+
+def _send_reviews_over_500(
+    messaging: Goutong, reviews_per_title: dict, titles_already_sent_to_q3_output: set
+):
+    for title, reviews in reviews_per_title.items():
+        if len(reviews) >= 500 and title not in titles_already_sent_to_q3_output:
+            authors = reviews[0].get("authors")
+            _send_results_q3(messaging, title, authors)
+            reviews_per_title[title] = []
+            titles_already_sent_to_q3_output.add(title)
+
+
+def _send_results_q3(messaging: Goutong, title: str, authors: Any):
+    data = [{"title": title, "authors": authors}]
+    msg = Message({"query": 3, "data": data})
+    messaging.send_to_queue(OUTPUT_Q3, msg)
+    logging.debug(f"Sent Data to: {OUTPUT_Q3}")
 
 
 if __name__ == "__main__":
