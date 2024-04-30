@@ -8,8 +8,13 @@ from exceptions.shutting_down import ShuttingDown
 
 FILTER_TYPE = "category_filter"
 EOF_QUEUE = "category_filter_eof"
-
 CONTROL_GROUP = "CONTROL"
+
+CATEGORY_Q1 = "Computers"
+CATEGORY_Q5 = "Fiction"
+
+OUTPUT_Q1 = "results_queue"
+OUTPUT_Q5 = "joiner_queue"
 
 shutting_down = False
 
@@ -20,7 +25,7 @@ def sigterm_handler(messaging: Goutong):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
 
 def config_logging(level: str):
@@ -41,11 +46,11 @@ def config_logging(level: str):
 
 def main():
     required = {
-        "FILTER_NUMBER": int,
-        "CATEGORY": str,
         "LOGGING_LEVEL": str,
         "ITEMS_PER_BATCH": int,
+        "FILTER_NUMBER": int,
     }
+
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
@@ -55,20 +60,24 @@ def main():
 
     messaging = Goutong()
 
+    # Set up queues
     control_queue_name = (
         FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
     )
-    messaging.add_queues(control_queue_name)
+    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+
+    own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
+    messaging.add_queues(*own_queues)
+    output_queues = [OUTPUT_Q1, OUTPUT_Q5]
+    messaging.add_queues(*output_queues)
+
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
+    messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
-    if not shutting_down:
-        input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
-        messaging.add_queues(input_queue_name)
-        messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
-
+    # Start Listening
     if not shutting_down:
         try:
             messaging.listen()
@@ -86,15 +95,34 @@ def callback_control(messaging: Goutong, msg: Message):
         raise ShuttingDown
 
 
-def _send_batch(messaging: Goutong, batch: list, route: list):
-    msg_content = {"data": batch, "route": route}
-    msg = Message(msg_content)
-    messaging.send_to_queue(route[0][0], msg)
-    logging.debug(f"Sent Data to: {route[0][0]}")
+def _columns_for_query1(book: dict) -> dict:
+    return {
+        "title": book.get("title"),
+    }
 
 
-def _send_EOF(messaging: Goutong, route: list):
-    msg = Message({"EOF": True, "route": route})
+def _columns_for_query5(book: dict) -> dict:
+    return {
+        "title": book.get("title"),
+    }
+
+
+def _send_batch_q1(messaging: Goutong, batch: list):
+    data = list(map(_columns_for_query1, batch))
+    msg = Message({"query": 1, "data": data})
+    messaging.send_to_queue(OUTPUT_Q1, msg)
+    logging.debug(f"Sent Data to: {OUTPUT_Q1}")
+
+
+def _send_batch_q5(messaging: Goutong, batch: list):
+    data = list(map(_columns_for_query5, batch))
+    msg = Message({"query": 5, "data": data})
+    # messaging.send_to_queue(OUTPUT_Q5, msg)
+    logging.debug(f"Sent Data to: {OUTPUT_Q5}")
+
+
+def _send_EOF(messaging: Goutong):
+    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1, OUTPUT_Q5]})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
@@ -102,29 +130,38 @@ def _send_EOF(messaging: Goutong, route: list):
 def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
-    route = msg.get("route")
-    _, params = route.pop(0)
-
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_EOF(messaging, route)
+        _send_EOF(messaging)
         return
 
-    config.update("CATEGORY", params)
-
     books = msg.get("data")
-    batch = []
+    batch_q1 = []
+    batch_q5 = []
 
     for book in books:
         categories = book.get("categories")
-        if config.get("CATEGORY") in categories:
-            if len(batch) < config.get("ITEMS_PER_BATCH"):
-                batch.append(book)
-            else:
-                _send_batch(messaging, batch, route)
-                batch = []
-    if len(batch) > 0:
-        _send_batch(messaging, batch, route)
+
+        # Query 1 Flow
+        if CATEGORY_Q1 in categories:
+            batch_q1.append(book)
+            if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
+                _send_batch_q1(messaging, batch_q1)
+                batch_q1.clear()
+
+        # Query 5 Flow
+        if CATEGORY_Q5 in categories:
+            batch_q5.append(book)
+            if len(batch_q5) >= config.get("ITEMS_PER_BATCH"):
+                _send_batch_q5(messaging, batch_q5)
+                batch_q5.clear()
+
+    # Send Remaining
+    if batch_q1:
+        _send_batch_q1(messaging, batch_q1)
+
+    if batch_q5:
+        _send_batch_q5(messaging, batch_q5)
 
 
 if __name__ == "__main__":

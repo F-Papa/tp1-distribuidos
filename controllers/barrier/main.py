@@ -66,8 +66,9 @@ class Barrier:
         if self.eof_count == self.barrier_config.get("FILTER_COUNT"):
             # Forward EOF
             logging.debug("Forwarding EOF")
-            route = msg.get("route")
-            self.messaging.send_to_queue(route[0][0], msg)
+            forward_to = msg.get("forward_to")
+            for queue in forward_to:
+                self.messaging.send_to_queue(queue, msg)
             self.eof_count = 0
 
     def increase_current_queue_index(self):
@@ -91,7 +92,7 @@ class Barrier:
         logging.info('SIGTERM received. Initiating Graceful Shutdown.')
         self.shutting_down = True
         msg = Message({"ShutDown": True})
-        messaging.broadcast_to_group(CONTROL_GROUP, msg)
+        # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
     def callback_control(self, messaging: Goutong, msg: Message):
         if msg.has_key("ShutDown"):

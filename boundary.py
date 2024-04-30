@@ -25,7 +25,7 @@ def sigterm_handler(messaging: Goutong, shutting_down):
     logging.info("Main process received SIGTERM. Initiating craceful shutdown.")
     shutting_down.value = 1
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
     raise ShuttingDown
 
 
@@ -71,32 +71,11 @@ def main(book_path: str, reviews_path: str):
         lambda sig, frame: sigterm_handler(messaging, shutting_down),
     )
 
-    try:
-        query_id = request_query_number()
-    except ShuttingDown:
-        return
+    child_process = multiprocessing.Process(
+        target=input_controller.feed_data, 
+        args=(book_path, reviews_path, shutting_down)
+    )
 
-    # segun la query determinar qué funcion y argumentos corresponden a su controller
-    if query_id == "1":
-        target = input_controller.distributed_computer_books
-        args = (
-            book_path,
-            shutting_down,
-        )
-    elif query_id == "2":
-        target = input_controller.query2
-        args = ()
-    elif query_id == "3":
-        target = input_controller.query3
-        args = ()
-    elif query_id == "4":
-        target = input_controller.query4
-        args = ()
-    else:
-        target = input_controller.query5
-        args = ()
-
-    child_process = multiprocessing.Process(target=target, args=args)
     # Send data to system
     child_process.start()
     try:

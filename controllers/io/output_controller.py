@@ -12,6 +12,9 @@ class EndOfQuery(Exception):
 
 INPUT_QUEUE = "results_queue"
 
+def _display_results_q1(data: list):
+    for book in data:
+        logging.info(f"[Query 1] {book['title']}")
 
 def callback_display_results(messaging: Goutong, msg: Message):
     if msg.has_key("EOF"):
@@ -19,10 +22,12 @@ def callback_display_results(messaging: Goutong, msg: Message):
         raise EndOfQuery
 
     # qué informacion se muestra depende de la query. por ahora solo el título del libro filtrado (query 1)
-    titles = map(lambda book: book.get("title"), msg.get("data"))
-    for title in titles:
-        logging.info(title)
-
+    query_number = msg.get("query")
+    data = msg.get("data")
+    if query_number == 1:
+        _display_results_q1(data)
+    else:
+        logging.info("Query not supported")
 
 def display_results(messaging: Goutong):
     logging.basicConfig(

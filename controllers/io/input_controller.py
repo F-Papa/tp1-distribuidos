@@ -5,15 +5,15 @@ from messaging.message import Message
 import csv, os
 import logging
 
-OUTPUT_QUEUE = "title_filter_queue"
 DEFAULT_ITEMS_PER_BATCH = 50
 CONTROL_GROUP = "CONTROL"
+CATEGORY_FILTER = "category_filter_queue"
 
 
 def sigterm_handler(messaging: Goutong):
     logging.info("Child process received SIGTERM. Initiating Graceful Shutdown.")
     msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
     raise ShuttingDown
 
 
@@ -28,106 +28,159 @@ def _parse_year(year_str: str) -> int:
         return int(year_str)
 
 
-def _parse_categories(categories_str: str) -> list:
+def _parse_array(categories_str: str) -> list:
     categories_str = categories_str.replace("['", "")
     categories_str = categories_str.replace("']", "")
     return categories_str.split(" & ")
 
 
-def _send_batch(messaging: Goutong, batch: list, route: list):
-    msg_content = {"data": batch, "route": route}
-    msg = Message(msg_content)
-    messaging.send_to_queue(OUTPUT_QUEUE, msg)
-    logging.debug(f"Passed: {msg.marshal()}")
+def _parse_decade(year: int) -> int:
+    return year - (year % 10)
+
+
+def _send_batch(messaging: Goutong, batch: list):
+    # Queries 1, 3, 4
+    queue = "date_filter_queue"
+    data = list(map(_columns_for_queries1_3_4, batch))
+    msg = Message({"data": data})
+    messaging.send_to_queue(queue, msg)
+
+    # Query 2
+    # queue = "authors_decades_queue"
+    # data = list(map(_columns_for_query2, batch))
+    # msg = Message({"data": data})
+    # messaging.send_to_queue(queue, msg)
+
+    # Query 5
+    # queue = "category_filter_queue"
+    # data = list(map(_columns_for_query5, batch))
+    # msg = Message({"data": data})
+    # messaging.send_to_queue(queue, msg)
+
+    logging.debug(f"Fed batch of {len(batch)} items.")
 
 
 def _declare_queues(messaging: Goutong):
     messaging.add_queues("title_filter_queue")
-    messaging.add_queues("title_filter1")
-    messaging.add_queues("title_filter2")
-    messaging.add_queues("title_filter3")
     messaging.add_queues("title_filter_eof")
 
     messaging.add_queues("date_filter_queue")
-    messaging.add_queues("date_filter1")
-    messaging.add_queues("date_filter2")
-    messaging.add_queues("date_filter3")
     messaging.add_queues("date_filter_eof")
 
     messaging.add_queues("category_filter_queue")
-    messaging.add_queues("category_filter1")
-    messaging.add_queues("category_filter2")
-    messaging.add_queues("category_filter3")
     messaging.add_queues("category_filter_eof")
 
 
-# Query1
-def distributed_computer_books(books_path: str, shutting_down):
+def feed_data(books_path: str, reviews_path: str, shutting_down):
     messaging = Goutong()
-    signal.signal(signal.SIGTERM,lambda sig, frame: sigterm_handler(messaging,))
-    logging.info("Executing query: Distributed Computer Books Between Years 2000 and 2023")
+    items_per_batch = int(os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH))
+    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
     try:
-        distributed_computer_books_aux(books_path, messaging, shutting_down)
+        _feed_data_aux(books_path, messaging, items_per_batch, shutting_down)
     except ShuttingDown:
         pass
-    finally:
-        messaging.close()
-        logging.info("Child process terminated successfully")
+    messaging.close()
 
 
-def distributed_computer_books_aux(books_path: str, messaging: Goutong, shutting_down):
-    if shutting_down.value == 0:
-        # Messaging Middleware
-        items_per_batch = int(os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH))
-
-        messaging.add_queues(OUTPUT_QUEUE)
-        _declare_queues(messaging)
-        route = [
-            ("title_filter_queue", "distributed"),
-            ("date_filter_queue", [2000, 2023]),
-            ("category_filter_queue", "Computers"),
-            ("results_queue", ""),
-        ]
-        
-    if shutting_down.value == 0:
-        with open(books_path, newline="") as csvfile:
-            batch = []
-            reader = csv.DictReader(csvfile)
-
-            for row in reader:
-                if len(batch) < items_per_batch:
-                    title = row["Title"]
-                    year = _parse_year(row["publishedDate"])
-                    categories = _parse_categories(row["categories"])
-
-                    batch.append({"title": title, "year": year, "categories": categories})
-                else:
-                    if shutting_down.value == 1:
-                        break
-                    _send_batch(messaging, batch, route)
-                    batch = []
-            if not shutting_down.value:
-                if len(batch) > 0:
-                    _send_batch(messaging, batch, route)
-            if not shutting_down.value:
-                messaging.send_to_queue(OUTPUT_QUEUE, Message({"EOF": True, "route": route}))
+def _columns_for_queries1_3_4(book_data: dict) -> dict:
+    return {
+        "title": book_data["Title"],
+        "year": _parse_year(book_data["publishedDate"]),
+        "categories": _parse_array(book_data["categories"]),
+        "authors": _parse_array(book_data["authors"]),
+    }
 
 
-# Query2
-def query2():
-    pass
+def _columns_for_query2(book_data: dict) -> dict:
+    return {
+        "decade": _parse_decade(_parse_year(book_data["publishedDate"])),
+        "authors": _parse_array(book_data["authors"]),
+    }
 
 
-# Query3
-def query3():
-    pass
+def _columns_for_query5(book_data: dict) -> dict:
+    return {
+        "title": book_data["Title"],
+        "categories": _parse_array(book_data["categories"]),
+    }
 
 
-# Query4
-def query4():
-    pass
+def _feed_data_aux(
+    books_path: str, messaging: Goutong, items_per_batch: int, shutting_down
+):
+    with open(books_path, newline="") as csvfile:
+        batch = []
+        reader = csv.DictReader(csvfile)
+
+        for row in reader:
+            if len(batch) < items_per_batch:
+                batch.append(row)
+            else:
+                if shutting_down.value == 1:
+                    break
+                _send_batch(messaging, batch)
+                batch = []
+        if not shutting_down.value:
+            if len(batch) > 0:
+                _send_batch(messaging, batch)
+        if not shutting_down.value:
+            messaging.send_to_queue(CATEGORY_FILTER, Message({"EOF": True}))
 
 
-# Query5
-def query5():
-    pass
+"""
+# # Query1
+# def distributed_computer_books(books_path: str, shutting_down):
+#     messaging = Goutong()
+#     signal.signal(
+#         signal.SIGTERM,
+#         lambda sig, frame: sigterm_handler(
+#             messaging,
+#         ),
+#     )
+#     logging.info(
+#         "Executing query: Distributed Computer Books Between Years 2000 and 2023"
+#     )
+#     try:
+#         distributed_computer_books_aux(books_path, messaging, shutting_down)
+#     except ShuttingDown:
+#         pass
+#     finally:
+#         messaging.close()
+#         logging.info("Child process terminated successfully")
+
+
+# def distributed_computer_books_aux(books_path: str, messaging: Goutong, shutting_down):
+#     if shutting_down.value == 0:
+#         # Messaging Middleware
+#         items_per_batch = int(
+#             os.environ.get("ITEMS_PER_BATCH", DEFAULT_ITEMS_PER_BATCH)
+#         )
+
+#         messaging.add_queues(CATEGORY_FILTER)
+#         _declare_queues(messaging)
+
+#     if shutting_down.value == 0:
+#         with open(books_path, newline="") as csvfile:
+#             batch = []
+#             reader = csv.DictReader(csvfile)
+
+#             for row in reader:
+#                 if len(batch) < items_per_batch:
+#                     title = row["Title"]
+#                     year = _parse_year(row["publishedDate"])
+#                     categories = _parse_array(row["categories"])
+
+#                     batch.append(
+#                         {"title": title, "year": year, "categories": categories}
+#                     )
+#                 else:
+#                     if shutting_down.value == 1:
+#                         break
+#                     _send_batch(messaging, batch, CATEGORY_FILTER)
+#                     batch = []
+#             if not shutting_down.value:
+#                 if len(batch) > 0:
+#                     _send_batch(messaging, batch, CATEGORY_FILTER)
+#             if not shutting_down.value:
+#                 messaging.send_to_queue(CATEGORY_FILTER, Message({"EOF": True}))
+"""
