@@ -47,7 +47,7 @@ class BookCache:
         with open(file, "a") as f:
             f.write(entry)
 
-        self.entries_in_files += 1 
+        self.entries_in_files += 1
         self.cached_entries -= 1
 
     def _pop_from_disk(self, query: int, title: str) -> tuple[str, Any]:
@@ -63,29 +63,28 @@ class BookCache:
                 if title_in_file != title:
                     temp_file.write(line)
                 else:
-                    value_from_disk = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+                    value_from_disk = json.loads(
+                        line.split(self.KEY_VALUE_SEPARATOR)[1]
+                    )
+                    self.entries_in_files -= 1
 
         os.replace(temp_file_name, file_name)
-        self.entries_in_files -= 1
 
         return (title, value_from_disk)
 
     def append(self, query: int, book: dict):
         key = (book["title"], query)
         value = book["authors"] if query in [3, 4] else True
-        dbg_string = (
-            "Adding (%s) | Cache Avl.: %d" % (
-                book["title"][0:10] + f"...(Q:{query})",
-                self.cache_vacants - self.n_elements_in_cache(),
-            )
+        dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+            book["title"][0:10] + f"...(Q:{query})",
+            self.cache_vacants - self.n_elements_in_cache(),
         )
         logging.debug(dbg_string)
-        
-        
+
         if self.n_elements_in_cache() >= self.cache_vacants:
             logging.debug(f"Committing 1 entry to disk")
             self._write_oldest_to_disk()
-        
+
         self.cached_entries += 1
         self.cache.update({key: value})
 
@@ -309,6 +308,7 @@ def main():
     )
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(joiner))
     joiner.listen()
+
 
 if __name__ == "__main__":
     main()

@@ -107,15 +107,13 @@ class AuthorCache:
                 if author_in_file != author:
                     temp_file.write(line)
                 else:
-                    aux = json.loads(
-                        line.split(self.KEY_VALUE_SEPARATOR)[1]
-                    )
+                    aux = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
                     value_from_disk = set()
                     value_from_disk.update(aux)
+                    self.entries_in_files -= 1
 
         os.replace(temp_file_name, file_name)
-        self.entries_in_files -= 1
-    
+
         return (author, value_from_disk)
 
     def add(self, author: str, decade: int):
@@ -130,7 +128,6 @@ class AuthorCache:
         if author in self.cache.keys():
             self.cache[author].add(decade)
             return
-
 
         decades_in_disk = None
         # Could be in file
