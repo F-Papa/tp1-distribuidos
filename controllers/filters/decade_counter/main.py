@@ -44,8 +44,11 @@ def config_logging(level: str):
 
 
 class AuthorCache:
-    Q2_FILE = "q2_authors.json"
+    # Q2_FILE = "q2_authors.json"
+    FILE_PREFIX = "authors"
+    FILE_SUFFIX = ".json"
     KEY_VALUE_SEPARATOR = "%%%"
+    N_PARTITIONS = 500
 
     def __init__(self, cache_vacants: int) -> None:
         self.cache: dict[str, set[int]] = {}
@@ -53,8 +56,10 @@ class AuthorCache:
         self.cached_entries = 0
         self.entries_in_files = 0
         # create files from scratch
-        with open(self.Q2_FILE, "w") as f:
-            pass
+        for i in range(self.N_PARTITIONS):
+            file_name = f"{self.FILE_PREFIX}_{i}{self.FILE_SUFFIX}"
+            with open(file_name, "w") as f:
+                pass
 
     def get_10_decade_authors(self) -> list[str]:
         valid_author = lambda author: repr(author) != "''" and not author.isspace()
@@ -67,12 +72,15 @@ class AuthorCache:
         )
 
         if self.entries_in_files > 0:
-            with open(self.Q2_FILE, "r") as f:
-                for line in f:
-                    author = line.split(self.KEY_VALUE_SEPARATOR)[0]
-                    decades = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
-                    if len(decades) >= 10 and valid_author(author):
-                        ten_decade_authors.append(author)
+            for i in range(self.N_PARTITIONS):
+                file_name = f"{self.FILE_PREFIX}_{i}{self.FILE_SUFFIX}"
+                with open(file_name, "r") as f:
+                    for line in f:
+
+                        author = line.split(self.KEY_VALUE_SEPARATOR)[0]
+                        decades = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+                        if len(decades) >= 10 and valid_author(author):
+                            ten_decade_authors.append(author)
 
         return ten_decade_authors
 
@@ -83,12 +91,13 @@ class AuthorCache:
         if len(self.cache) == 0:
             raise ValueError("Cache is empty")
 
-        first_author: str = list(self.cache.keys())[0]
-        first_author_decades = list(self.cache.pop(first_author))
+        first_author_in_cache: str = list(self.cache.keys())[0]
+        author_decades = list(self.cache.pop(first_author_in_cache))
 
-        file = self.Q2_FILE
-        entry = f"{first_author}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_author_decades)}\n"
-        with open(file, "a") as f:
+        partition = hash(first_author_in_cache) % self.N_PARTITIONS
+        file_name = f"{self.FILE_PREFIX}_{partition}{self.FILE_SUFFIX}"
+        entry = f"{first_author_in_cache}{self.KEY_VALUE_SEPARATOR}{json.dumps(author_decades)}\n"
+        with open(file_name, "a") as f:
             f.write(entry)
 
         self.entries_in_files += 1
@@ -97,17 +106,19 @@ class AuthorCache:
     def _pop_from_disk(self, author: str) -> tuple[str, Union[set[int], None]]:
         temp_file_name = "temp.json"
 
-        file_name = self.Q2_FILE
+        partition = hash(author) % self.N_PARTITIONS
+        file_name = f"{self.FILE_PREFIX}_{partition}{self.FILE_SUFFIX}"
         value_from_disk: set[int] | None = None
         with open(file_name, "r") as original_file, open(
             temp_file_name, "w"
         ) as temp_file:
             for line in original_file:
-                author_in_file = line.split(self.KEY_VALUE_SEPARATOR)[0]
-                if author_in_file != author:
+                sep_index = line.find(self.KEY_VALUE_SEPARATOR)
+                line_author = line[:sep_index]
+                if line_author != author:
                     temp_file.write(line)
                 else:
-                    aux = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+                    aux = json.loads(line[sep_index + len(self.KEY_VALUE_SEPARATOR) :])
                     value_from_disk = set()
                     value_from_disk.update(aux)
                     self.entries_in_files -= 1

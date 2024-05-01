@@ -20,18 +20,26 @@ class InvalidCacheState(Exception):
     def __init__(self):
         pass
 
+
 class ReviewCache:
-    Q3_4_FILE = "q3_4_reviews.json"
+    FILE_PREFIX = "reviews"
+    FILE_SUFFIX = ".json"
+    N_PARTITIONS = 1000
+    # Q3_4_FILE = "q3_4_reviews.json"
     KEY_VALUE_SEPARATOR = "%%%"
+    DEBUG_FREQ = 2500
 
     def __init__(self, cache_vacants: int) -> None:
         self.cache = defaultdict(list)
         self.cache_vacants = cache_vacants
         self.cached_entries = 0
         self.entries_in_files = 0
+
         # create files from scratch
-        with open(self.Q3_4_FILE, "w") as f:
-            pass
+        for i in range(self.N_PARTITIONS):
+            file = self.FILE_PREFIX + str(i) + self.FILE_SUFFIX
+            with open(file, "w") as f:
+                pass
 
     def n_elements_in_cache(self) -> int:
         return self.cached_entries
@@ -40,40 +48,41 @@ class ReviewCache:
         if len(self.cache) == 0:
             raise ValueError("Cache is empty")
 
-        first_author: str = list(self.cache.keys())[0]
-        first_author_decades = list(self.cache.pop(first_author))
+        title: str = list(self.cache.keys())[0]
+        first_title_reviews = list(self.cache.pop(title))
 
-        file = self.Q3_4_FILE
-        entry = f"{first_author}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_author_decades)}\n"
-        with open(file, "a") as f:
+        partition = hash(title) % self.N_PARTITIONS
+        file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
+
+        entry = f"{title}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_title_reviews)}\n"
+        with open(file_name, "a") as f:
             f.write(entry)
 
-        logging.info(f"SAVED ENTRU: {entry}")
+        # logging.debug(f"Entry saved in file {file_name}")
         self.entries_in_files += 1
         self.cached_entries -= 1
 
     def _pop_from_disk(self, title: str) -> tuple[str, Union[list, None]]:
         temp_file_name = "temp.json"
 
-        file_name = self.Q3_4_FILE
+        partition = hash(title) % self.N_PARTITIONS
+        file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
         value_from_disk: Union[list, None] = None
         with open(file_name, "r") as original_file, open(
             temp_file_name, "w"
         ) as temp_file:
             for line in original_file:
-                title_in_file = line.split(self.KEY_VALUE_SEPARATOR)[0]
-                if title_in_file != title:
+                sep_index = line.find(self.KEY_VALUE_SEPARATOR)
+                line_title = line[:sep_index]
+                if line_title != title:
                     temp_file.write(line)
                 else:
-                    aux = json.loads(
-                        line.split(self.KEY_VALUE_SEPARATOR)[1]
+                    value_from_disk = json.loads(
+                        line[sep_index + len(self.KEY_VALUE_SEPARATOR) :]
                     )
-                    value_from_disk = aux
+                    self.entries_in_files -= 1
 
         os.replace(temp_file_name, file_name)
-        if value_from_disk is not None:
-            self.entries_in_files -= 1
-            logging.info("NO ES NONE")
         return (title, value_from_disk)
 
     def add(self, title: str, review: dict):
@@ -100,7 +109,10 @@ class ReviewCache:
 
         # If the cache is full, write the oldest entry to disk
         if self.n_elements_in_cache() >= self.cache_vacants:
-            logging.debug(f"Committing 1 entry to disk | CACHE_ENTRIES:{self.cached_entries} | ENTRIES_INF_FILE: {self.entries_in_files}")
+            if self.entries_in_files % self.DEBUG_FREQ == 0:
+                logging.debug(
+                    f"Committing 1 entry to disk | CACHE_ENTRIES:{self.cached_entries} | ENTRIES_INF_FILE: {self.entries_in_files}"
+                )
             self._write_oldest_to_disk()
 
         # Add the author to the cache, whether it was in the disk or a new one
@@ -130,12 +142,14 @@ class ReviewCounter:
     OUTPUT_Q3 = "results_queue"
     OUTPUT_Q4 = "rating_average_queue"
 
+    DEBUG_FREQ = 50000
+
     def __init__(self, items_per_batch: int, cache_vacants: int):
         self.reviews = ReviewCache(cache_vacants)
         self.shutting_down = False
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
-        
+
         self.items_per_batch = items_per_batch
         self.titles_in_last_msg = set()
 
@@ -144,6 +158,9 @@ class ReviewCounter:
 
         self.q4_output_batch = []
         self.q4_output_batch_size = 0
+
+        self.sent_to_q3 = 0
+        self.sent_to_q4 = 0
 
         self._init_messaging()
 
@@ -159,11 +176,8 @@ class ReviewCounter:
         self.messaging.add_broadcast_group(self.CONTROL_GROUP, [control_queue_name])
         self.messaging.set_callback(control_queue_name, self.callback_control, ())
 
-        self.messaging.set_callback(
-            self.INPUT_QUEUE,
-            self.callback_filter
-        )
-    
+        self.messaging.set_callback(self.INPUT_QUEUE, self.callback_filter)
+
     def listen(self):
         try:
             self.messaging.listen()
@@ -175,12 +189,11 @@ class ReviewCounter:
         self.shutting_down = True
         self.messaging.close()
         raise ShuttingDown
-    
+
     def callback_control(self, messaging: Goutong, msg: Message):
         if msg.has_key("ShutDown"):
             self.shutting_down = True
             raise ShuttingDown
-
 
     def _send_EOF(self):
         msg = Message({"EOF": True})
@@ -198,6 +211,9 @@ class ReviewCounter:
         self.q4_output_batch = []
         self.q4_output_batch_size = 0
 
+        self.sent_to_q3 = 0
+        self.sent_to_q4 = 0
+
     def callback_filter(
         self,
         messaging: Goutong,
@@ -208,10 +224,12 @@ class ReviewCounter:
             if self.q3_output_batch_size > 0:
                 msg = Message({"query": 3, "data": self.q3_output_batch})
                 self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+                logging.debug(f"{self.sent_to_q3} more titles sent to Q3")
 
             if self.q4_output_batch_size > 0:
                 msg = Message({"query": 4, "data": self.q4_output_batch})
                 self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
+                logging.debug(f"{self.sent_to_q4} more titles sent to Q4")
 
             logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
             self._reset_state()
@@ -224,38 +242,44 @@ class ReviewCounter:
             # Ya llego a 500 revs
             if title in self.titles_over_thresh:
                 # Solo Query 4
-                self.q4_output_batch.append({"title": title, "review/score": review["review/score"]})
+                self.q4_output_batch.append(
+                    {"title": title, "review/score": review["review/score"]}
+                )
                 self.q4_output_batch_size += 1
-            
+
             # No llego a 500 revs
             else:
                 self.reviews.add(title, review)
                 self.review_counts[title] += 1
                 self.titles_in_last_msg.add(title)
-        
+
         self._load_data_if_thresh_met()
         self._send_batches_if_full()
 
     def _send_batches_if_full(self):
         while self.q3_output_batch_size >= self.items_per_batch:
-            data = self.q3_output_batch[:self.items_per_batch]
-            self.q3_output_batch = self.q3_output_batch[self.items_per_batch:]
+            data = self.q3_output_batch[: self.items_per_batch]
+            self.q3_output_batch = self.q3_output_batch[self.items_per_batch :]
             self.q3_output_batch_size -= self.items_per_batch
             msg = Message({"query": 3, "data": data})
             self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
-            logging.debug(f"MANDE A Q3: {data}")
+            self.sent_to_q3 += len(data)
+            if self.sent_to_q3 >= self.DEBUG_FREQ:
+                logging.debug(f"{self.sent_to_q3} more titles sent to Q3")
+                self.sent_to_q3 = 0
 
         while self.q4_output_batch_size >= self.items_per_batch:
-            data = self.q4_output_batch[:self.items_per_batch]
-            self.q4_output_batch = self.q4_output_batch[self.items_per_batch:]
+            data = self.q4_output_batch[: self.items_per_batch]
+            self.q4_output_batch = self.q4_output_batch[self.items_per_batch :]
             self.q4_output_batch_size -= self.items_per_batch
             msg = Message({"query": 4, "data": data})
             self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
-            logging.debug(f"MANDE A Q4: {data}")
+            self.sent_to_q4 += len(data)
+            if self.sent_to_q4 >= self.DEBUG_FREQ:
+                logging.debug(f"{self.sent_to_q4} more reviews sent to Q4")
+                self.sent_to_q4 = 0
 
-    def _load_data_if_thresh_met(
-            self
-    ):  
+    def _load_data_if_thresh_met(self):
         for title in self.titles_in_last_msg:
             reviews = self.reviews.get(title)
             if reviews is None:
@@ -264,24 +288,28 @@ class ReviewCounter:
                 pass
 
             if self.review_counts[title] >= self.THRESHOLD:
-                #Query 3
+                # Query 3
                 if title not in self.titles_over_thresh:
                     self.titles_over_thresh.add(title)
                     authors = reviews[0].get("authors")
                     self.q3_output_batch.append({"title": title, "authors": authors})
                     self.q3_output_batch_size += 1
-            
-                #Query 4
+
+                # Query 4
                 for r in reviews:
-                    self.q4_output_batch.append({"title": title, "review/score": r["review/score"]})
-                    self.q4_output_batch_size += 1          
+                    self.q4_output_batch.append(
+                        {"title": title, "review/score": r["review/score"]}
+                    )
+                    self.q4_output_batch_size += 1
 
         self.titles_in_last_msg.clear()
+
 
 # Graceful Shutdown
 def sigterm_handler(counter: ReviewCounter):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     counter.shutdown()
+
 
 def config_logging(level: str):
 
@@ -300,11 +328,7 @@ def config_logging(level: str):
 
 
 def main():
-    required = {
-        "LOGGING_LEVEL": str,
-        "CACHE_VACANTS": int,
-        "ITEMS_PER_BATCH": int
-    }
+    required = {"LOGGING_LEVEL": str, "CACHE_VACANTS": int, "ITEMS_PER_BATCH": int}
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
@@ -312,13 +336,14 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    counter = ReviewCounter(items_per_batch=filter_config.get("ITEMS_PER_BATCH"), cache_vacants=filter_config.get("CACHE_VACANTS"))
+    counter = ReviewCounter(
+        items_per_batch=filter_config.get("ITEMS_PER_BATCH"),
+        cache_vacants=filter_config.get("CACHE_VACANTS"),
+    )
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(counter))
     counter.listen()
 
     logging.info("Shutting Down.")
-
-
 
 
 if __name__ == "__main__":
