@@ -1,3 +1,6 @@
+import json
+import os
+from typing import Union
 from messaging.goutong import Goutong
 from messaging.message import Message
 import logging
@@ -40,10 +43,132 @@ def config_logging(level: str):
     pika_logger.setLevel(logging.ERROR)
 
 
+class AuthorCache:
+    Q2_FILE = "q2_authors.json"
+    KEY_VALUE_SEPARATOR = "%%%"
+
+    def __init__(self, cache_vacants: int) -> None:
+        self.cache: dict[str, set[int]] = {}
+        self.cache_vacants = cache_vacants
+        self.cached_entries = 0
+        self.entries_in_files = 0
+        # create files from scratch
+        with open(self.Q2_FILE, "w") as f:
+            pass
+
+    def get_10_decade_authors(self) -> list[str]:
+        valid_author = lambda author: repr(author) != "''" and not author.isspace()
+
+        ten_decade_authors = list(
+            filter(
+                lambda author: (len(self.cache[author]) >= 10) and valid_author(author),
+                self.cache.keys(),
+            )
+        )
+
+        if self.entries_in_files > 0:
+            with open(self.Q2_FILE, "r") as f:
+                for line in f:
+                    author = line.split(self.KEY_VALUE_SEPARATOR)[0]
+                    decades = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+                    if len(decades) >= 10 and valid_author(author):
+                        ten_decade_authors.append(author)
+
+        return ten_decade_authors
+
+    def n_elements_in_cache(self) -> int:
+        return self.cached_entries
+
+    def _write_oldest_to_disk(self):
+        if len(self.cache) == 0:
+            raise ValueError("Cache is empty")
+
+        first_author: str = list(self.cache.keys())[0]
+        first_author_decades = list(self.cache.pop(first_author))
+
+        file = self.Q2_FILE
+        entry = f"{first_author}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_author_decades)}\n"
+        with open(file, "a") as f:
+            f.write(entry)
+
+        self.entries_in_files += 1
+        self.cached_entries -= 1
+
+    def _pop_from_disk(self, author: str) -> tuple[str, Union[set[int], None]]:
+        temp_file_name = "temp.json"
+
+        file_name = self.Q2_FILE
+        value_from_disk: set[int] | None = None
+        with open(file_name, "r") as original_file, open(
+            temp_file_name, "w"
+        ) as temp_file:
+            for line in original_file:
+                author_in_file = line.split(self.KEY_VALUE_SEPARATOR)[0]
+                if author_in_file != author:
+                    temp_file.write(line)
+                else:
+                    aux = json.loads(
+                        line.split(self.KEY_VALUE_SEPARATOR)[1]
+                    )
+                    value_from_disk = set()
+                    value_from_disk.update(aux)
+
+        os.replace(temp_file_name, file_name)
+        self.entries_in_files -= 1
+    
+        return (author, value_from_disk)
+
+    def add(self, author: str, decade: int):
+        dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+            # author[0:10] + "...",
+            author,
+            self.cache_vacants - self.n_elements_in_cache(),
+        )
+        logging.debug(dbg_string)
+
+        # Already cached, add the new decades and return
+        if author in self.cache.keys():
+            self.cache[author].add(decade)
+            return
+
+
+        decades_in_disk = None
+        # Could be in file
+        if self.entries_in_files > 0:
+            _, decades_in_disk = self._pop_from_disk(author)
+
+        # If it is in the disk, add the new decade to the existing ones, otherwise create a new set
+        author_decades = decades_in_disk if decades_in_disk is not None else set()
+        author_decades.add(decade)
+
+        # If the cache is full, write the oldest entry to disk
+        if self.n_elements_in_cache() >= self.cache_vacants:
+            logging.debug(f"Committing 1 entry to disk")
+            self._write_oldest_to_disk()
+
+        # Add the author to the cache, whether it was in the disk or a new one
+        self.cached_entries += 1
+        self.cache.update({author: author_decades})
+
+    def get(self, author: str) -> Union[set[int], None]:
+        if author in self.cache.keys():
+            return self.cache[author]
+
+        elif self.entries_in_files > 0:
+            _, decades = self._pop_from_disk(author)
+            if decades is not None:
+                self.cache.update({author: decades})
+            return decades
+        else:
+            return None
+
+
 def main():
     required = {
         "LOGGING_LEVEL": str,
+        "CACHE_VACANTS": int,
     }
+
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
@@ -51,6 +176,7 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
+    authors_cache = AuthorCache(filter_config.get("CACHE_VACANTS"))
     messaging = Goutong()
 
     # Set up the queues
@@ -61,10 +187,7 @@ def main():
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
 
-    decades_per_author = {}
-    messaging.set_callback(
-        INPUT_QUEUE, callback_filter, (filter_config, decades_per_author)
-    )
+    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config, authors_cache))
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
@@ -93,40 +216,34 @@ def _send_EOF(messaging: Goutong):
 
 
 def callback_filter(
-    messaging: Goutong, msg: Message, config: Configuration, decades_per_author: dict
+    messaging: Goutong,
+    msg: Message,
+    config: Configuration,
+    decades_per_author: AuthorCache,
 ):
-    # logging.debug(f"Received: {msg.marshal()}")
 
     if msg.has_key("EOF"):
+        logging.debug("Received EOF")
         # Forward EOF and Keep Consuming
         _send_results_q2(messaging, decades_per_author)
         _send_EOF(messaging)
         return
 
     books = msg.get("data")
-    logging.debug(f"Received {len(books)} books")
+    # logging.debug(f"Received {len(books)} books")
     for book in books:
         decade = book.get("decade")
-
         # Query 2 flow
         for author in book.get("authors"):
-            if author not in decades_per_author.keys():
-                decades_per_author[author] = set()
-            decades_per_author[author].add(decade)
+            decades_per_author.add(author, decade)
 
-    logging.debug(f"Authors: {len(decades_per_author.keys())}")
-
-
-def _send_results_q2(messaging: Goutong, batch: dict):
-    valid_author = lambda author: repr(author) != "''" and not author.isspace()
-
-    ten_decade_authors = list(
-        filter(
-            lambda author: (len(batch[author]) >= 10) and valid_author(author),
-            batch.keys(),
-        )
+    logging.debug(
+        f"Authors: {decades_per_author.cached_entries + decades_per_author.entries_in_files}"
     )
 
+
+def _send_results_q2(messaging: Goutong, author_cache: AuthorCache):
+    ten_decade_authors = author_cache.get_10_decade_authors()
     msg = Message({"query": 2, "data": ten_decade_authors})
     messaging.send_to_queue(OUTPUT_Q2, msg)
     logging.debug(f"Sent Data to: {OUTPUT_Q2}")

@@ -27,8 +27,23 @@ def _parse_year(year_str: str) -> int:
     else:
         return int(year_str)
 
+def _parse_authors_array(categories_str: str) -> list:
 
-def _parse_array(categories_str: str) -> list:
+    categories_str = categories_str.replace('"[', "")
+    categories_str = categories_str.replace(']"', "")
+    categories_str = categories_str.replace('[', "")
+    categories_str = categories_str.replace(']', "")
+    categories_str = categories_str.replace(', ', ",")
+
+    if '"' in categories_str:
+        categories_str = categories_str.replace('"', "")
+    else:
+        categories_str = categories_str.replace("'", "")
+
+    return categories_str.split(",")
+
+
+def _parse_category_array(categories_str: str) -> list:
     categories_str = categories_str.replace("['", "")
     categories_str = categories_str.replace("']", "")
     return categories_str.split(" & ")
@@ -94,8 +109,8 @@ def _book_columns_for_queries1_3_4(book_data: dict) -> dict:
     return {
         "title": book_data["Title"],
         "year": _parse_year(book_data["publishedDate"]),
-        "categories": _parse_array(book_data["categories"]),
-        "authors": _parse_array(book_data["authors"]),
+        "categories": _parse_category_array(book_data["categories"]),
+        "authors": _parse_authors_array(book_data["authors"]),
         "publisher": book_data["publisher"],
     }
 
@@ -103,16 +118,18 @@ def _book_columns_for_queries1_3_4(book_data: dict) -> dict:
 def _book_columns_for_query2(book_data: dict) -> dict:
     return {
         "decade": _parse_decade(_parse_year(book_data["publishedDate"])),
-        "authors": _parse_array(book_data["authors"]),
+        "authors": _parse_authors_array(book_data["authors"]),
     }
 
 
 def _book_columns_for_query5(book_data: dict) -> dict:
     return {
         "title": book_data["Title"],
-        "categories": _parse_array(book_data["categories"]),
+        "categories": _parse_category_array(book_data["categories"]),
     }
 
+def _book_is_invalid(book: dict):
+    return book['Title'] == "" or book['authors'] == "" and book['categories'] == "" or book['publishedDate'] == ""
 
 def _feed_books(
     books_path: str, messaging: Goutong, items_per_batch: int, shutting_down
@@ -122,6 +139,9 @@ def _feed_books(
         reader = csv.DictReader(csvfile)
 
         for row in reader:
+            if _book_is_invalid(row):
+                continue
+            
             if len(batch) < items_per_batch:
                 batch.append(row)
             else:

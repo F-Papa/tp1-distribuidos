@@ -1,5 +1,9 @@
+import json
+import os
+from typing import Any
 from messaging.goutong import Goutong
 from messaging.message import Message
+import sys
 import logging
 import signal
 
@@ -9,6 +13,93 @@ from exceptions.shutting_down import ShuttingDown
 
 class SwitchingState(Exception):
     pass
+
+
+class BookCache:
+    Q3_4_FILE = "books_q3_4.json"
+    Q5_FILE = "books_q5.json"
+    KEY_VALUE_SEPARATOR = "%%%"
+
+    def __init__(self, cache_vacants: int) -> None:
+        self.cache: dict[tuple[str, int], Any] = {}
+        self.cache_vacants = cache_vacants
+        self.cached_entries = 0
+        self.entries_in_files = 0
+        # create files from scratch
+        with open(self.Q3_4_FILE, "w") as f:
+            pass
+        with open(self.Q5_FILE, "w") as f:
+            pass
+
+    def n_elements_in_cache(self) -> int:
+        return self.cached_entries
+
+    def _write_oldest_to_disk(self):
+        if len(self.cache) == 0:
+            raise ValueError("Cache is empty")
+
+        first_title_and_query: tuple[str, int] = list(self.cache.keys())[0]
+        first_data = self.cache.pop(first_title_and_query)
+        first_title, query = first_title_and_query
+
+        file = self.Q3_4_FILE if query in [3, 4] else self.Q5_FILE
+        entry = f"{first_title}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_data)}\n"
+        with open(file, "a") as f:
+            f.write(entry)
+
+        self.entries_in_files += 1 
+        self.cached_entries -= 1
+
+    def _pop_from_disk(self, query: int, title: str) -> tuple[str, Any]:
+        temp_file_name = "temp.json"
+
+        file_name = self.Q3_4_FILE if query in [3, 4] else self.Q5_FILE
+        value_from_disk = None
+        with open(file_name, "r") as original_file, open(
+            temp_file_name, "w"
+        ) as temp_file:
+            for line in original_file:
+                title_in_file = line.split(self.KEY_VALUE_SEPARATOR)[0]
+                if title_in_file != title:
+                    temp_file.write(line)
+                else:
+                    value_from_disk = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+
+        os.replace(temp_file_name, file_name)
+        self.entries_in_files -= 1
+
+        return (title, value_from_disk)
+
+    def append(self, query: int, book: dict):
+        key = (book["title"], query)
+        value = book["authors"] if query in [3, 4] else True
+        dbg_string = (
+            "Adding (%s) | Cache Avl.: %d" % (
+                book["title"][0:10] + f"...(Q:{query})",
+                self.cache_vacants - self.n_elements_in_cache(),
+            )
+        )
+        logging.debug(dbg_string)
+        
+        
+        if self.n_elements_in_cache() >= self.cache_vacants:
+            logging.debug(f"Committing 1 entry to disk")
+            self._write_oldest_to_disk()
+        
+        self.cached_entries += 1
+        self.cache.update({key: value})
+
+    def get(self, query: int, title: str):
+        key = (title, query)
+        if key in self.cache.keys():
+            return self.cache[key]
+        elif self.entries_in_files > 0:
+            title, data = self._pop_from_disk(query, title)
+            if data is not None:
+                self.cache.update({(title, query): data})
+            return data
+        else:
+            return None
 
 
 class Joiner:
@@ -21,13 +112,14 @@ class Joiner:
     OUTPUT_Q3_4 = "review_counter_queue"
     OUTPUT_Q5 = "sentiment_analyzer_queue"
 
-    def __init__(self, items_per_batch: int):
+    def __init__(self, items_per_batch: int, cache_vacants: int):
+        self.books = BookCache(cache_vacants)
         self.shutting_down = False
         self.eof_received = 0
         self.items_per_batch = items_per_batch
         self.state = self.RECEIVING_BOOKS
-        self.book_authors_q3_4 = {}
-        self.books_q5 = {}
+        # self.book_authors_q3_4 = {}
+        # self.books_q5 = {}
         self.batch_q3_4 = []
         self.batch_q5 = []
         self._init_messaging()
@@ -94,7 +186,6 @@ class Joiner:
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q5}")
 
     def _handle_receiving_books(self, messaging: Goutong, msg: Message):
-        # logging.debug(f"Received: {msg.marshal()}")
         if msg.has_key("EOF"):
             if self.state == self.RECEIVING_BOOKS:
                 self.eof_received += 1
@@ -107,10 +198,12 @@ class Joiner:
 
         if 3 in query or 4 in query:
             for book in books:
-                self.book_authors_q3_4[book["title"]] = book["authors"]
+                self.books.append(3, book)
+                # self.book_authors_q3_4[book["title"]] = book["authors"]
         elif query == 5:
             for book in books:
-                self.books_q5[book["title"]] = True
+                self.books.append(5, book)
+                # self.books_q5[book["title"]] = True
 
     def _handle_receiving_reviews(self, messaging: Goutong, msg: Message):
         if msg.has_key("EOF"):
@@ -125,7 +218,7 @@ class Joiner:
             for review in reviews:
                 title = review["title"]
                 review = review["review/score"]
-                authors = self.book_authors_q3_4.get(title)
+                authors = self.books.get(3, title)
                 self.batch_q3_4.append((title, authors, review))
                 if len(self.batch_q3_4) >= self.items_per_batch:
                     self._send_batch_q3_4()
@@ -138,7 +231,7 @@ class Joiner:
         # Query 5 Flow
         elif query == 5:
             for review in reviews:
-                if not self.books_q5.get(review["title"]):
+                if not self.books.get(5, review["title"]):
                     continue
                 title = review["title"]
                 review_text = review["review/text"]
@@ -160,9 +253,6 @@ class Joiner:
         )
         msg = Message({"query": [3, 4], "data": data})
         self.messaging.send_to_queue(self.OUTPUT_Q3_4, msg)
-        logging.debug(
-            f"Sent message with {len(self.batch_q3_4)} items to {self.OUTPUT_Q3_4}"
-        )
 
     def _send_batch_q5(self):
         data = list(
@@ -202,6 +292,7 @@ def config_logging(level: str):
 def main():
     required = {
         "ITEMS_PER_BATCH": int,
+        "CACHE_VACANTS": int,
         "LOGGING_LEVEL": str,
     }
 
@@ -212,30 +303,12 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    joiner = Joiner(items_per_batch=filter_config.get("ITEMS_PER_BATCH"))
+    joiner = Joiner(
+        items_per_batch=filter_config.get("ITEMS_PER_BATCH"),
+        cache_vacants=filter_config.get("CACHE_VACANTS"),
+    )
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(joiner))
     joiner.listen()
-
-
-def callback_filter(
-    messaging: Goutong, msg: Message, config: Configuration, decades_per_author: dict
-):
-    # logging.debug(f"Received: {msg.marshal()}")
-    pass
-
-
-# Query 3,4
-# 1. Escuchar todos los books y almacenarlos en books_q3_4.
-# 2. Recibir batches de reviews
-#   - Concatenar el autor buscando en books_q3_4
-# 3. Enviar a output_q3_4
-
-# Query 5
-# 1.    Escuchar todos los books y almacenarlos en books_q5.
-# 2. Recibir batches de reviews
-#   - Descartar los reviews que no tengan su titulo en books_q5.
-# 3. Enviar a output_q5
-
 
 if __name__ == "__main__":
     main()
