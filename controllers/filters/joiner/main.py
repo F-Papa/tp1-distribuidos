@@ -75,9 +75,11 @@ class BookCache:
     def append(self, query: int, book: dict):
         key = (book["title"], query)
         value = book["authors"] if query in [3, 4] else True
-        dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+        dbg_string = "Adding (%s) | Cache Used : %d/%d | Entries in files: %d" % (
             book["title"][0:10] + f"...(Q:{query})",
-            self.cache_vacants - self.n_elements_in_cache(),
+            self.n_elements_in_cache(),
+            self.cache_vacants,
+            self.entries_in_files,
         )
         logging.debug(dbg_string)
 

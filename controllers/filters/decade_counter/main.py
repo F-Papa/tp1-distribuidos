@@ -117,10 +117,12 @@ class AuthorCache:
         return (author, value_from_disk)
 
     def add(self, author: str, decade: int):
-        dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+        dbg_string = "Adding (%s) | Cache Used: %d/%d | Entries in files: %d" % (
             # author[0:10] + "...",
             author,
-            self.cache_vacants - self.n_elements_in_cache(),
+            self.n_elements_in_cache(),
+            self.cache_vacants,
+            self.entries_in_files,
         )
         logging.debug(dbg_string)
 
