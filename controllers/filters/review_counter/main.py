@@ -1,10 +1,11 @@
-from typing import Any
+from typing import Any, Union
 from messaging.goutong import Goutong
 from messaging.message import Message
 import logging
 import signal
 import json
 import os
+
 
 from utils.config_loader import Configuration
 from exceptions.shutting_down import ShuttingDown
@@ -20,11 +21,11 @@ class InvalidCacheState(Exception):
         pass
 
 class ReviewCache:
-    Q3_4_FILE = "books_q3_4.json"
+    Q3_4_FILE = "q3_4_reviews.json"
     KEY_VALUE_SEPARATOR = "%%%"
 
     def __init__(self, cache_vacants: int) -> None:
-        self.cache: dict[tuple[str, int], Any] = {}
+        self.cache = defaultdict(list)
         self.cache_vacants = cache_vacants
         self.cached_entries = 0
         self.entries_in_files = 0
@@ -39,23 +40,23 @@ class ReviewCache:
         if len(self.cache) == 0:
             raise ValueError("Cache is empty")
 
-        first_title_and_query: tuple[str, int] = list(self.cache.keys())[0]
-        first_data = self.cache.pop(first_title_and_query)
-        first_title, query = first_title_and_query
+        first_author: str = list(self.cache.keys())[0]
+        first_author_decades = list(self.cache.pop(first_author))
 
         file = self.Q3_4_FILE
-        entry = f"{first_title}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_data)}\n"
+        entry = f"{first_author}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_author_decades)}\n"
         with open(file, "a") as f:
             f.write(entry)
 
-        self.entries_in_files += 1 
+        logging.info(f"SAVED ENTRU: {entry}")
+        self.entries_in_files += 1
         self.cached_entries -= 1
 
-    def _pop_from_disk(self, query: int, title: str) -> tuple[str, Any]:
+    def _pop_from_disk(self, title: str) -> tuple[str, Union[list, None]]:
         temp_file_name = "temp.json"
 
         file_name = self.Q3_4_FILE
-        value_from_disk = None
+        value_from_disk: Union[list, None] = None
         with open(file_name, "r") as original_file, open(
             temp_file_name, "w"
         ) as temp_file:
@@ -64,47 +65,57 @@ class ReviewCache:
                 if title_in_file != title:
                     temp_file.write(line)
                 else:
-                    value_from_disk = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
+                    aux = json.loads(
+                        line.split(self.KEY_VALUE_SEPARATOR)[1]
+                    )
+                    value_from_disk = aux
 
         os.replace(temp_file_name, file_name)
-        self.entries_in_files -= 1
-
+        if value_from_disk is not None:
+            self.entries_in_files -= 1
+            logging.info("NO ES NONE")
         return (title, value_from_disk)
 
-    def append(self, query: int, review: dict):
-        key = (review["title"], query)
-        value = review["review/score"]
-        dbg_string = (
-            "Adding review for (%s) | REVIEW: | Cache Avl.: %d" % (
-                review["title"][0:10] + f"...(Q:{query})",
-                self.cache_vacants - self.n_elements_in_cache(),
+    def add(self, title: str, review: dict):
+        # dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+        #     # author[0:10] + "...",
+        #     title,
+        #     self.cache_vacants - self.n_elements_in_cache(),
+        # )
+        # logging.debug(dbg_string)
 
-            )
-        )
-        logging.debug(dbg_string)
-        
-        
+        # Already cached, add the new reviews and return
+        if title in self.cache.keys():
+            self.cache[title].append(review)
+            return
+
+        review_in_disk = None
+        # Could be in file
+        if self.entries_in_files > 0:
+            _, review_in_disk = self._pop_from_disk(title)
+
+        # If it is in the disk, add the new review to the existing ones, otherwise create a new list
+        title_reviews = review_in_disk if review_in_disk is not None else []
+        title_reviews.append(review)
+
+        # If the cache is full, write the oldest entry to disk
         if self.n_elements_in_cache() >= self.cache_vacants:
-            logging.debug(f"Committing 1 entry to disk")
+            logging.debug(f"Committing 1 entry to disk | CACHE_ENTRIES:{self.cached_entries} | ENTRIES_INF_FILE: {self.entries_in_files}")
             self._write_oldest_to_disk()
-        
+
+        # Add the author to the cache, whether it was in the disk or a new one
         self.cached_entries += 1
-        old_value = self.cache.get(key)
-        if old_value is not None:
-            new_value = old_value.append(value)
-        else:
-            raise InvalidCacheState
+        self.cache[title].append(review)
 
+    def get(self, title: str) -> Union[list, None]:
+        if title in self.cache.keys():
+            return self.cache[title]
 
-    def get(self, query: int, title: str):
-        key = (title, query)
-        if key in self.cache.keys():
-            return self.cache[key]
         elif self.entries_in_files > 0:
-            title, data = self._pop_from_disk(query, title)
-            if data is not None:
-                self.cache.update({(title, query): data})
-            return data
+            _, reviews = self._pop_from_disk(title)
+            if reviews is not None:
+                self.cache.update({title: reviews})
+            return reviews
         else:
             return None
 
@@ -122,7 +133,6 @@ class ReviewCounter:
     def __init__(self, items_per_batch: int, cache_vacants: int):
         self.reviews = ReviewCache(cache_vacants)
         self.shutting_down = False
-        self.reviews_per_title = defaultdict(list)
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
         
@@ -179,7 +189,7 @@ class ReviewCounter:
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q3} and {self.OUTPUT_Q4}")
 
     def _reset_state(self):
-        self.reviews_per_title = defaultdict(list)
+        # RESETEAR EL CACHE
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
         self.titles_in_last_msg = set()
@@ -203,6 +213,7 @@ class ReviewCounter:
                 msg = Message({"query": 4, "data": self.q4_output_batch})
                 self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
 
+            logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
             self._reset_state()
             self._send_EOF()
             return
@@ -218,7 +229,7 @@ class ReviewCounter:
             
             # No llego a 500 revs
             else:
-                self.reviews.append(4, review)
+                self.reviews.add(title, review)
                 self.review_counts[title] += 1
                 self.titles_in_last_msg.add(title)
         
@@ -246,26 +257,24 @@ class ReviewCounter:
             self
     ):  
         for title in self.titles_in_last_msg:
-            reviews = self.reviews.get(4, title)
+            reviews = self.reviews.get(title)
+            if reviews is None:
+                raise InvalidCacheState
+            else:
+                pass
 
             if self.review_counts[title] >= self.THRESHOLD:
                 #Query 3
                 if title not in self.titles_over_thresh:
                     self.titles_over_thresh.add(title)
-                    if reviews is None:
-                        raise InvalidCacheState
-                    else:
-                        authors = reviews[0].get("authors")
-                        self.q3_output_batch.append({"title": title, "authors": authors})
-                        self.q3_output_batch_size += 1
+                    authors = reviews[0].get("authors")
+                    self.q3_output_batch.append({"title": title, "authors": authors})
+                    self.q3_output_batch_size += 1
             
                 #Query 4
-                if reviews is None:
-                    raise InvalidCacheState
-                else:
-                    for r in reviews:
-                        self.q4_output_batch.append({"title": title, "review/score": r["review/score"]})
-                        self.q4_output_batch_size += 1          
+                for r in reviews:
+                    self.q4_output_batch.append({"title": title, "review/score": r["review/score"]})
+                    self.q4_output_batch_size += 1          
 
         self.titles_in_last_msg.clear()
 
