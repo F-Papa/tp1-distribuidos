@@ -7,25 +7,183 @@ import signal
 from utils.config_loader import Configuration
 from exceptions.shutting_down import ShuttingDown
 
-INPUT_QUEUE = "review_counter_queue"
-FILTER_TYPE = "review_counter"
-EOF_QUEUE = "results_queue"  # ?
-CONTROL_GROUP = "CONTROL"
+from collections import defaultdict
 
-OUTPUT_Q3 = "results_queue"
-OUTPUT_Q4 = "rating_average_queue"
 
 shutting_down = False
 
+class ReviewCounter:
+    THRESHOLD = 500
+
+    INPUT_QUEUE = "review_counter_queue"
+    FILTER_TYPE = "review_counter"
+    CONTROL_GROUP = "CONTROL"
+
+    OUTPUT_Q3 = "results_queue"
+    OUTPUT_Q4 = "rating_average_queue"
+
+    def __init__(self, items_per_batch: int):
+        self.shutting_down = False
+        self.reviews_per_title = defaultdict(list)
+        self.review_counts = defaultdict(int)
+        self.titles_over_thresh = set()
+        
+        self.items_per_batch = items_per_batch
+        self.titles_in_last_msg = set()
+
+        self.q3_output_batch = []
+        self.q3_output_batch_size = 0
+
+        self.q4_output_batch = []
+        self.q4_output_batch_size = 0
+
+        self._init_messaging()
+
+    def _init_messaging(self):
+        self.messaging = Goutong()
+
+        # Set up the queues
+        control_queue_name = self.FILTER_TYPE + "_control"
+        own_queues = [self.INPUT_QUEUE, control_queue_name]
+        self.messaging.add_queues(*own_queues)
+        self.messaging.add_queues(self.OUTPUT_Q3, self.OUTPUT_Q4)
+
+        self.messaging.add_broadcast_group(self.CONTROL_GROUP, [control_queue_name])
+        self.messaging.set_callback(control_queue_name, self.callback_control, ())
+
+        self.messaging.set_callback(
+            self.INPUT_QUEUE,
+            self.callback_filter
+        )
+    
+    def listen(self):
+        try:
+            self.messaging.listen()
+        except ShuttingDown:
+            logging.debug("Stopped Listening")
+
+    def shutdown(self):
+        logging.info("Initiating Graceful Shutdown")
+        self.shutting_down = True
+        self.messaging.close()
+        raise ShuttingDown
+    
+    def callback_control(self, messaging: Goutong, msg: Message):
+        if msg.has_key("ShutDown"):
+            self.shutting_down = True
+            raise ShuttingDown
+
+
+    def _send_EOF(self):
+        msg = Message({"EOF": True})
+        self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+        self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
+        logging.debug(f"Sent EOF to: {self.OUTPUT_Q3} and {self.OUTPUT_Q4}")
+
+    def _reset_state(self):
+        self.reviews_per_title = defaultdict(list)
+        self.review_counts = defaultdict(int)
+        self.titles_over_thresh = set()
+        self.titles_in_last_msg = set()
+        self.q3_output_batch = []
+        self.q3_output_batch_size = 0
+        self.q4_output_batch = []
+        self.q4_output_batch_size = 0
+
+    def callback_filter(
+        self,
+        messaging: Goutong,
+        msg: Message,
+    ):
+
+        if msg.has_key("EOF"):
+            if self.q3_output_batch_size > 0:
+                msg = Message({"query": 3, "data": self.q3_output_batch})
+                self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+
+            if self.q4_output_batch_size > 0:
+                msg = Message({"query": 4, "data": self.q4_output_batch})
+                self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
+
+            self._reset_state()
+            self._send_EOF()
+            return
+
+        msg_reviews = msg.get("data")
+        for review in msg_reviews:
+            title = review.get("title")
+            # Ya llego a 500 revs
+            if title in self.titles_over_thresh:
+                # Solo Query 4
+                self.q4_output_batch.append({"title": title, "review/score": review["review/score"]})
+                self.q4_output_batch_size += 1
+            
+            # No llego a 500 revs
+            else:
+                self.reviews_per_title[title].append(review) #Enorme
+                self.review_counts[title] += 1
+                self.titles_in_last_msg.add(title)
+        
+        self._load_data_if_thresh_met()
+        self._send_batches_if_full()
+
+    def _send_batches_if_full(self):
+        while self.q3_output_batch_size >= self.items_per_batch:
+            data = self.q3_output_batch[:self.items_per_batch]
+            self.q3_output_batch = self.q3_output_batch[self.items_per_batch:]
+            self.q3_output_batch_size -= self.items_per_batch
+            msg = Message({"query": 3, "data": data})
+            self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+            logging.debug(f"MANDE A Q3: {data}")
+
+        while self.q4_output_batch_size >= self.items_per_batch:
+            data = self.q4_output_batch[:self.items_per_batch]
+            self.q4_output_batch = self.q4_output_batch[self.items_per_batch:]
+            self.q4_output_batch_size -= self.items_per_batch
+            msg = Message({"query": 4, "data": data})
+            self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
+            logging.debug(f"MANDE A Q4: {data}")
+
+    def _load_data_if_thresh_met(
+            self
+    ):  
+        for title in self.titles_in_last_msg:
+            reviews = self.reviews_per_title[title]
+
+            if self.review_counts[title] >= self.THRESHOLD and title not in self.titles_over_thresh:
+                # Query 3
+                self.titles_over_thresh.add(title)
+                authors = reviews[0].get("authors")
+                self.q3_output_batch.append({"title": title, "authors": authors})
+                self.q3_output_batch_size += 1
+                # Query 4
+                reviews = self.reviews_per_title[title]
+                for r in reviews:
+                    self.q4_output_batch.append({"title": title, "review/score": r["review/score"]})
+                    self.q4_output_batch_size += 1            
+
+        self.titles_in_last_msg.clear()
+
+
+    # def _send_batch_q3(self, buffer: list):
+    #     data = list(
+    #         map(
+    #             lambda item: {
+    #                 "title": item["title"],
+    #                 "authors": item["review"]["authors"],
+    #             },
+    #             buffer
+    #         )
+    #     )
+
+    #     msg = Message({"query": 3, "data": data})
+    #     self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+    #     logging.debug(f"Sent Data to: {self.OUTPUT_Q3} data: {data} LUEGO: {self.titles_over_thresh} Y ADEMAS: {self.review_counts.get('The Last Juror')}")
 
 # Graceful Shutdown
-def sigterm_handler(messaging: Goutong):
-    global shutting_down
+def sigterm_handler(counter: ReviewCounter):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-    shutting_down = True
-    msg = Message({"ShutDown": True})
-    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
-
+    counter.shutdown()
 
 def config_logging(level: str):
 
@@ -46,6 +204,7 @@ def config_logging(level: str):
 def main():
     required = {
         "LOGGING_LEVEL": str,
+        "ITEMS_PER_BATCH": int
     }
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
@@ -54,98 +213,13 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    messaging = Goutong()
+    counter = ReviewCounter(items_per_batch=filter_config.get("ITEMS_PER_BATCH"))
+    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(counter))
+    counter.listen()
 
-    # Set up the queues
-    control_queue_name = FILTER_TYPE + "_control"
-    own_queues = [INPUT_QUEUE, control_queue_name]
-    messaging.add_queues(*own_queues)
-    messaging.add_queues(OUTPUT_Q3, OUTPUT_Q4)
-
-    messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    messaging.set_callback(control_queue_name, callback_control, ())
-
-    reviews_per_title = {}
-    titles_already_sent_to_q3_output = set()
-    messaging.set_callback(
-        INPUT_QUEUE,
-        callback_filter,
-        (filter_config, reviews_per_title, titles_already_sent_to_q3_output),
-    )
-
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
-
-    # Start listening
-    if not shutting_down:
-        try:
-            logging.info("Listening for Messages")
-            messaging.listen()
-        except ShuttingDown:
-            logging.debug("Shutdown Message Received via Control Broadcast")
-
-    messaging.close()
     logging.info("Shutting Down.")
 
 
-def callback_control(messaging: Goutong, msg: Message):
-    global shutting_down
-    if msg.has_key("ShutDown"):
-        shutting_down = True
-        raise ShuttingDown
-
-
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True})
-    messaging.send_to_queue(EOF_QUEUE, msg)
-    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
-
-
-def callback_filter(
-    messaging: Goutong,
-    msg: Message,
-    config: Configuration,
-    reviews_per_title: dict,
-    titles_already_sent_to_q3_output: set,
-):
-
-    if msg.has_key("EOF"):
-        # Forward EOF and Keep Consuming
-        _send_reviews_over_500(
-            messaging, reviews_per_title, titles_already_sent_to_q3_output
-        )
-        reviews_per_title = {}
-        titles_already_sent_to_q3_output = set()
-        _send_EOF(messaging)
-        return
-
-    msg_reviews = msg.get("data")
-    for review in msg_reviews:
-        title = review.get("title")
-        if title not in reviews_per_title.keys():
-            reviews_per_title[title] = []
-        reviews_per_title[title].append(review)
-
-    _send_reviews_over_500(
-        messaging, reviews_per_title, titles_already_sent_to_q3_output
-    )
-
-
-def _send_reviews_over_500(
-    messaging: Goutong, reviews_per_title: dict, titles_already_sent_to_q3_output: set
-):
-    for title, reviews in reviews_per_title.items():
-        if len(reviews) >= 500 and title not in titles_already_sent_to_q3_output:
-            authors = reviews[0].get("authors")
-            _send_results_q3(messaging, title, authors)
-            reviews_per_title[title] = []
-            titles_already_sent_to_q3_output.add(title)
-
-
-def _send_results_q3(messaging: Goutong, title: str, authors: Any):
-    data = [{"title": title, "authors": authors}]
-    msg = Message({"query": 3, "data": data})
-    messaging.send_to_queue(OUTPUT_Q3, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q3}")
 
 
 if __name__ == "__main__":

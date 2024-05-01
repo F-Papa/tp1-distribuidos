@@ -97,7 +97,7 @@ services:
     volumes:
       - ./controllers/filters/category_filter/config.ini:/config.ini
       - ./controllers/filters/category_filter/main.py:/main.py
-    
+
   category_filter2:
     build:
       context: ./
@@ -145,7 +145,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./controllers/barrier/main.py:/main.py
-  
+
   title_filter1:
     build:
       context: ./
@@ -161,7 +161,7 @@ services:
     volumes:
       - ./controllers/filters/title_filter/config.ini:/config.ini
       - ./controllers/filters/title_filter/main.py:/main.py
-      
+
   title_filter2:
     build:
       context: ./
@@ -232,6 +232,19 @@ services:
     volumes:
       - ./controllers/filters/review_counter/config.ini:/config.ini
       - ./controllers/filters/review_counter/main.py:/main.py
+
+  rating_average_reducer:
+    build:
+      context: ./
+      dockerfile: ./controllers/filters/rating_average_reducer/Dockerfile
+    container_name: rating_average_reducer
+    image: rating_average_reducer:latest
+    entrypoint: python3 main.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./controllers/filters/rating_average_reducer/config.ini:/config.ini
+      - ./controllers/filters/rating_average_reducer/main.py:/main.py
 
 networks:
   tp1_testing_net:

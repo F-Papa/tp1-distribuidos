@@ -34,6 +34,9 @@ def _display_results_q3(data: list):
             f"[Query 3] |Título: {review_info['title']} |Autores: {review_info['authors']}"
         )
 
+def _display_results_q4(data: list):
+    for book in data:
+        logging.info(f"[Query 4] |Libro: {book['title']}")
 
 def callback_display_results(messaging: Goutong, msg: Message):
     global eof_received
@@ -53,6 +56,10 @@ def callback_display_results(messaging: Goutong, msg: Message):
         _display_results_q2(data)
     elif query_number == 3:
         _display_results_q3(data)
+    elif query_number == 4:
+        _display_results_q4(data)
+    elif query_number == 5:
+        pass
     else:
         logging.info(f"Query {query_number} not supported")
 

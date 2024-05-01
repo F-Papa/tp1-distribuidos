@@ -172,9 +172,8 @@ class Joiner:
         self.messaging.send_to_queue(self.OUTPUT_Q5, msg)
 
     def callback_control(self, messaging: Goutong, msg: Message):
-        global shutting_down
         if msg.has_key("ShutDown"):
-            shutting_down = True
+            self.shutting_down = True
             raise ShuttingDown
 
 
