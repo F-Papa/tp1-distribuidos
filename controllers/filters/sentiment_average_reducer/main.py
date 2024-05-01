@@ -13,11 +13,11 @@ from collections import defaultdict, Counter
 shutting_down = False
 
 
-class RatingReducer:
+class SentimentReducer:
 
-    INPUT_QUEUE = "rating_average_queue"
-    FILTER_TYPE = "rating_average_reducer"
-    EOF_QUEUE = "results_queue"  # ?
+    INPUT_QUEUE = "sentiment_average_queue"
+    FILTER_TYPE = "sentiment_average_reducer"
+    EOF_QUEUE = "results_queue"
     CONTROL_GROUP = "CONTROL"
 
     OUTPUT_QUEUE = "results_queue"
@@ -34,17 +34,17 @@ class RatingReducer:
     def update_average(self, title, average):
         self.averages_per_title[title]["average"] = average
 
-    def calculate_new_average(self, title, rating):
+    def calculate_new_average(self, title, sentiment):
         old_count = self.averages_per_title[title]["count"]
         old_total = self.averages_per_title[title]["average"] * old_count
         new_count = old_count + 1
-        new_total = old_total + rating
+        new_total = old_total + sentiment
         new_average = new_total / new_count
 
         self.averages_per_title[title]["count"] = new_count
-        if new_average > 5:
+        if new_average > 1.0:
             logging.debug(
-                f"rating: {rating} old_count: {old_count} old_average {self.averages_per_title[title]['average']} old_total {old_total} new_total {new_total} new_average {new_average}"
+                f"sentiment: {sentiment} old_count: {old_count} old_average {self.averages_per_title[title]['average']} old_total {old_total} new_total {new_total} new_average {new_average}"
             )
         return new_average
 
@@ -89,13 +89,20 @@ class RatingReducer:
         self.output_batch = []
         self.output_batch_size = 0
 
-    def send_top_10_average_books(self):
-        top_10_titles_and_averages = sorted(
+    def send_top_90_quantile_sentiment_titles(self):
+        sorted_titles_and_averages = sorted(
             self.averages_per_title.items(), key=lambda x: x[1]["average"], reverse=True
-        )[:10]
-        data = list(map(lambda x: {"title": x[0]}, top_10_titles_and_averages))
-        # top_10_titles = heapq.nlargest(10, self.averages_per_title, key=sel)
-        msg = Message({"query": 4, "data": data})
+        )
+        total_titles = len(sorted_titles_and_averages)
+        top_ninety_quantile_count = total_titles / 10
+        titles_in_ninety_quantile = sorted_titles_and_averages[
+            :top_ninety_quantile_count
+        ]
+
+        logging.debug(f"DE {total_titles} DEVOLVI {top_ninety_quantile_count}")
+
+        data = list(map(lambda x: {"title": x[0]}, titles_in_ninety_quantile))
+        msg = Message({"query": 5, "data": data})
         self.messaging.send_to_queue(self.OUTPUT_QUEUE, msg)
         logging.debug(f"MANDE {msg.marshal()}")
 
@@ -107,7 +114,7 @@ class RatingReducer:
 
         if msg.has_key("EOF"):
             logging.debug(f"EMPIEZO A CALCULAR")
-            self.send_top_10_average_books()
+            self.send_top_90_quantile_sentiment_titles()
             self._reset_state()
             self._send_EOF()
             return
@@ -115,13 +122,13 @@ class RatingReducer:
         msg_reviews = msg.get("data")
         for review in msg_reviews:
             title = review["title"]
-            score = review["review/score"]
-            new_average = self.calculate_new_average(title, float(score))
+            sentiment = review["sentiment"]
+            new_average = self.calculate_new_average(title, float(sentiment))
             self.update_average(title, new_average)
 
 
 # Graceful Shutdown
-def sigterm_handler(counter: RatingReducer):
+def sigterm_handler(counter: SentimentReducer):
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     counter.shutdown()
 
@@ -151,9 +158,9 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    reducer = RatingReducer(items_per_batch=filter_config.get("ITEMS_PER_BATCH"))
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(reducer))
-    reducer.listen()
+    counter = SentimentReducer(items_per_batch=filter_config.get("ITEMS_PER_BATCH"))
+    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(counter))
+    counter.listen()
 
     logging.info("Shutting Down.")
 

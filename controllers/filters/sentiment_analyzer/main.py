@@ -2,9 +2,11 @@ from messaging.goutong import Goutong
 from utils.config_loader import Configuration
 import logging
 import signal
+from textblob import TextBlob
 
 from messaging.message import Message
 from exceptions.shutting_down import ShuttingDown
+
 
 FILTER_TYPE = "sentiment_analyzer"
 CONTROL_GROUP = "CONTROL"
@@ -86,76 +88,46 @@ def callback_control(messaging: Goutong, msg: Message):
         raise ShuttingDown
 
 
-def _columns_for_query1(book: dict) -> dict:
-    return {
-        "title": book.get("title"),
-        "authors": book["authors"],
-        "publisher": book["publisher"],
-    }
-
-
-def _columns_for_query5(book: dict) -> dict:
-    return {
-        "title": book.get("title"),
-    }
-
-
-def _send_batch_q1(messaging: Goutong, batch: list):
-    data = list(map(_columns_for_query1, batch))
-    msg = Message({"query": 1, "data": data})
-    messaging.send_to_queue(OUTPUT_Q1, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q1}")
-
-
-def _send_batch_q5(messaging: Goutong, batch: list):
-    data = list(map(_columns_for_query5, batch))
-    msg = Message({"query": [5], "data": data})
-    # messaging.send_to_queue(OUTPUT_Q5, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q5}")
-
-
 def _send_EOF(messaging: Goutong):
     msg = Message({"EOF": True, "forward_to": [OUTPUT_QUEUE]})
     messaging.send_to_queue(OUTPUT_QUEUE, msg)
     logging.debug(f"Sent EOF to: {OUTPUT_QUEUE}")
 
 
+def _analyze_sentiment(text: str):
+    blob = TextBlob(text)
+    sentiment = blob.sentiment.polarity
+    return sentiment
+
+
 def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
-
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
         _send_EOF(messaging)
         return
 
-    query_id = msg.get("query")
     reviews = msg.get("data")
     output_batch = []
 
     for review in reviews:
-        categories = review.get("categories")
-        
+        review_text = review["review/text"]
+        sentiment = _analyze_sentiment(review_text)
 
-        # Query 1 Flow
-        if CATEGORY_Q1 in categories and query_id == 1:
-            batch_q1.append(book)
-            if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q1(messaging, batch_q1)
-                batch_q1.clear()
-
-        # Query 5 Flow
-        if CATEGORY_Q5 in categories and query_id == 5:
-            batch_q5.append(book)
-            if len(batch_q5) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q5(messaging, batch_q5)
-                batch_q5.clear()
+        output_batch.append({"title": review["title"], "sentiment": sentiment})
+        if len(output_batch) >= config.get("ITEMS_PER_BATCH"):
+            _send_batch(messaging, output_batch)
+            output_batch.clear()
 
     # Send Remaining
-    if batch_q1:
-        _send_batch_q1(messaging, batch_q1)
+    if len(output_batch) > 0:
+        _send_batch(messaging, output_batch)
 
-    if batch_q5:
-        _send_batch_q5(messaging, batch_q5)
+
+def _send_batch(messaging: Goutong, batch: list):
+    msg = Message({"query": [5], "data": batch})
+    messaging.send_to_queue(OUTPUT_QUEUE, msg)
+    logging.debug(f"Sent Data to: {OUTPUT_QUEUE}")
 
 
 if __name__ == "__main__":

@@ -230,7 +230,7 @@ class Joiner:
                 self.batch_q3_4.clear()
 
         # Query 5 Flow
-        elif query == 5:
+        elif 5 in query:
             for review in reviews:
                 if not self.books.get(5, review["title"]):
                     continue
