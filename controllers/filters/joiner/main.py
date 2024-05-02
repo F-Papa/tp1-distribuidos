@@ -82,6 +82,8 @@ class Joiner:
     def _set_receive_books(self):
         self.state = self.RECEIVING_BOOKS
         self.eof_received = 0
+        self.books_q3_4.clear()
+        self.books_q5.clear()
 
         self.messaging.set_callback(
             self.BOOKS_INPUT_QUEUE, self._handle_receiving_books
