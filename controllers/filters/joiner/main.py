@@ -24,6 +24,7 @@ class BookCache:
         self.cache: dict[tuple[str, int], Any] = {}
         self.cache_vacants = cache_vacants
         self.cached_entries = 0
+
         self.entries_in_files = 0
         # create files from scratch
         with open(self.Q3_4_FILE, "w") as f:
@@ -74,6 +75,7 @@ class BookCache:
 
     def append(self, query: int, book: dict):
         key = (book["title"], query)
+
         value = book["authors"] if query in [3, 4] else True
         dbg_string = "Adding (%s) | Cache Used : %d/%d | Entries in files: %d" % (
             book["title"][0:10] + f"...(Q:{query})",
@@ -101,7 +103,6 @@ class BookCache:
             return data
         else:
             return None
-
 
 class Joiner:
     RECEIVING_BOOKS = 1
@@ -172,7 +173,6 @@ class Joiner:
     def _set_receive_reviews(self):
         self.state = self.RECEIVING_REVIEWS
         self.eof_received = 0
-
         self.messaging.set_callback(
             self.REVIEWS_INPUT_QUEUE, self._handle_receiving_reviews
         )
@@ -201,7 +201,7 @@ class Joiner:
             for book in books:
                 self.books.append(3, book)
                 # self.book_authors_q3_4[book["title"]] = book["authors"]
-        elif query == 5:
+        elif 5 in query:
             for book in books:
                 self.books.append(5, book)
                 # self.books_q5[book["title"]] = True
@@ -232,9 +232,10 @@ class Joiner:
         # Query 5 Flow
         if 5 in query:
             for review in reviews:
-                #if self.books.get(5, review["title"]) is None:
-                #    continue
+                if self.books.get(5, review["title"]) is None:
+                   continue
                 title = review["title"]
+
                 review_text = review["review/text"]
                 self.batch_q5.append((title, review_text))
                 if len(self.batch_q5) >= self.items_per_batch:

@@ -94,7 +94,7 @@ class SentimentReducer:
             self.averages_per_title.items(), key=lambda x: x[1]["average"], reverse=True
         )
         total_titles = len(sorted_titles_and_averages)
-        top_ninety_quantile_count = total_titles / 10
+        top_ninety_quantile_count = (total_titles // 10)
         titles_in_ninety_quantile = sorted_titles_and_averages[
             :top_ninety_quantile_count
         ]
