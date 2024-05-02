@@ -71,6 +71,8 @@ class RatingReducer:
     def shutdown(self):
         logging.info("Initiating Graceful Shutdown")
         self.shutting_down = True
+        msg = Message({"ShutDown": True})
+        self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
         self.messaging.close()
         raise ShuttingDown
 

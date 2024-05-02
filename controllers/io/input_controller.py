@@ -13,7 +13,7 @@ CATEGORY_FILTER = "category_filter_queue"
 def sigterm_handler(messaging: Goutong):
     logging.info("Child process received SIGTERM. Initiating Graceful Shutdown.")
     msg = Message({"ShutDown": True})
-    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    messaging.broadcast_to_group(CONTROL_GROUP, msg)
     raise ShuttingDown
 
 

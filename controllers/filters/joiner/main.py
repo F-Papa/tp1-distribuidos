@@ -61,6 +61,8 @@ class Joiner:
 
     def shutdown(self):
         logging.info("Initiating Graceful Shutdown")
+        msg = Message({"ShutDown": True})
+        self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
         self.shutting_down = True
         self.messaging.close()
         raise ShuttingDown

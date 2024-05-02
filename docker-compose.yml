@@ -2,12 +2,12 @@ version: '3.9'
 name: 'filters'
 services:
 
-  title_filter_barrier:
+  title_filter_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/barrier/Dockerfile
-    container_name: title_filter_barrier
-    image: barrier:latest
+      dockerfile: ./controllers/proxy_barrier/Dockerfile
+    container_name: title_filter_proxy_barrier
+    image: proxy_barrier:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=title_filter
@@ -16,7 +16,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/barrier/main.py:/main.py
+      - ./controllers/proxy_barrier/main.py:/main.py
 
   title_filter1:
     build:
@@ -34,12 +34,12 @@ services:
       - ./controllers/filters/title_filter/config.ini:/config.ini
       - ./controllers/filters/title_filter/main.py:/main.py
 
-  date_filter_barrier:
+  date_filter_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/barrier/Dockerfile
-    container_name: date_filter_barrier
-    image: barrier:latest
+      dockerfile: ./controllers/proxy_barrier/Dockerfile
+    container_name: date_filter_proxy_barrier
+    image: proxy_barrier:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=date_filter
@@ -48,7 +48,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/barrier/main.py:/main.py
+      - ./controllers/proxy_barrier/main.py:/main.py
 
   date_filter1:
     build:
@@ -66,12 +66,12 @@ services:
       - ./controllers/filters/date_filter/config.ini:/config.ini
       - ./controllers/filters/date_filter/main.py:/main.py
 
-  category_filter_barrier:
+  category_filter_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/barrier/Dockerfile
-    container_name: category_filter_barrier
-    image: barrier:latest
+      dockerfile: ./controllers/proxy_barrier/Dockerfile
+    container_name: category_filter_proxy_barrier
+    image: proxy_barrier:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=category_filter
@@ -80,7 +80,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/barrier/main.py:/main.py
+      - ./controllers/proxy_barrier/main.py:/main.py
 
   category_filter1:
     build:
@@ -110,12 +110,12 @@ services:
     volumes:
       - ./controllers/filters/decade_counter/config.ini:/config.ini
       - ./controllers/filters/decade_counter/main.py:/main.py
-  sentiment_analyzer_barrier:
+  sentiment_analyzer_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/barrier/Dockerfile
-    container_name: sentiment_analyzer_barrier
-    image: barrier:latest
+      dockerfile: ./controllers/proxy_barrier/Dockerfile
+    container_name: sentiment_analyzer_proxy_barrier
+    image: proxy_barrier:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=sentiment_analyzer
@@ -124,7 +124,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/barrier/main.py:/main.py
+      - ./controllers/proxy_barrier/main.py:/main.py
 
   sentiment_analyzer1:
     build:
