@@ -153,9 +153,9 @@ def _feed_books(
             if len(batch) > 0:
                 _send_books_batch(messaging, batch)
         if not shutting_down.value:
-            messaging.send_to_queue("date_filter_queue", Message({"EOF": True}))
-            messaging.send_to_queue("decade_counter_queue", Message({"EOF": True}))
-            messaging.send_to_queue("category_filter_queue", Message({"EOF": True}))
+            messaging.send_to_queue("date_filter_queue", Message({"EOF": True, "query": [1, 3, 4]}))
+            messaging.send_to_queue("decade_counter_queue", Message({"EOF": True, "query": 2}))
+            messaging.send_to_queue("category_filter_queue", Message({"EOF": True, "query": 5}))
 
 
 def _feed_reviews(

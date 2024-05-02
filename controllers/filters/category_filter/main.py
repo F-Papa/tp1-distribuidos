@@ -119,12 +119,12 @@ def _send_batch_q1(messaging: Goutong, batch: list):
 def _send_batch_q5(messaging: Goutong, batch: list):
     data = list(map(_columns_for_query5, batch))
     msg = Message({"query": [5], "data": data})
-    # messaging.send_to_queue(OUTPUT_Q5, msg)
+    messaging.send_to_queue(OUTPUT_Q5, msg)
     logging.debug(f"Sent Data to: {OUTPUT_Q5}")
 
 
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1, OUTPUT_Q5]})
+def _send_EOF(messaging: Goutong, eof_queue: str):
+    msg = Message({"EOF": True, "forward_to": [eof_queue]})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
@@ -134,7 +134,13 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
 
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_EOF(messaging)
+        if msg.get("query") == 1:
+            _send_EOF(messaging, OUTPUT_Q1)
+        elif msg.get("query") == 5:
+            _send_EOF(messaging, OUTPUT_Q5)
+        else:
+            logging.info("ESTO ESMA SDIHDHDD:V")
+        
         return
 
     query_id = msg.get("query")
@@ -165,6 +171,7 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
 
     if batch_q5:
         _send_batch_q5(messaging, batch_q5)
+        logging.debug(f"MANDO A JOINER {batch_q5}")
 
 
 if __name__ == "__main__":

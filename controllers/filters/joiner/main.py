@@ -230,10 +230,10 @@ class Joiner:
                 self.batch_q3_4.clear()
 
         # Query 5 Flow
-        elif 5 in query:
+        if 5 in query:
             for review in reviews:
-                if not self.books.get(5, review["title"]):
-                    continue
+                #if self.books.get(5, review["title"]) is None:
+                #    continue
                 title = review["title"]
                 review_text = review["review/text"]
                 self.batch_q5.append((title, review_text))

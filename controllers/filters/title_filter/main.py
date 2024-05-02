@@ -110,7 +110,7 @@ def _send_batch_q1(messaging: Goutong, batch: list):
 
 
 def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1]})
+    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1], "query": 1})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 

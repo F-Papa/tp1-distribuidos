@@ -9,9 +9,10 @@ from exceptions.shutting_down import ShuttingDown
 
 
 FILTER_TYPE = "sentiment_analyzer"
+EOF_QUEUE = "sentiment_analyzer_eof"
 CONTROL_GROUP = "CONTROL"
 
-OUTPUT_QUEUE = "sentiment_average_reducer"
+OUTPUT_QUEUE = "sentiment_average_queue"
 
 shutting_down = False
 
@@ -43,6 +44,7 @@ def config_logging(level: str):
 
 def main():
     required = {
+        "FILTER_NUMBER": int,
         "LOGGING_LEVEL": str,
         "ITEMS_PER_BATCH": int,
     }
@@ -57,10 +59,12 @@ def main():
     messaging = Goutong()
 
     # Set up queues
-    control_queue_name = "sentiment_analyzer_control"
-    input_queue_name = FILTER_TYPE + "_queue"
+    control_queue_name = (
+        FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
+    )
+    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
 
-    own_queues = [input_queue_name, control_queue_name]
+    own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
     messaging.add_queues(*own_queues)
     messaging.add_queues(OUTPUT_QUEUE)
 
@@ -90,13 +94,13 @@ def callback_control(messaging: Goutong, msg: Message):
 
 def _send_EOF(messaging: Goutong):
     msg = Message({"EOF": True, "forward_to": [OUTPUT_QUEUE]})
-    messaging.send_to_queue(OUTPUT_QUEUE, msg)
-    logging.debug(f"Sent EOF to: {OUTPUT_QUEUE}")
+    messaging.send_to_queue(EOF_QUEUE, msg)
+    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
 def _analyze_sentiment(text: str):
     blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity
+    sentiment = blob.sentiment.polarity # type: ignore
     return sentiment
 
 
