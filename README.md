@@ -2,7 +2,19 @@
 
 ## Introduction
 
-This system's purpouse is to analyze books and their revi
+This system's purpouse is to analyze books and their reviews, answering queries ranging from the top rated books from the 90s to those under the "Fiction" category whose average sentiment is best.
+
+## Index
+
+1. [Documentation](#documentation)  
+    1. [Scenarios](#scenarios)
+    2. [Physical](#physical)
+    3. [Logical](#logical)
+    4. [Process](#process)
+    5. [Development](#development)
+2. [Execution Instruction](#instructions)   
+    1. [Run](#starting-the-system-up)
+    2. [Shutdown](#shutting-the-system-down)
 
 ## Documentation
 
@@ -52,6 +64,8 @@ The packages in which the source code is separated and their dependencies.
 
 ## Instructions
 
+### Starting the System Up
+
 1) Create the network if it is the first time running the system
 > $ make network-create
 
@@ -70,7 +84,7 @@ The packages in which the source code is separated and their dependencies.
 4) Run the Boundary
 > $ make boundary-up
 
-## Shutting the system down
+### Shutting the system down
 
 1) Terminate the filters.
 > $ make filters-down
