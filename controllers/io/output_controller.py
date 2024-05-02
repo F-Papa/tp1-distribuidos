@@ -69,6 +69,10 @@ def callback_display_results(messaging: Goutong, msg: Message, start_time):
         minutes = int((time_elapsed % 3600) // 60)
         seconds = int(time_elapsed % 60)
 
+        hours = str(hours).zfill(2)
+        minutes = str(minutes).zfill(2)
+        seconds = str(seconds).zfill(2)
+
         logging.info(
             f"({eof_received}/{NUMBER_OF_QUERIES}) Queries completed in {hours}:{minutes}:{seconds} since start."
         )
