@@ -92,8 +92,9 @@ class ReviewCache:
 
         # Already cached, add the new reviews and return
         if title in self.cache.keys():
-            self.cache[title][0] += score
-            self.cache[title][1] += 1
+            current_score, current_count = self.cache[title]
+            self.cache[title] = [current_score + score, current_count + 1]
+            logging.debug(f"Updated title in cache: {title}")
             return
 
         # Could be in file
@@ -148,6 +149,7 @@ class ReviewCounter:
         self.shutting_down = False
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
+        self.msg_received = 0
 
         self.items_per_batch = items_per_batch
         self.titles_in_last_msg = dict()
@@ -216,6 +218,7 @@ class ReviewCounter:
         messaging: Goutong,
         msg: Message,
     ):
+        self.msg_received += 1
 
         if msg.has_key("EOF"):
             if self.q3_output_batch_size > 0:
@@ -224,6 +227,7 @@ class ReviewCounter:
             self._send_q4_batch()
 
             logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
+            logging.info(f"MSGS RECIBIDOS {self.msg_received}")
             self._reset_state()
             self._send_EOF()
             return
@@ -231,8 +235,7 @@ class ReviewCounter:
         msg_reviews = msg.get("data")
         for review in msg_reviews:
             title = review.get("title")
-            # Ya llego a 500 revs
-            self.reviews.add(review.get("title"), float(review.get("review/score")))
+            self.reviews.add(title, float(review.get("review/score")))
             if title not in self.titles_in_last_msg:
                 self.titles_in_last_msg.update({title: review.get("authors")})
 
@@ -275,9 +278,12 @@ class ReviewCounter:
             if sum_n_count is None:
                 raise InvalidCacheState
 
-            _, count = sum_n_count
-            if count >= self.THRESHOLD and title not in self.titles_over_thresh:
+            _, reviews_count = sum_n_count
+            if reviews_count >= self.THRESHOLD and title not in self.titles_over_thresh:
                 self.q3_output_batch.append({"title": title, "authors": authors})
+                logging.debug(
+                    f"Title has exceeded threshold: {title} with {reviews_count} reviews."
+                )
                 self.titles_over_thresh.add(title)
                 self.q3_output_batch_size += 1
 
