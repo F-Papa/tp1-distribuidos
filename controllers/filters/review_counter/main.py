@@ -9,6 +9,7 @@ import os
 
 from utils.config_loader import Configuration
 from exceptions.shutting_down import ShuttingDown
+from data_access.data_access import DataAccess
 
 from collections import defaultdict
 
@@ -21,115 +22,114 @@ class InvalidCacheState(Exception):
         pass
 
 
-class ReviewCache:
-    FILE_PREFIX = "reviews"
-    FILE_SUFFIX = ".json"
-    N_PARTITIONS = 10
-    KEY_VALUE_SEPARATOR = "%%%"
-    DEBUG_FREQ = 2500
+# class ReviewCache:
+#     FILE_PREFIX = "reviews"
+#     FILE_SUFFIX = ".json"
+#     N_PARTITIONS = 10
+#     KEY_VALUE_SEPARATOR = "%%%"
+#     DEBUG_FREQ = 2500
 
-    def __init__(self, cache_vacants: int) -> None:
-        self.cache = {}
-        self.cache_vacants = cache_vacants
-        self.cached_entries = 0
-        self.entries_in_files = 0
+#     def __init__(self, cache_vacants: int) -> None:
+#         self.cache = {}
+#         self.cache_vacants = cache_vacants
+#         self.cached_entries = 0
+#         self.entries_in_files = 0
 
-        # create files from scratch
-        for i in range(self.N_PARTITIONS):
-            file = self.FILE_PREFIX + str(i) + self.FILE_SUFFIX
-            with open(file, "w") as f:
-                pass
+#         # create files from scratch
+#         for i in range(self.N_PARTITIONS):
+#             file = self.FILE_PREFIX + str(i) + self.FILE_SUFFIX
+#             with open(file, "w") as f:
+#                 pass
 
-    def n_elements_in_cache(self) -> int:
-        return self.cached_entries
+#     def n_elements_in_cache(self) -> int:
+#         return self.cached_entries
 
-    def _write_oldest_to_disk(self):
-        if len(self.cache) == 0:
-            raise ValueError("Cache is empty")
+#     def _write_oldest_to_disk(self):
+#         if len(self.cache) == 0:
+#             raise ValueError("Cache is empty")
 
-        title: str = list(self.cache.keys())[0]
-        first_title_reviews = list(self.cache.pop(title))
+#         title: str = list(self.cache.keys())[0]
+#         first_title_reviews = list(self.cache.pop(title))
 
-        partition = hash(title) % self.N_PARTITIONS
-        file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
+#         partition = hash(title) % self.N_PARTITIONS
+#         file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
 
-        entry = f"{title}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_title_reviews)}\n"
-        with open(file_name, "a") as f:
-            f.write(entry)
+#         entry = f"{title}{self.KEY_VALUE_SEPARATOR}{json.dumps(first_title_reviews)}\n"
+#         with open(file_name, "a") as f:
+#             f.write(entry)
 
-        # logging.debug(f"Entry saved in file {file_name}")
-        self.entries_in_files += 1
-        self.cached_entries -= 1
+#         # logging.debug(f"Entry saved in file {file_name}")
+#         self.entries_in_files += 1
+#         self.cached_entries -= 1
 
-    def _pop_from_disk(self, title: str) -> list[float]:
-        temp_file_name = "temp.json"
+#     def _pop_from_disk(self, title: str) -> list[float]:
+#         temp_file_name = "temp.json"
 
-        partition = hash(title) % self.N_PARTITIONS
-        file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
-        value_from_disk = [0.0, 0.0]
+#         partition = hash(title) % self.N_PARTITIONS
+#         file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
+#         value_from_disk = [0.0, 0.0]
 
-        with open(file_name, "r") as original_file, open(
-            temp_file_name, "w"
-        ) as temp_file:
-            for line in original_file:
-                line_title, data = line.split(self.KEY_VALUE_SEPARATOR)
-                if line_title != title:
-                    temp_file.write(line)
-                else:
-                    value_from_disk = json.loads(data)
-                    self.entries_in_files -= 1
+#         with open(file_name, "r") as original_file, open(
+#             temp_file_name, "w"
+#         ) as temp_file:
+#             for line in original_file:
+#                 line_title, data = line.split(self.KEY_VALUE_SEPARATOR)
+#                 if line_title != title:
+#                     temp_file.write(line)
+#                 else:
+#                     value_from_disk = json.loads(data)
+#                     self.entries_in_files -= 1
 
-        os.replace(temp_file_name, file_name)
-        return value_from_disk
+#         os.replace(temp_file_name, file_name)
+#         return value_from_disk
 
-    def add(self, title: str, score: float):
-        # dbg_string = "Adding (%s) | Cache Avl.: %d" % (
-        #     # author[0:10] + "...",
-        #     title,
-        #     self.cache_vacants - self.n_elements_in_cache(),
-        # )
-        # logging.debug(dbg_string)
+#     def add(self, title: str, score: float):
+#         # dbg_string = "Adding (%s) | Cache Avl.: %d" % (
+#         #     # author[0:10] + "...",
+#         #     title,
+#         #     self.cache_vacants - self.n_elements_in_cache(),
+#         # )
+#         # logging.debug(dbg_string)
+#         # Already cached, add the new reviews and return
+#         if title in self.cache.keys():
+#             current_score, current_count = self.cache[title]
+#             self.cache[title] = [current_score + score, current_count + 1]
+#             logging.debug(f"Updated title in cache: {title}")
+#             return
 
-        # Already cached, add the new reviews and return
-        if title in self.cache.keys():
-            current_score, current_count = self.cache[title]
-            self.cache[title] = [current_score + score, current_count + 1]
-            logging.debug(f"Updated title in cache: {title}")
-            return
+#         # Could be in file
+#         if self.entries_in_files > 0:
+#             title_reviews = self._pop_from_disk(title)
+#             title_reviews[0] += score
+#             title_reviews[1] += 1
+#         else:
+#             title_reviews = [score, 1]
 
-        # Could be in file
-        if self.entries_in_files > 0:
-            title_reviews = self._pop_from_disk(title)
-            title_reviews[0] += score
-            title_reviews[1] += 1
-        else:
-            title_reviews = [score, 1]
+#         # If it is in the disk, add the new review to the existing ones, otherwise create a new list
 
-        # If it is in the disk, add the new review to the existing ones, otherwise create a new list
+#         # If the cache is full, write the oldest entry to disk
+#         if self.n_elements_in_cache() >= self.cache_vacants:
+#             if self.entries_in_files % self.DEBUG_FREQ == 0:
+#                 logging.debug(
+#                     f"Committing 1 entry to disk | CACHE_ENTRIES:{self.cached_entries} | ENTRIES_INF_FILE: {self.entries_in_files}"
+#                 )
+#             self._write_oldest_to_disk()
 
-        # If the cache is full, write the oldest entry to disk
-        if self.n_elements_in_cache() >= self.cache_vacants:
-            if self.entries_in_files % self.DEBUG_FREQ == 0:
-                logging.debug(
-                    f"Committing 1 entry to disk | CACHE_ENTRIES:{self.cached_entries} | ENTRIES_INF_FILE: {self.entries_in_files}"
-                )
-            self._write_oldest_to_disk()
+#         # Add the author to the cache, whether it was in the disk or a new one
+#         self.cached_entries += 1
+#         self.cache.update({title: title_reviews})
 
-        # Add the author to the cache, whether it was in the disk or a new one
-        self.cached_entries += 1
-        self.cache.update({title: title_reviews})
+#     def get(self, title: str) -> Union[list[float], None]:
+#         if title in self.cache.keys():
+#             return self.cache[title]
 
-    def get(self, title: str) -> Union[list[float], None]:
-        if title in self.cache.keys():
-            return self.cache[title]
-
-        elif self.entries_in_files > 0:
-            sum_and_count = self._pop_from_disk(title)
-            if sum_and_count is not None:
-                self.cache.update({title: sum_and_count})
-            return sum_and_count
-        else:
-            return None
+#         elif self.entries_in_files > 0:
+#             sum_and_count = self._pop_from_disk(title)
+#             if sum_and_count is not None:
+#                 self.cache.update({title: sum_and_count})
+#             return sum_and_count
+#         else:
+#             return None
 
 
 class ReviewCounter:
@@ -144,8 +144,8 @@ class ReviewCounter:
 
     DEBUG_FREQ = 500
 
-    def __init__(self, items_per_batch: int, cache_vacants: int):
-        self.reviews = ReviewCache(cache_vacants)
+    def __init__(self, items_per_batch: int, reviews: DataAccess):
+        self.reviews = reviews
         self.shutting_down = False
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
@@ -203,7 +203,7 @@ class ReviewCounter:
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q3} and {self.OUTPUT_Q4}")
 
     def _reset_state(self):
-        self.reviews = ReviewCache(self.reviews.cache_vacants)
+        self.reviews.clear()
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
         self.titles_in_last_msg = dict()
@@ -235,7 +235,8 @@ class ReviewCounter:
         msg_reviews = msg.get("data")
         for review in msg_reviews:
             title = review.get("title")
-            self.reviews.add(title, float(review.get("review/score")))
+            score_to_sum = float(review.get("review/score"))
+            self.reviews.add(title, [score_to_sum, 1.0])
             if title not in self.titles_in_last_msg:
                 self.titles_in_last_msg.update({title: review.get("authors")})
 
@@ -245,7 +246,7 @@ class ReviewCounter:
     def _send_q4_batch(self):
         to_sort = list(
             map(
-                lambda title: {title: self.reviews.get(title)[0] / self.reviews.get(title)[1]},  # type: ignore
+                lambda title: {title: self.reviews.get(title).value[0] / self.reviews.get(title).value[1]},  # type: ignore
                 self.titles_over_thresh,
             )
         )
@@ -261,6 +262,7 @@ class ReviewCounter:
             data = self.q3_output_batch[: self.items_per_batch]
             self.q3_output_batch = self.q3_output_batch[self.items_per_batch :]
             self.q3_output_batch_size -= self.items_per_batch
+
             msg = Message({"query": 3, "data": data})
             self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
             check_full = True  # Avoid infinite loop
@@ -273,16 +275,17 @@ class ReviewCounter:
 
     def _load_q3_batch(self):
         for title, authors in self.titles_in_last_msg.items():
-            sum_n_count = self.reviews.get(title)
+            entry: Union[DataAccess.DataEntry, None] = self.reviews.get(title)
 
-            if sum_n_count is None:
+            if entry is None:
+                logging.error(f"Title not found: {title}")
                 raise InvalidCacheState
 
-            _, reviews_count = sum_n_count
-            if reviews_count >= self.THRESHOLD and title not in self.titles_over_thresh:
+            score_sum, n_reviews = entry.value
+            if n_reviews >= self.THRESHOLD and title not in self.titles_over_thresh:
                 self.q3_output_batch.append({"title": title, "authors": authors})
                 logging.debug(
-                    f"Title has exceeded threshold: {title} with {reviews_count} reviews."
+                    f"Title has exceeded threshold: {title} with {n_reviews} reviews."
                 )
                 self.titles_over_thresh.add(title)
                 self.q3_output_batch_size += 1
@@ -313,7 +316,12 @@ def config_logging(level: str):
 
 
 def main():
-    required = {"LOGGING_LEVEL": str, "CACHE_VACANTS": int, "ITEMS_PER_BATCH": int}
+    required = {
+        "N_PARTITIONS": int,
+        "LOGGING_LEVEL": str,
+        "CACHE_VACANTS": int,
+        "ITEMS_PER_BATCH": int,
+    }
     filter_config = Configuration.from_file(required, "config.ini")
     filter_config.update_from_env()
     filter_config.validate()
@@ -321,10 +329,24 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    counter = ReviewCounter(
-        items_per_batch=filter_config.get("ITEMS_PER_BATCH"),
-        cache_vacants=filter_config.get("CACHE_VACANTS"),
+    def sum_and_increment(
+        old_value: list[float], new_value: list[float]
+    ) -> list[float]:
+        return [old_value[0] + new_value[0], old_value[1] + new_value[1]]
+
+    reviews = DataAccess(
+        str,
+        list,
+        filter_config.get("CACHE_VACANTS"),
+        filter_config.get("N_PARTITIONS"),
+        "q2_reviews",
+        sum_and_increment,
     )
+
+    counter = ReviewCounter(
+        items_per_batch=filter_config.get("ITEMS_PER_BATCH"), reviews=reviews
+    )
+
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(counter))
     counter.listen()
 

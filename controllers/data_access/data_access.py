@@ -40,8 +40,20 @@ class DataAccess:
         self.merge_function = merge_function
 
     def _pop_oldest_cache_entry(self) -> DataEntry:
-        first_cache_key = list(self.cache.keys())[0]
+        # logging.info(f"Number before popping from cache: {self.cached_entries}")
+        if self.cached_entries <= 0:
+            raise ValueError("Cache is empty")
+
+        try:
+            first_cache_key = list(self.cache.keys())[0]
+        except IndexError:
+            raise IndexError(
+                f"Cache is empty and should have {self.cached_entries} entries"
+            )
         first_cache_value = self.cache.pop(first_cache_key)
+        self.cached_entries -= 1
+
+        # logging.info(f"Number after popping from cache: {self.cached_entries}")
 
         return self.DataEntry(
             self.key_type, self.value_type, first_cache_key, first_cache_value
@@ -57,15 +69,22 @@ class DataAccess:
         return self.entries_in_files
 
     def _write_oldest_to_disk(self):
+        # logging.info(f"Number before committing: {self.cached_entries}")
         oldest_entry = self._pop_oldest_cache_entry()
         partition = self._partition_for_entry(oldest_entry)
         file_name = f"{self.file_prefix}_{partition}.json"
-        entry = f"{oldest_entry.key}{self.KEY_VALUE_SEPARATOR}{oldest_entry.value}\n"
+
+        serialized_key = json.dumps(oldest_entry.key)
+        serialized_value = json.dumps(oldest_entry.value)
+
+        entry = f"{serialized_key}{self.KEY_VALUE_SEPARATOR}{serialized_value}\n"
+        logging.debug(f"Writing entry to disk: {entry}")
         with open(file_name, "a") as f:
             f.write(entry)
 
         self.entries_in_files += 1
-        self.cached_entries -= 1
+
+        # logging.info(f"Number after committing: {self.cached_entries}")
 
     def _pop_from_disk(self, key: Any) -> Union[DataEntry, None]:
         if not isinstance(key, self.key_type):
@@ -87,12 +106,14 @@ class DataAccess:
                     serialized_value = line[
                         separator_index + len(self.KEY_VALUE_SEPARATOR) :
                     ]
+                    logging.debug(f"Found entry in disk for: {key}")
                     entry = self.DataEntry(
                         self.key_type,
                         self.value_type,
                         key,
                         json.loads(serialized_value),
                     )
+                    self.entries_in_files -= 1
                 # Otherwise, we write the line to the temp file
                 else:
                     temp.write(line)
@@ -103,59 +124,90 @@ class DataAccess:
     def _cache_has_vacants(self) -> bool:
         return self.cached_entries < self.cache_vacants
 
+    def clear(self):
+        logging.info("Clearing cache and files")
+        self.cache.clear()
+        self.cached_entries = 0
+        self.entries_in_files = 0
+        for i in range(self.n_partitions):
+            file_name = f"{self.file_prefix}_{i}.json"
+            if os.path.exists(file_name):
+                os.remove(file_name)
+
     def _write_to_cache(self, key: Any, value: Any):
+        # logging.info(f"Number before adding to cache: {self.cached_entries}")
         if not isinstance(key, self.key_type):
             raise ValueError(f"Key must be of type {self.key_type}")
 
         if not isinstance(value, self.value_type):
             raise ValueError(f"Value must be of type {self.value_type}")
 
-        if self.cached_entries >= self.cache_vacants:
+        if not self._cache_has_vacants():
             self._write_oldest_to_disk()
 
         self.cache[key] = value
         self.cached_entries += 1
+        # logging.info(f"Number after adding to cache: {self.cached_entries}")
 
     def add(self, key: Any, value: Any):
+        # logging.info(f"Number before adding: {self.cached_entries}")
         if not isinstance(key, self.key_type):
             raise ValueError(f"Key must be of type {self.key_type}")
 
         if not isinstance(value, self.value_type):
             raise ValueError(f"Value must be of type {self.value_type}")
 
-        stored_entry = self.get(key)
+        if key in self.cache:
+            cached_value = self.cache.pop(key)
+            stored_entry = self.DataEntry(
+                self.key_type, self.value_type, key, cached_value
+            )
+            self.cached_entries -= 1
+        elif self.entries_in_files > 0:
+            stored_entry = self._pop_from_disk(key)
+        else:
+            stored_entry = None
 
         # If the key is not in the cache or no merge function is provided,
         # we just write the new value to the cache
         if stored_entry is None or self.merge_function is None:
             if stored_entry is not None:
-                logging.info(f"Overwriting entry for key {key}")
+                logging.debug(f"Overwriting entry for key {key}")
+            else:
+                logging.debug(f"Adding new entry for key {key}")
 
             if not self._cache_has_vacants():
                 self._write_oldest_to_disk()
             self._write_to_cache(key, value)
+
+            # logging.info(f"Number after adding: {self.cached_entries}")
             return
 
         # If the key is in the cache, we merge the new value with the stored one
         result = self.merge_function(stored_entry.value, value)
-        stored_entry.value = result
+        logging.debug(
+            f"Merge Function Called for {key}: {stored_entry.value} + {value} = {result}"
+        )
 
         if not self._cache_has_vacants():
             self._write_oldest_to_disk()
         self._write_to_cache(key, result)
 
     def get(self, key: Any) -> Union[DataEntry, None]:
+        # logging.info(f"Number before getting: {self.cached_entries}")
         if not isinstance(key, self.key_type):
             raise ValueError(f"Key must be of type {self.key_type}")
 
         # If the key is in the cache, we return a copy of the entry
         if key in self.cache:
             value = self.cache.get(key)
+            # logging.info(f"Number after getting: {self.cached_entries}")
             return self.DataEntry(self.key_type, self.value_type, key, value)
 
         # If the key is not in the cache, and there are no entries in the files,
         # we return None
         if self.entries_in_files <= 0:
+            # logging.info(f"Number after getting: {self.cached_entries}")
             return None
 
         # If the key is not in the cache, and there are entries in the files,
@@ -164,6 +216,7 @@ class DataAccess:
 
         # If the entry is not found in the disk, we return None
         if entry is None:
+            # logging.info(f"Number after getting: {self.cached_entries}")
             return None
 
         # If the entry is found in the disk, we add it to the cache and return it
@@ -171,4 +224,5 @@ class DataAccess:
             self._write_oldest_to_disk()
 
         self._write_to_cache(entry.key, entry.value)
+        # logging.info(f"Number after getting: {self.cached_entries}")
         return entry
