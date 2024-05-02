@@ -1,4 +1,15 @@
-# Instructions
+# Amazon Books Analyzer
+
+## Documentación
+
+## Vistas de Arquitectura 4+1
+
+### Escenarios
+
+![alt text](https://github.com/[F-Papa]/[tp1-distribuidos]/blob/[main]/diagrams/DiagramasTp1-Usecases.drawio.png?raw=true)
+
+
+## Instructions
 
 1) Create the network if it is the first time running the system
 > $ make network-create
@@ -18,7 +29,7 @@
 4) Run the Boundary
 > $ make boundary-up
 
-# Shutting the system down
+## Shutting the system down
 
 1) Terminate the filters.
 > $ make filters-down
