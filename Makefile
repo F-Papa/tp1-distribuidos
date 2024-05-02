@@ -24,7 +24,7 @@ filters-down:
 	docker compose -f ./docker-compose.yml down -t 0
 
 boundary-up:
-	docker run -it -e LOGGING_LEVEL=INFO -v ITEMS_PER_BATCH=$(BOUNDARY_ITEMS_PER_BATCH) -v ./boundary.py:/main.py -v $(BOOKS_ENTITY):/books.csv -v $(REVIEWS_ENTITY):/reviews.csv --rm --network tp1_testing_net boundary
+	docker run -it -e LOGGING_LEVEL=INFO -e ITEMS_PER_BATCH=$(BOUNDARY_ITEMS_PER_BATCH) -v ./boundary.py:/main.py -v ./results:/results -v $(BOOKS_ENTITY):/books.csv -v $(REVIEWS_ENTITY):/reviews.csv --rm --network tp1_testing_net boundary
 
 boundary-build:.
 	docker build -f ./Dockerfile -t boundary .

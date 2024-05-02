@@ -24,13 +24,12 @@ class InvalidCacheState(Exception):
 class ReviewCache:
     FILE_PREFIX = "reviews"
     FILE_SUFFIX = ".json"
-    N_PARTITIONS = 1000
-    # Q3_4_FILE = "q3_4_reviews.json"
+    N_PARTITIONS = 10
     KEY_VALUE_SEPARATOR = "%%%"
     DEBUG_FREQ = 2500
 
     def __init__(self, cache_vacants: int) -> None:
-        self.cache = defaultdict(list)
+        self.cache = {}
         self.cache_vacants = cache_vacants
         self.cached_entries = 0
         self.entries_in_files = 0
@@ -62,30 +61,28 @@ class ReviewCache:
         self.entries_in_files += 1
         self.cached_entries -= 1
 
-    def _pop_from_disk(self, title: str) -> tuple[str, Union[list, None]]:
+    def _pop_from_disk(self, title: str) -> list[float]:
         temp_file_name = "temp.json"
 
         partition = hash(title) % self.N_PARTITIONS
         file_name = self.FILE_PREFIX + str(partition) + self.FILE_SUFFIX
-        value_from_disk: Union[list, None] = None
+        value_from_disk = [0.0, 0.0]
+
         with open(file_name, "r") as original_file, open(
             temp_file_name, "w"
         ) as temp_file:
             for line in original_file:
-                sep_index = line.find(self.KEY_VALUE_SEPARATOR)
-                line_title = line[:sep_index]
+                line_title, data = line.split(self.KEY_VALUE_SEPARATOR)
                 if line_title != title:
                     temp_file.write(line)
                 else:
-                    value_from_disk = json.loads(
-                        line[sep_index + len(self.KEY_VALUE_SEPARATOR) :]
-                    )
+                    value_from_disk = json.loads(data)
                     self.entries_in_files -= 1
 
         os.replace(temp_file_name, file_name)
-        return (title, value_from_disk)
+        return value_from_disk
 
-    def add(self, title: str, review: dict):
+    def add(self, title: str, score: float):
         # dbg_string = "Adding (%s) | Cache Avl.: %d" % (
         #     # author[0:10] + "...",
         #     title,
@@ -95,17 +92,19 @@ class ReviewCache:
 
         # Already cached, add the new reviews and return
         if title in self.cache.keys():
-            self.cache[title].append(review)
+            self.cache[title][0] += score
+            self.cache[title][1] += 1
             return
 
-        review_in_disk = None
         # Could be in file
         if self.entries_in_files > 0:
-            _, review_in_disk = self._pop_from_disk(title)
+            title_reviews = self._pop_from_disk(title)
+            title_reviews[0] += score
+            title_reviews[1] += 1
+        else:
+            title_reviews = [score, 1]
 
         # If it is in the disk, add the new review to the existing ones, otherwise create a new list
-        title_reviews = review_in_disk if review_in_disk is not None else []
-        title_reviews.append(review)
 
         # If the cache is full, write the oldest entry to disk
         if self.n_elements_in_cache() >= self.cache_vacants:
@@ -117,17 +116,17 @@ class ReviewCache:
 
         # Add the author to the cache, whether it was in the disk or a new one
         self.cached_entries += 1
-        self.cache[title].append(review)
+        self.cache.update({title: title_reviews})
 
-    def get(self, title: str) -> Union[list, None]:
+    def get(self, title: str) -> Union[list[float], None]:
         if title in self.cache.keys():
             return self.cache[title]
 
         elif self.entries_in_files > 0:
-            _, reviews = self._pop_from_disk(title)
-            if reviews is not None:
-                self.cache.update({title: reviews})
-            return reviews
+            sum_and_count = self._pop_from_disk(title)
+            if sum_and_count is not None:
+                self.cache.update({title: sum_and_count})
+            return sum_and_count
         else:
             return None
 
@@ -140,9 +139,9 @@ class ReviewCounter:
     CONTROL_GROUP = "CONTROL"
 
     OUTPUT_Q3 = "results_queue"
-    OUTPUT_Q4 = "rating_average_queue"
+    OUTPUT_Q4 = "results_queue"
 
-    DEBUG_FREQ = 50000
+    DEBUG_FREQ = 500
 
     def __init__(self, items_per_batch: int, cache_vacants: int):
         self.reviews = ReviewCache(cache_vacants)
@@ -151,7 +150,7 @@ class ReviewCounter:
         self.titles_over_thresh = set()
 
         self.items_per_batch = items_per_batch
-        self.titles_in_last_msg = set()
+        self.titles_in_last_msg = dict()
 
         self.q3_output_batch = []
         self.q3_output_batch_size = 0
@@ -202,14 +201,12 @@ class ReviewCounter:
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q3} and {self.OUTPUT_Q4}")
 
     def _reset_state(self):
-        # RESETEAR EL CACHE
+        self.reviews = ReviewCache(self.reviews.cache_vacants)
         self.review_counts = defaultdict(int)
         self.titles_over_thresh = set()
-        self.titles_in_last_msg = set()
+        self.titles_in_last_msg = dict()
         self.q3_output_batch = []
         self.q3_output_batch_size = 0
-        self.q4_output_batch = []
-        self.q4_output_batch_size = 0
 
         self.sent_to_q3 = 0
         self.sent_to_q4 = 0
@@ -222,14 +219,9 @@ class ReviewCounter:
 
         if msg.has_key("EOF"):
             if self.q3_output_batch_size > 0:
-                msg = Message({"query": 3, "data": self.q3_output_batch})
-                self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
-                logging.debug(f"{self.sent_to_q3} more titles sent to Q3")
+                self._send_q3_batch(check_full=False)
 
-            if self.q4_output_batch_size > 0:
-                msg = Message({"query": 4, "data": self.q4_output_batch})
-                self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
-                logging.debug(f"{self.sent_to_q4} more titles sent to Q4")
+            self._send_q4_batch()
 
             logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
             self._reset_state()
@@ -240,67 +232,54 @@ class ReviewCounter:
         for review in msg_reviews:
             title = review.get("title")
             # Ya llego a 500 revs
-            if title in self.titles_over_thresh:
-                # Solo Query 4
-                self.q4_output_batch.append(
-                    {"title": title, "review/score": review["review/score"]}
-                )
-                self.q4_output_batch_size += 1
+            self.reviews.add(review.get("title"), float(review.get("review/score")))
+            if title not in self.titles_in_last_msg:
+                self.titles_in_last_msg.update({title: review.get("authors")})
 
-            # No llego a 500 revs
-            else:
-                self.reviews.add(title, review)
-                self.review_counts[title] += 1
-                self.titles_in_last_msg.add(title)
+        self._load_q3_batch()
+        self._send_q3_batch(check_full=True)
 
-        self._load_data_if_thresh_met()
-        self._send_batches_if_full()
+    def _send_q4_batch(self):
+        to_sort = list(
+            map(
+                lambda title: {title: self.reviews.get(title)[0] / self.reviews.get(title)[1]},  # type: ignore
+                self.titles_over_thresh,
+            )
+        )
+        to_sort.sort(key=lambda x: list(x.values())[0], reverse=True)
+        data = list(map(lambda x: {"title": list(x.keys())[0]}, to_sort[:10]))
 
-    def _send_batches_if_full(self):
-        while self.q3_output_batch_size >= self.items_per_batch:
+        msg = Message({"query": 4, "data": data})
+        self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
+
+    def _send_q3_batch(self, check_full: bool):
+
+        while (self.q3_output_batch_size >= self.items_per_batch) or not check_full:
             data = self.q3_output_batch[: self.items_per_batch]
             self.q3_output_batch = self.q3_output_batch[self.items_per_batch :]
             self.q3_output_batch_size -= self.items_per_batch
             msg = Message({"query": 3, "data": data})
             self.messaging.send_to_queue(self.OUTPUT_Q3, msg)
+            check_full = True  # Avoid infinite loop
+
+            # Used for debugging
             self.sent_to_q3 += len(data)
             if self.sent_to_q3 >= self.DEBUG_FREQ:
                 logging.debug(f"{self.sent_to_q3} more titles sent to Q3")
                 self.sent_to_q3 = 0
 
-        while self.q4_output_batch_size >= self.items_per_batch:
-            data = self.q4_output_batch[: self.items_per_batch]
-            self.q4_output_batch = self.q4_output_batch[self.items_per_batch :]
-            self.q4_output_batch_size -= self.items_per_batch
-            msg = Message({"query": 4, "data": data})
-            self.messaging.send_to_queue(self.OUTPUT_Q4, msg)
-            self.sent_to_q4 += len(data)
-            if self.sent_to_q4 >= self.DEBUG_FREQ:
-                logging.debug(f"{self.sent_to_q4} more reviews sent to Q4")
-                self.sent_to_q4 = 0
+    def _load_q3_batch(self):
+        for title, authors in self.titles_in_last_msg.items():
+            sum_n_count = self.reviews.get(title)
 
-    def _load_data_if_thresh_met(self):
-        for title in self.titles_in_last_msg:
-            reviews = self.reviews.get(title)
-            if reviews is None:
+            if sum_n_count is None:
                 raise InvalidCacheState
-            else:
-                pass
 
-            if self.review_counts[title] >= self.THRESHOLD:
-                # Query 3
-                if title not in self.titles_over_thresh:
-                    self.titles_over_thresh.add(title)
-                    authors = reviews[0].get("authors")
-                    self.q3_output_batch.append({"title": title, "authors": authors})
-                    self.q3_output_batch_size += 1
-
-                # Query 4
-                for r in reviews:
-                    self.q4_output_batch.append(
-                        {"title": title, "review/score": r["review/score"]}
-                    )
-                    self.q4_output_batch_size += 1
+            _, count = sum_n_count
+            if count >= self.THRESHOLD and title not in self.titles_over_thresh:
+                self.q3_output_batch.append({"title": title, "authors": authors})
+                self.titles_over_thresh.add(title)
+                self.q3_output_batch_size += 1
 
         self.titles_in_last_msg.clear()
 

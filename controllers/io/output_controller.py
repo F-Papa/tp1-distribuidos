@@ -17,26 +17,38 @@ eof_received = 0
 
 
 def _display_results_q1(data: list):
-    for book in data:
-        logging.info(
-            f"[Query 1] |Título: {book['title']}. |Autores: {book['authors']} |Editorial: {book['publisher']}"
-        )
+    with open("results/query1.txt", "a") as f:
+        for book in data:
+            result = f"|Título: {book['title']}. |Autores: {book['authors']} |Editorial: {book['publisher']}"
+            f.write(result + "\n")
+            logging.info("[Query 1] " + result)
 
 
 def _display_results_q2(data: list):
-    for author in data:
-        logging.info(f"[Query 2] {author}")
+    with open("results/query2.txt", "a") as f:
+        for author in data:
+            result = f"|Autor: {author}"
+            f.write(result + "\n")
+            logging.info(f"[Query 2] " + result)
 
 
 def _display_results_q3(data: list):
-    for review_info in data:
-        logging.info(
-            f"[Query 3] |Título: {review_info['title']} |Autores: {review_info['authors']}"
-        )
+    with open("results/query3.txt", "a") as f:
+        for review_info in data:
+            result = (
+                f"|Título: {review_info['title']} |Autores: {review_info['authors']}"
+            )
+            f.write(result + "\n")
+            logging.info("[Query 3] " + result)
+
 
 def _display_results_q4(data: list):
-    for book in data:
-        logging.info(f"[Query 4] |Libro: {book['title']}")
+    with open("results/query4.txt", "a") as f:
+        for book in data:
+            result = f"|Libro: {book['title']}"
+            f.write(result + "\n")
+            logging.info(f"[Query 4] " + result)
+
 
 def callback_display_results(messaging: Goutong, msg: Message):
     global eof_received

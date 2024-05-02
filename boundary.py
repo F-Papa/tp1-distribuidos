@@ -75,6 +75,10 @@ def main(book_path: str, reviews_path: str):
         target=input_controller.feed_data, args=(book_path, reviews_path, shutting_down)
     )
 
+    for i in range(1, 6):
+        with open(f"results/query{i}.txt", "w") as f:
+            pass
+
     # Send data to system
     child_process.start()
     try:

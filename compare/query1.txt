@@ -1,0 +1,15 @@
+|Título: Enterprise Linux at Work: How to Build 10 Distributed Applications for Your Organization. |Autores: ['Stephen Asbury'] |Editorial: John Wiley & Sons Incorporated
+|Título: Open Source Network Administration (Prentice Hall Series in Computer Networking and Distributed Systems). |Autores: ['James M. Kretchmar'] |Editorial: Prentice Hall Professional
+|Título: Distributed Systems Architecture: A Middleware Approach. |Autores: ['Arno Puder', 'Kay Römer', 'Frank Pilhofer'] |Editorial: Elsevier
+|Título: IBM&reg; WebSphere&reg; Application Server for Distributed Platforms and z/OS&reg;: An Administrator's Guide. |Autores: ['James W. Cortada'] |Editorial: MIT Press
+|Título: Holographic Reduced Representation: Distributed Representation for Cognitive Structures (Center for the Study of Language and Information - Lecture Notes). |Autores: ['Ignacio Rojas', 'Gonzalo Joya', 'Andreu Català'] |Editorial: Springer Nature
+|Título: Distributed .NET Programming in VB .NET. |Autores: ['Tom Barnaby'] |Editorial: Apress
+|Título: Distributed Com Application Development Using Visual C++ 6.0 with CDROM (Prentice Hall Series on Microsoft Technologies). |Autores: ['Jim Maloney'] |Editorial: Prentice Hall
+|Título: Malware: Fighting Malicious Code (Prentice Hall Series in Computer Networking and Distributed). |Autores: ['Ed Skoudis', 'Lenny Zeltser'] |Editorial: Prentice Hall Professional
+|Título: Inside Distributed COM (Mps). |Autores: ['Intermational Conference Ifip Tcs 200', 'International Federation for Information Processing', 'Springer-verlag'] |Editorial: Springer Science & Business Media
+|Título: Replication Techniques in Distributed Systems (Advances in Database Systems). |Autores: ['Abdelsalam A. Helal', 'Abdelsalam A. Heddaya', 'Bharat B. Bhargava'] |Editorial: Springer Science & Business Media
+|Título: Engineering Distributed Objects: Second International Workshop, EDO 2000 Davis, CA, USA, November 2-3, 2000 Revised Papers (Lecture Notes in Computer Science). |Autores: ['Wolfgang Emmerich', 'Stefan Tai'] |Editorial: Springer
+|Título: Parallel and Distributed Programming Using C++. |Autores: ['Cameron Hughes', 'Tracey Hughes'] |Editorial: Addison-Wesley Professional
+|Título: ASP.NET Distributed Data Applications. |Autores: ['Alex Homer', 'David Sussman'] |Editorial: Apress
+|Título: Elements of Distributed Computing. |Autores: ['Vijay K. Garg'] |Editorial: John Wiley & Sons
+|Título: Trends in Distributed Systems: Towards a Universal Service Market: Third International IFIP/GI Working Conference, USM 2000 Munich, Germany, September ... (Lecture Notes in Computer Science). |Autores: ['Claudia Linnhoff-Popien', 'Heinz-Gerd Hegering'] |Editorial: Springer
