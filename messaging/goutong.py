@@ -3,6 +3,7 @@ Goutong is a middleware that abstracts MOM (Message Oriented Middleware) for the
 It uses RabbitMQ.
 """
 
+import logging
 import pika
 from typing import Callable
 from messaging.message import Message
@@ -23,6 +24,10 @@ class Goutong:
         self.channel.start_consuming()
 
     def send_to_queue(self, queue_name: str, message: Message):
+        content_info = [
+            f"{key}: {len(str(message.get(key)))} Bytes" for key in message.keys()
+        ]
+        logging.debug(f"Message to: {queue_name} | {content_info}")
         self.channel.basic_publish(
             exchange="", routing_key=queue_name, body=message.marshal()
         )

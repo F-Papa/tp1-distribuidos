@@ -6,6 +6,9 @@ class Message:
     def __init__(self, content: dict):
         self.content = content
 
+    def keys(self):
+        return self.content.keys()
+
     def has_key(self, key: str) -> bool:
         return key in self.content
 
