@@ -50,6 +50,7 @@ def _display_results_q4(data: list):
             f.write(result + "\n")
             # logging.info(f"[Query 4] " + result)
 
+
 def _display_results_q5(data: list):
     with open("results/query5.txt", "a") as f:
         for book in data:
@@ -63,7 +64,14 @@ def callback_display_results(messaging: Goutong, msg: Message, start_time):
     if msg.has_key("EOF"):
         eof_received += 1
         end_time = time.time()
-        logging.info(f"({eof_received}/{NUMBER_OF_QUERIES}) Queries completed in {end_time - start_time}s since start.")
+        time_elapsed = end_time - start_time
+        hours = int(time_elapsed // 3600)
+        minutes = int((time_elapsed % 3600) // 60)
+        seconds = int(time_elapsed % 60)
+
+        logging.info(
+            f"({eof_received}/{NUMBER_OF_QUERIES}) Queries completed in {hours}:{minutes}:{seconds} since start."
+        )
         if eof_received == NUMBER_OF_QUERIES:
             raise EndOfQuery
         return
