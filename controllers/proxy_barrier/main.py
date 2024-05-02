@@ -14,7 +14,7 @@ from exceptions.shutting_down import ShuttingDown
 CONTROL_GROUP = "CONTROL"
 
 
-class Barrier:
+class ProxyBarrier:
     def __init__(self, barrier_config: Configuration, messaging: Goutong):
         self.barrier_config = barrier_config
         self.current_queue = 0
@@ -128,8 +128,8 @@ def main():
     logging.info(barrier_config)
 
     messaging = Goutong()
-    barrier = Barrier(barrier_config, messaging)
-    barrier.start()
+    proxy_barrier = ProxyBarrier(barrier_config, messaging)
+    proxy_barrier.start()
 
 
 if __name__ == "__main__":

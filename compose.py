@@ -26,15 +26,15 @@ networks:
 """
 
 
-def barrier_service_text(filter_type: str, filter_count: int, logging_level: str):
+def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_level: str):
 
     return f"""\
-  {filter_type}_barrier:
+  {filter_type}_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/barrier/Dockerfile
-    container_name: {filter_type}_barrier
-    image: barrier:latest
+      dockerfile: ./controllers/proxy_barrier/Dockerfile
+    container_name: {filter_type}_proxy_barrier
+    image: proxy_barrier:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE={filter_type}
@@ -43,7 +43,7 @@ def barrier_service_text(filter_type: str, filter_count: int, logging_level: str
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/barrier/main.py:/main.py
+      - ./controllers/proxy_barrier/main.py:/main.py
 """
 
 
@@ -106,6 +106,7 @@ def title_filter_service_text(number: int, items_per_batch: int):
       - ./controllers/filters/title_filter/main.py:/main.py
 """
 
+
 def decade_counter_service_text():
     return f"""\
   decade_counter:
@@ -121,6 +122,7 @@ def decade_counter_service_text():
       - ./controllers/filters/decade_counter/config.ini:/config.ini
       - ./controllers/filters/decade_counter/main.py:/main.py
 """
+
 
 def sentiment_analyzer_service_text(number: int, items_per_batch: int):
     return f"""\
@@ -141,6 +143,7 @@ def sentiment_analyzer_service_text(number: int, items_per_batch: int):
       - ./controllers/filters/sentiment_analyzer/main.py:/main.py
 """
 
+
 def joiner_text():
     return f"""\
   joiner:
@@ -156,6 +159,7 @@ def joiner_text():
       - ./controllers/filters/joiner/config.ini:/config.ini
       - ./controllers/filters/joiner/main.py:/main.py
 """
+
 
 def review_counter_text():
     return f"""\
@@ -173,6 +177,7 @@ def review_counter_text():
       - ./controllers/filters/review_counter/main.py:/main.py
 """
 
+
 def sentiment_average_reducer_text():
     return f"""\
   sentiment_average_reducer:
@@ -189,6 +194,7 @@ def sentiment_average_reducer_text():
       - ./controllers/filters/sentiment_average_reducer/main.py:/main.py
 """
 
+
 if __name__ == "__main__":
     # Create the docker-compose.yml file
     with open("docker-compose.yml", "w") as f:
@@ -199,7 +205,7 @@ if __name__ == "__main__":
 
         # Title filters & barrier
         f.write(
-            barrier_service_text(
+            proxy_barrier_service_text(
                 "title_filter", TITLE_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -211,7 +217,7 @@ if __name__ == "__main__":
 
         # Date filters & barrier
         f.write(
-            barrier_service_text(
+            proxy_barrier_service_text(
                 "date_filter", DATE_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -223,7 +229,7 @@ if __name__ == "__main__":
 
         # Category filters & barrier
         f.write(
-            barrier_service_text(
+            proxy_barrier_service_text(
                 "category_filter", CATEGORY_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -234,13 +240,11 @@ if __name__ == "__main__":
             f.write("\n")
 
         # Decade Counter
-        f.write(
-            decade_counter_service_text()
-        )
+        f.write(decade_counter_service_text())
 
         # Sentiment Analyzer
         f.write(
-            barrier_service_text(
+            proxy_barrier_service_text(
                 "sentiment_analyzer", SENTIMENT_ANALYZER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -251,21 +255,15 @@ if __name__ == "__main__":
             f.write("\n")
 
         # Reviews Joiner
-        f.write(
-            joiner_text()
-        )
+        f.write(joiner_text())
         f.write("\n")
 
         # Review Counter
-        f.write(
-            review_counter_text()
-        )
+        f.write(review_counter_text())
         f.write("\n")
 
         # Sentiment Average Reducer
-        f.write(
-            sentiment_average_reducer_text()
-        )
+        f.write(sentiment_average_reducer_text())
         f.write("\n")
 
         # Write the footer
