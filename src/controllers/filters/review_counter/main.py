@@ -342,7 +342,7 @@ def main():
         filter_config.get("CACHE_VACANTS"),
         filter_config.get("N_PARTITIONS"),
         "q2_reviews",
-        sum_and_increment,
+        merge_function=sum_and_increment,
     )
 
     counter = ReviewCounter(

@@ -230,7 +230,7 @@ def main():
         list,
         filter_config.get("CACHE_VACANTS") // 2,
         filter_config.get("N_PARTITIONS"),
-        "q3_4_books",
+        "q3_4_books"
     )
 
     books_q5 = DataAccess(
@@ -238,7 +238,7 @@ def main():
         bool,
         filter_config.get("CACHE_VACANTS") // 2,
         filter_config.get("N_PARTITIONS"),
-        "q5_books",
+        "q5_books"
     )
 
     joiner = Joiner(

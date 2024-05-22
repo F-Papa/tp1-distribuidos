@@ -32,7 +32,7 @@ def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_leve
   {filter_type}_proxy_barrier:
     build:
       context: ./
-      dockerfile: ./controllers/proxy_barrier/Dockerfile
+      dockerfile: ./src/controllers/proxy_barrier/Dockerfile
     container_name: {filter_type}_proxy_barrier
     image: proxy_barrier:latest
     entrypoint: python3 main.py
@@ -43,7 +43,7 @@ def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_leve
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/proxy_barrier/main.py:/main.py
+      - ./src/controllers/proxy_barrier/main.py:/main.py
 """
 
 
@@ -52,7 +52,7 @@ def date_filter_service_text(number: int, items_per_batch: int):
   date_filter{number}:
     build:
       context: ./
-      dockerfile: ./controllers/filters/date_filter/Dockerfile
+      dockerfile: ./src/controllers/filters/date_filter/Dockerfile
     container_name: date_filter{number}
     image: date_filter:latest
     entrypoint: python3 main.py
@@ -62,8 +62,8 @@ def date_filter_service_text(number: int, items_per_batch: int):
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/date_filter/config.ini:/config.ini
-      - ./controllers/filters/date_filter/main.py:/main.py
+      - ./src/controllers/filters/date_filter/config.ini:/config.ini
+      - ./src/controllers/filters/date_filter/main.py:/main.py
 """
 
 
@@ -72,7 +72,7 @@ def category_filter_service_text(number: int, items_per_batch: int):
   category_filter{number}:
     build:
       context: ./
-      dockerfile: ./controllers/filters/category_filter/Dockerfile
+      dockerfile: ./src/controllers/filters/category_filter/Dockerfile
     container_name: category_filter{number}
     image: category_filter:latest
     entrypoint: python3 main.py
@@ -82,8 +82,8 @@ def category_filter_service_text(number: int, items_per_batch: int):
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/category_filter/config.ini:/config.ini
-      - ./controllers/filters/category_filter/main.py:/main.py
+      - ./src/controllers/filters/category_filter/config.ini:/config.ini
+      - ./src/controllers/filters/category_filter/main.py:/main.py
 """
 
 
@@ -92,7 +92,7 @@ def title_filter_service_text(number: int, items_per_batch: int):
   title_filter{number}:
     build:
       context: ./
-      dockerfile: ./controllers/filters/title_filter/Dockerfile
+      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
     container_name: title_filter{number}
     image: title_filter:latest
     entrypoint: python3 main.py
@@ -102,8 +102,8 @@ def title_filter_service_text(number: int, items_per_batch: int):
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/title_filter/config.ini:/config.ini
-      - ./controllers/filters/title_filter/main.py:/main.py
+      - ./src/controllers/filters/title_filter/config.ini:/config.ini
+      - ./src/controllers/filters/title_filter/main.py:/main.py
 """
 
 
@@ -112,15 +112,15 @@ def decade_counter_service_text():
   decade_counter:
     build:
       context: ./
-      dockerfile: ./controllers/filters/decade_counter/Dockerfile
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
     container_name: decade_counter
     image: decade_counter:latest
     entrypoint: python3 main.py
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/decade_counter/config.ini:/config.ini
-      - ./controllers/filters/decade_counter/main.py:/main.py
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
 """
 
 
@@ -129,7 +129,7 @@ def sentiment_analyzer_service_text(number: int, items_per_batch: int):
   sentiment_analyzer{number}:
     build:
       context: ./
-      dockerfile: ./controllers/filters/sentiment_analyzer/Dockerfile
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
     container_name: sentiment_analyzer{number}
     image: sentiment_analyzer:latest
     entrypoint: python3 main.py
@@ -139,8 +139,8 @@ def sentiment_analyzer_service_text(number: int, items_per_batch: int):
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
 """
 
 
@@ -149,15 +149,15 @@ def joiner_text():
   joiner:
     build:
       context: ./
-      dockerfile: ./controllers/filters/joiner/Dockerfile
+      dockerfile: ./src/controllers/filters/joiner/Dockerfile
     container_name: joiner
     image: joiner:latest
     entrypoint: python3 main.py
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/joiner/config.ini:/config.ini
-      - ./controllers/filters/joiner/main.py:/main.py
+      - ./src/controllers/filters/joiner/config.ini:/config.ini
+      - ./src/controllers/filters/joiner/main.py:/main.py
 """
 
 
@@ -166,15 +166,15 @@ def review_counter_text():
   review_counter:
     build:
       context: ./
-      dockerfile: ./controllers/filters/review_counter/Dockerfile
+      dockerfile: ./src/controllers/filters/review_counter/Dockerfile
     container_name: review_counter
     image: review_counter:latest
     entrypoint: python3 main.py
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/review_counter/config.ini:/config.ini
-      - ./controllers/filters/review_counter/main.py:/main.py
+      - ./src/controllers/filters/review_counter/config.ini:/config.ini
+      - ./src/controllers/filters/review_counter/main.py:/main.py
 """
 
 
@@ -183,15 +183,15 @@ def sentiment_average_reducer_text():
   sentiment_average_reducer:
     build:
       context: ./
-      dockerfile: ./controllers/filters/sentiment_average_reducer/Dockerfile
+      dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
     container_name: sentiment_average_reducer
     image: sentiment_average_reducer:latest
     entrypoint: python3 main.py
     networks:
       - tp1_testing_net
     volumes:
-      - ./controllers/filters/sentiment_average_reducer/config.ini:/config.ini
-      - ./controllers/filters/sentiment_average_reducer/main.py:/main.py
+      - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
 """
 
 
