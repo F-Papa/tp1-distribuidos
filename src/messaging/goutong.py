@@ -10,9 +10,9 @@ from messaging.message import Message
 
 
 class Goutong:
-    def __init__(self):
+    def __init__(self, host: str = "rabbit", port: int = 5672):
         self.connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host="rabbit")
+            pika.ConnectionParameters(host=host, port=port)
         )
         self.channel = self.connection.channel()
 
