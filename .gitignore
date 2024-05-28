@@ -1,4 +1,5 @@
 .vscode
 data
 results/*
+src/client/results/*
 __pycache__

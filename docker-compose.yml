@@ -2,6 +2,34 @@ version: '3.9'
 name: 'filters'
 services:
 
+  boundary:
+    build:
+      context: ./
+      dockerfile: ./src/boundary/Dockerfile
+    container_name: boundary
+    image: boundary:latest
+    entrypoint: python3 boundary.py
+    networks:
+      - tp1_testing_net
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/boundary/config.ini:/config.ini
+      - ./src/boundary/boundary.py:/boundary.py
+
+  input_controller:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/io/input/Dockerfile
+    container_name: input_controller
+    image: input_controller:latest
+    entrypoint: python3 input_controller.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/io/input/config.ini:/config.ini
+      - ./src/controllers/io/input/input_controller.py:/input_controller.py
+
   title_filter_proxy_barrier:
     build:
       context: ./

@@ -3,13 +3,13 @@ A Barrier controller that distributes data to multiple filters in a round-robin 
 It also works as a threading barrier, forwarding EOF messages to the next filter in the chain once all filters have processed the data.
 """
 
-from utils.config_loader import Configuration
+from src.utils.config_loader import Configuration
 import logging
 import signal
 
-from messaging.message import Message
-from messaging.goutong import Goutong
-from exceptions.shutting_down import ShuttingDown
+from src.messaging.message import Message
+from src.messaging.goutong import Goutong
+from src.exceptions.shutting_down import ShuttingDown
 
 CONTROL_GROUP = "CONTROL"
 
@@ -70,6 +70,8 @@ class ProxyBarrier:
             # Forward EOF
             logging.debug("Forwarding EOF")
             forward_to = msg.get("forward_to")
+            to_send = {"conn_id": msg.get("conn_id"), "queries": msg.get("queries"), "EOF": True}
+            msg = Message(to_send)
             for queue in forward_to:
                 self.messaging.send_to_queue(queue, msg)
             self.eof_count = 0

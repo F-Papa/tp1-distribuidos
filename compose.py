@@ -25,6 +25,39 @@ networks:
         - subnet: 172.25.125.0/24
 """
 
+def boundary_service_text():
+    return """\
+  boundary:
+    build:
+      context: ./
+      dockerfile: ./src/boundary/Dockerfile
+    container_name: boundary
+    image: boundary:latest
+    entrypoint: python3 boundary.py
+    networks:
+      - tp1_testing_net
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/boundary/config.ini:/config.ini
+      - ./src/boundary/boundary.py:/boundary.py
+"""
+
+def input_controller_text():
+    return """\
+  input_controller:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/io/input/Dockerfile
+    container_name: input_controller
+    image: input_controller:latest
+    entrypoint: python3 input_controller.py
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/io/input/config.ini:/config.ini
+      - ./src/controllers/io/input/input_controller.py:/input_controller.py
+"""
 
 def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_level: str):
 
@@ -201,6 +234,14 @@ if __name__ == "__main__":
 
         # Write the header
         f.write(header_text())
+        f.write("\n")
+
+        # Boundary
+        f.write(boundary_service_text())
+        f.write("\n")
+
+        # Input Controller
+        f.write(input_controller_text())
         f.write("\n")
 
         # Title filters & barrier

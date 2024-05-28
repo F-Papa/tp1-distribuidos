@@ -3,10 +3,10 @@ FROM python:3.9.7-slim
 RUN pip install pika
 
 COPY ./src/controllers/filters/joiner/main.py ./main.py
-COPY ./src/messaging ./messaging
-COPY ./src/exceptions ./exceptions
-COPY ./src/utils ./utils
-COPY ./src/data_access/data_access.py ./data_access/data_access.py
+COPY ./src/messaging ./src/messaging
+COPY ./src/exceptions ./src/exceptions
+COPY ./src/utils ./src/utils
+COPY ./src/data_access/data_access.py ./src/data_access/data_access.py
 
 ENTRYPOINT ["python", "main.py"]
 # ENTRYPOINT ["/bin/sh"]

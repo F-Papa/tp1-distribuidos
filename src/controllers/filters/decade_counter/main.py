@@ -1,19 +1,20 @@
+from collections import defaultdict
 import json
 import os
 from typing import Union
-from messaging.goutong import Goutong
-from messaging.message import Message
+from src.messaging.goutong import Goutong
+from src.messaging.message import Message
 import logging
 import signal
 
-from utils.config_loader import Configuration
-from exceptions.shutting_down import ShuttingDown
+from src.utils.config_loader import Configuration
+from src.exceptions.shutting_down import ShuttingDown
 
 INPUT_QUEUE = "decade_counter_queue"
 FILTER_TYPE = "decade_counter"
 CONTROL_GROUP = "CONTROL"
 
-OUTPUT_Q2 = "results_queue"
+OUTPUT_QUEUE_PREFIX = "results_"
 
 shutting_down = False
 
@@ -186,18 +187,18 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    authors_cache = AuthorCache(filter_config.get("CACHE_VACANTS"))
+    author_caches = defaultdict(lambda: AuthorCache(filter_config.get("CACHE_VACANTS")))
     messaging = Goutong()
 
     # Set up the queues
     control_queue_name = FILTER_TYPE + "_control"
-    own_queues = [INPUT_QUEUE, control_queue_name, OUTPUT_Q2]
+    own_queues = [INPUT_QUEUE, control_queue_name]
     messaging.add_queues(*own_queues)
 
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
 
-    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config, authors_cache))
+    messaging.set_callback(INPUT_QUEUE, callback_filter, (filter_config, author_caches))
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
@@ -219,24 +220,27 @@ def callback_control(messaging: Goutong, msg: Message):
         raise ShuttingDown
 
 
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True})
-    messaging.send_to_queue(OUTPUT_Q2, msg)
-    logging.debug(f"Sent EOF to: {OUTPUT_Q2}")
+def _send_EOF(messaging: Goutong, connection_id: int):
+    msg = Message({"conn_id": connection_id, "EOF": True, "queries": [2]})
+    output_queue = OUTPUT_QUEUE_PREFIX + str(connection_id)
+    messaging.send_to_queue(output_queue, msg)
+    logging.debug(f"Sent EOF to: {output_queue}")
 
 
 def callback_filter(
     messaging: Goutong,
     msg: Message,
     config: Configuration,
-    decades_per_author: AuthorCache,
+    decades_per_author: dict[int, AuthorCache],
 ):
+    queries = msg.get("queries")
+    connection_id = msg.get("conn_id")
 
     if msg.has_key("EOF"):
         logging.debug("Received EOF")
         # Forward EOF and Keep Consuming
-        _send_results_q2(messaging, decades_per_author)
-        _send_EOF(messaging)
+        _send_results_q2(messaging, decades_per_author[connection_id], connection_id)
+        _send_EOF(messaging, connection_id)
         return
 
     books = msg.get("data")
@@ -245,18 +249,19 @@ def callback_filter(
         decade = book.get("decade")
         # Query 2 flow
         for author in book.get("authors"):
-            decades_per_author.add(author, decade)
+            decades_per_author[connection_id].add(author, decade)
 
     logging.debug(
-        f"Authors: {decades_per_author.cached_entries + decades_per_author.entries_in_files}"
+        f"Authors: {decades_per_author[connection_id].cached_entries + decades_per_author[connection_id].entries_in_files}"
     )
 
 
-def _send_results_q2(messaging: Goutong, author_cache: AuthorCache):
+def _send_results_q2(messaging: Goutong, author_cache: AuthorCache, connection_id: int):
     ten_decade_authors = author_cache.get_10_decade_authors()
-    msg = Message({"query": 2, "data": ten_decade_authors})
-    messaging.send_to_queue(OUTPUT_Q2, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q2}")
+    msg = Message({"conn_id": connection_id, "queries": [2], "data": ten_decade_authors})
+    output_queue = OUTPUT_QUEUE_PREFIX + str(connection_id)
+    messaging.send_to_queue(output_queue, msg)
+    logging.debug(f"Sent Data to: {output_queue}")
 
 
 if __name__ == "__main__":

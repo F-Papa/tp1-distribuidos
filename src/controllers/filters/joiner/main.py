@@ -1,15 +1,15 @@
 import json
 import os
 from typing import Any
-from messaging.goutong import Goutong
-from messaging.message import Message
+from src.messaging.goutong import Goutong
+from src.messaging.message import Message
 import sys
 import logging
 import signal
 
-from utils.config_loader import Configuration
-from exceptions.shutting_down import ShuttingDown
-from data_access.data_access import DataAccess
+from src.utils.config_loader import Configuration
+from src.exceptions.shutting_down import ShuttingDown
+from src.data_access.data_access import DataAccess
 
 
 class SwitchingState(Exception):
@@ -44,13 +44,13 @@ class Joiner:
 
     def listen(self):
         if self.state == self.RECEIVING_BOOKS:
-            logging.debug("Listening for Books")
+            logging.info("Listening for Books")
         else:
-            logging.debug("Listening for Reviews")
+            logging.info("Listening for Reviews")
         try:
             self.messaging.listen()
         except SwitchingState:
-            logging.debug("Switching State")
+            logging.info("Switching State")
             if self.state == self.RECEIVING_BOOKS:
                 self._set_receive_reviews()
             else:
@@ -96,43 +96,49 @@ class Joiner:
             self.REVIEWS_INPUT_QUEUE, self._handle_receiving_reviews
         )
 
-    def _send_EOF(self):
-        msg = Message({"query": [3, 4], "EOF": True})
+    def _send_EOF(self, connection_id: int):
+        msg = Message({"conn_id": connection_id, "queries": [3, 4], "EOF": True})
         self.messaging.send_to_queue(self.OUTPUT_Q3_4, msg)
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q3_4}")
 
-        msg = Message({"query": 5, "EOF": True})
+        msg = Message({"conn_id": connection_id, "queries": 5, "EOF": True})
         self.messaging.send_to_queue(self.OUTPUT_Q5, msg)
         logging.debug(f"Sent EOF to: {self.OUTPUT_Q5}")
 
     def _handle_receiving_books(self, messaging: Goutong, msg: Message):
+        queries = msg.get("queries")
+        connection_id = msg.get("conn_id")
+
         if msg.has_key("EOF"):
+            logging.info(f"Received EOF number {self.eof_received+1} from query {queries}")
             if self.state == self.RECEIVING_BOOKS:
                 self.eof_received += 1
                 if self.eof_received == 2:
                     raise SwitchingState
             return
 
-        query = msg.get("query")
         books = msg.get("data")
 
-        if 3 in query or 4 in query:
+        if 3 in queries or 4 in queries:
             for book in books:
                 self.books_q3_4.add(book["title"], book["authors"])
-        elif 5 in query:
+        elif 5 in queries:
             for book in books:
                 self.books_q5.add(book["title"], True)
 
     def _handle_receiving_reviews(self, messaging: Goutong, msg: Message):
+        connection_id = msg.get("conn_id")
+        queries = msg.get("queries")
         if msg.has_key("EOF"):
+            logging.info(f"Received EOF from query {queries}")
             if len(self.batch_q3_4) > 0:
-                self._send_batch_q3_4()
+                self._send_batch_q3_4(connection_id)
                 self.batch_q3_4.clear()
             if len(self.batch_q5) > 0:
-                self._send_batch_q5()
+                self._send_batch_q5(connection_id)
                 self.batch_q5.clear()
 
-            self._send_EOF()
+            self._send_EOF(connection_id)
             raise SwitchingState
 
         reviews = msg.get("data")
@@ -147,7 +153,7 @@ class Joiner:
                 review_score = review["review/score"]
                 self.batch_q3_4.append((title, authors, review_score))
                 if len(self.batch_q3_4) >= self.items_per_batch:
-                    self._send_batch_q3_4()
+                    self._send_batch_q3_4(connection_id)
                     self.batch_q3_4.clear()
 
             # Check if the review's title is in the books for query 5
@@ -158,10 +164,10 @@ class Joiner:
                 self.batch_q5.append((title, review_text))
 
                 if len(self.batch_q5) >= self.items_per_batch:
-                    self._send_batch_q5()
+                    self._send_batch_q5(connection_id)
                     self.batch_q5.clear()
 
-    def _send_batch_q3_4(self):
+    def _send_batch_q3_4(self, connection_id: int):
         data = list(
             map(
                 lambda item: {
@@ -172,14 +178,14 @@ class Joiner:
                 self.batch_q3_4,
             )
         )
-        msg = Message({"query": [3, 4], "data": data})
+        msg = Message({"conn_id": connection_id, "queries": [3, 4], "data": data})
         self.messaging.send_to_queue(self.OUTPUT_Q3_4, msg)
 
-    def _send_batch_q5(self):
+    def _send_batch_q5(self, connection_id: int):
         data = list(
             map(lambda item: {"title": item[0], "review/text": item[1]}, self.batch_q5)
         )
-        msg = Message({"query": 5, "data": data})
+        msg = Message({"conn_id": connection_id, "queries": [5], "data": data})
         self.messaging.send_to_queue(self.OUTPUT_Q5, msg)
 
     def callback_control(self, messaging: Goutong, msg: Message):
@@ -230,7 +236,7 @@ def main():
         list,
         filter_config.get("CACHE_VACANTS") // 2,
         filter_config.get("N_PARTITIONS"),
-        "q3_4_books"
+        "q3_4_books",
     )
 
     books_q5 = DataAccess(
@@ -238,7 +244,7 @@ def main():
         bool,
         filter_config.get("CACHE_VACANTS") // 2,
         filter_config.get("N_PARTITIONS"),
-        "q5_books"
+        "q5_books",
     )
 
     joiner = Joiner(

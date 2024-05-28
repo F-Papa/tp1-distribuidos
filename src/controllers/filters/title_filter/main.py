@@ -1,11 +1,11 @@
-from messaging.goutong import Goutong
-from exceptions.shutting_down import ShuttingDown
+from src.messaging.goutong import Goutong
+from src.exceptions.shutting_down import ShuttingDown
 import logging
 import signal
 
-from messaging.message import Message
-from utils.config_loader import Configuration
-from exceptions.shutting_down import ShuttingDown
+from src.messaging.message import Message
+from src.utils.config_loader import Configuration
+from src.exceptions.shutting_down import ShuttingDown
 
 FILTER_TYPE = "title_filter"
 EOF_QUEUE = "title_filter_eof"
@@ -101,16 +101,18 @@ def _columns_for_query1(book: dict) -> dict:
     }
 
 
-def _send_batch_q1(messaging: Goutong, batch: list):
+def _send_batch_q1(messaging: Goutong, batch: list, conn_id: str):
     data = list(map(_columns_for_query1, batch))
-    msg_content = {"query": 1, "data": batch}
+    msg_content = {"conn_id": conn_id, "queries": [1], "data": data}
     msg = Message(msg_content)
     messaging.send_to_queue(OUTPUT_Q1, msg)
     logging.debug(f"Sent Data to: {OUTPUT_Q1}")
 
 
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1], "query": 1})
+def _send_EOF(messaging: Goutong, conn_id: str):
+    msg = Message(
+        {"conn_id": conn_id, "EOF": True, "forward_to": [OUTPUT_Q1], "queries": [1]}
+    )
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
@@ -118,9 +120,12 @@ def _send_EOF(messaging: Goutong):
 def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
+    queries = msg.get("queries")
+    connection_id = msg.get("conn_id")
+
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_EOF(messaging)
+        _send_EOF(messaging, connection_id)
         return
 
     books = msg.get("data")
@@ -133,12 +138,12 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
         if KEYWORD_Q1.lower() in title.lower():
             batch_q1.append(book)
             if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q1(messaging, batch_q1)
+                _send_batch_q1(messaging, batch_q1, connection_id)
                 batch_q1.clear()
 
     # Send remaining items
     if batch_q1:
-        _send_batch_q1(messaging, batch_q1)
+        _send_batch_q1(messaging, batch_q1, connection_id)
 
 
 if __name__ == "__main__":

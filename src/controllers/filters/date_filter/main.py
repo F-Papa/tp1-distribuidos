@@ -1,10 +1,11 @@
-from messaging.goutong import Goutong
-from messaging.message import Message
+from collections import defaultdict
+from src.messaging.goutong import Goutong
+from src.messaging.message import Message
 import logging
 import signal
 
-from utils.config_loader import Configuration
-from exceptions.shutting_down import ShuttingDown
+from src.utils.config_loader import Configuration
+from src.exceptions.shutting_down import ShuttingDown
 
 FILTER_TYPE = "date_filter"
 EOF_QUEUE = "date_filter_eof"
@@ -114,22 +115,22 @@ def _columns_for_query3_4(book: dict) -> dict:
     }
 
 
-def _send_batch_q1(messaging: Goutong, batch: list):
+def _send_batch_q1(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query1, batch))
-    msg = Message({"query": 1, "data": data})
+    msg = Message({"conn_id": connection_id, "queries": [1], "data": data})
     messaging.send_to_queue(OUTPUT_Q1, msg)
     # logging.debug(f"Sent Data to: {OUTPUT_Q1}")
 
 
-def _send_batch_q3_4(messaging: Goutong, batch: list):
+def _send_batch_q3_4(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query3_4, batch))
-    msg = Message({"query": [3, 4], "data": data})
+    msg = Message({"conn_id": connection_id, "queries": [3, 4], "data": data})
     messaging.send_to_queue(OUTPUT_Q3_4, msg)
     # logging.debug(f"Sent Data to: {OUTPUT_Q3_4}")
 
 
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True, "forward_to": [OUTPUT_Q1, OUTPUT_Q3_4]})
+def _send_EOF(messaging: Goutong, connection_id: int):
+    msg = Message({"conn_id": connection_id, "queries": [1,3,4], "EOF": True, "forward_to": [OUTPUT_Q1, OUTPUT_Q3_4]})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
@@ -137,9 +138,13 @@ def _send_EOF(messaging: Goutong):
 def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
 
+    queries = msg.get("queries")
+    connection_id = msg.get("conn_id")
+
+
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_EOF(messaging)
+        _send_EOF(messaging, connection_id)
         return
 
     books = msg.get("data")
@@ -153,21 +158,21 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
         if LOWER_Q1 <= year <= UPPER_Q1:
             batch_q1.append(book)
             if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q1(messaging, batch_q1)
+                _send_batch_q1(messaging, batch_q1, connection_id)
                 batch_q1.clear()
 
         # Queries 3 and 4 flow
         if LOWER_Q3_4 <= year <= UPPER_Q3_4:
             batch_q3_4.append(book)
             if len(batch_q3_4) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q3_4(messaging, batch_q3_4)
+                _send_batch_q3_4(messaging, batch_q3_4, connection_id)
                 batch_q3_4.clear()
 
     # Send remaining
     if batch_q1:
-        _send_batch_q1(messaging, batch_q1)
+        _send_batch_q1(messaging, batch_q1, connection_id)
     if batch_q3_4:
-        _send_batch_q3_4(messaging, batch_q3_4)
+        _send_batch_q3_4(messaging, batch_q3_4, connection_id)
 
 
 if __name__ == "__main__":

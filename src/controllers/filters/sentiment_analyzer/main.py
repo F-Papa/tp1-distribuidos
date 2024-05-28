@@ -1,11 +1,11 @@
-from messaging.goutong import Goutong
-from utils.config_loader import Configuration
+from src.messaging.goutong import Goutong
+from src.utils.config_loader import Configuration
 import logging
 import signal
 from textblob import TextBlob
 
-from messaging.message import Message
-from exceptions.shutting_down import ShuttingDown
+from src.messaging.message import Message
+from src.exceptions.shutting_down import ShuttingDown
 
 
 FILTER_TYPE = "sentiment_analyzer"
@@ -92,8 +92,8 @@ def callback_control(messaging: Goutong, msg: Message):
         raise ShuttingDown
 
 
-def _send_EOF(messaging: Goutong):
-    msg = Message({"EOF": True, "forward_to": [OUTPUT_QUEUE]})
+def _send_EOF(messaging: Goutong, conn_id: int):
+    msg = Message({"conn_id": conn_id, "queries": [5], "EOF": True, "forward_to": [OUTPUT_QUEUE]})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
@@ -106,9 +106,12 @@ def _analyze_sentiment(text: str):
 
 def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
     # logging.debug(f"Received: {msg.marshal()}")
+    conn_id = msg.get("conn_id")
+    queries = msg.get("queries")
+
     if msg.has_key("EOF"):
         # Forward EOF and Keep Consuming
-        _send_EOF(messaging)
+        _send_EOF(messaging, conn_id)
         return
 
     reviews = msg.get("data")
@@ -120,16 +123,16 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
 
         output_batch.append({"title": review["title"], "sentiment": sentiment})
         if len(output_batch) >= config.get("ITEMS_PER_BATCH"):
-            _send_batch(messaging, output_batch)
+            _send_batch(messaging, output_batch, conn_id)
             output_batch.clear()
 
     # Send Remaining
     if len(output_batch) > 0:
-        _send_batch(messaging, output_batch)
+        _send_batch(messaging, output_batch, conn_id)
 
 
-def _send_batch(messaging: Goutong, batch: list):
-    msg = Message({"query": [5], "data": batch})
+def _send_batch(messaging: Goutong, batch: list, conn_id: int):
+    msg = Message({"conn_id": conn_id, "queries": [5], "data": batch})
     messaging.send_to_queue(OUTPUT_QUEUE, msg)
     logging.debug(f"Sent Data to: {OUTPUT_QUEUE}")
 

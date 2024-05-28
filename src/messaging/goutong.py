@@ -6,7 +6,7 @@ It uses RabbitMQ.
 import logging
 import pika
 from typing import Callable
-from messaging.message import Message
+from .message import Message
 
 
 class Goutong:
