@@ -43,15 +43,17 @@ def boundary_service_text():
       - ./src/boundary/boundary.py:/boundary.py
 """
 
-def input_controller_text():
-    return """\
-  input_controller:
+def input_controller_text(i: int):
+    return f"""\
+  input_controller_{i}:
     build:
       context: ./
       dockerfile: ./src/controllers/io/input/Dockerfile
-    container_name: input_controller
+    container_name: input_controller_{i}
     image: input_controller:latest
     entrypoint: python3 input_controller.py
+    environment:
+      - FILTER_NUMBER={i}
     networks:
       - tp1_testing_net
     volumes:
@@ -241,7 +243,7 @@ if __name__ == "__main__":
         f.write("\n")
 
         # Input Controller
-        f.write(input_controller_text())
+        f.write(input_controller_text(1))
         f.write("\n")
 
         # Title filters & barrier

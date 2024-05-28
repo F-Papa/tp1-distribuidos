@@ -96,8 +96,8 @@ class ProxyBarrier:
     def sigterm_handler(self, messaging: Goutong):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self.shutting_down = True
-        msg = Message({"ShutDown": True})
-        messaging.broadcast_to_group(CONTROL_GROUP, msg)
+        # msg = Message({"ShutDown": True})
+        # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
     def callback_control(self, messaging: Goutong, msg: Message):
         if msg.has_key("ShutDown"):

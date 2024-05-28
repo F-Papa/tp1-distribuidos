@@ -29,8 +29,8 @@ def sigterm_handler(messaging: Goutong):
     global shutting_down
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
-    msg = Message({"ShutDown": True})
-    messaging.broadcast_to_group(CONTROL_GROUP, msg)
+    #msg = Message({"ShutDown": True})
+    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
 
 def config_logging(level: str):
