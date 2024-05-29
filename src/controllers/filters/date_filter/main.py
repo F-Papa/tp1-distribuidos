@@ -19,7 +19,7 @@ UPPER_Q3_4 = 1999
 LOWER_Q3_4 = 1990
 
 OUTPUT_Q1 = "title_filter_queue"
-OUTPUT_Q3_4 = "joiner_books_queue"
+OUTPUT_Q3_4_PREFIX = "books_queue_"
 
 shutting_down = False
 
@@ -72,9 +72,7 @@ def main():
 
     own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
     messaging.add_queues(*own_queues)
-    output_queues = [OUTPUT_Q1, OUTPUT_Q3_4]
-    messaging.add_queues(*output_queues)
-
+    messaging.add_queues(OUTPUT_Q1)
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
     messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
@@ -125,12 +123,15 @@ def _send_batch_q1(messaging: Goutong, batch: list, connection_id: int):
 def _send_batch_q3_4(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query3_4, batch))
     msg = Message({"conn_id": connection_id, "queries": [3, 4], "data": data})
-    messaging.send_to_queue(OUTPUT_Q3_4, msg)
+    output_queue = OUTPUT_Q3_4_PREFIX + str(connection_id)
+    messaging.add_queues(output_queue)
+    messaging.send_to_queue(output_queue, msg)
     # logging.debug(f"Sent Data to: {OUTPUT_Q3_4}")
 
 
 def _send_EOF(messaging: Goutong, connection_id: int):
-    msg = Message({"conn_id": connection_id, "queries": [1,3,4], "EOF": True, "forward_to": [OUTPUT_Q1, OUTPUT_Q3_4]})
+    output_q3_4 = OUTPUT_Q3_4_PREFIX + str(connection_id)
+    msg = Message({"conn_id": connection_id, "queries": [1,3,4], "EOF": True, "forward_to": [OUTPUT_Q1, output_q3_4]})
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 

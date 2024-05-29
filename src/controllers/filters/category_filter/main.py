@@ -15,7 +15,7 @@ CATEGORY_Q1 = "Computers"
 CATEGORY_Q5 = "Fiction"
 
 OUTPUT_Q1_PREFIX = "results_"
-OUTPUT_Q5 = "joiner_books_queue"
+OUTPUT_Q5_PREFIX = "books_queue_"
 
 shutting_down = False
 
@@ -69,8 +69,6 @@ def main():
 
     own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
     messaging.add_queues(*own_queues)
-    output_queues = [OUTPUT_Q5]
-    messaging.add_queues(*output_queues)
 
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     messaging.set_callback(control_queue_name, callback_control, ())
@@ -120,8 +118,11 @@ def _send_batch_q1(messaging: Goutong, batch: list, connection_id: int):
 def _send_batch_q5(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query5, batch))
     msg = Message({"conn_id": connection_id, "queries": [5], "data": data})
-    messaging.send_to_queue(OUTPUT_Q5, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_Q5}")
+
+    output_queue = OUTPUT_Q5_PREFIX + str(connection_id)
+    messaging.add_queues(output_queue)
+    messaging.send_to_queue(output_queue, msg)
+    logging.debug(f"Sent Data to: {output_queue}")
 
 
 def _send_EOF(messaging: Goutong, forward_to: str, connection_id: int, queries: list):
@@ -141,7 +142,8 @@ def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
             output_queue = OUTPUT_Q1_PREFIX + str(connection_id)
             _send_EOF(messaging, output_queue, connection_id, [1])
         elif 5 in queries:
-            _send_EOF(messaging, OUTPUT_Q5, connection_id, [5])
+            output_queue = OUTPUT_Q5_PREFIX + str(connection_id)
+            _send_EOF(messaging, output_queue, connection_id, [5])
         return
 
     books = msg.get("data")

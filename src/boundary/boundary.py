@@ -9,7 +9,7 @@ from src.messaging.goutong import Message
 from src.utils.config_loader import Configuration
 
 BOOKS_QUEUE = "books"
-REVIEWS_QUEUE = "joiner_reviews_queue"
+REVIEWS_QUEUE_PREFIX = "reviews_queue_"
 RESULTS_QUEUE_PREFIX = "results_"
 
 BOOK_SIZE_LENGTH = 4
@@ -33,6 +33,7 @@ REVIEW_BOOK_TITLE = 1
 REVIEW_SCORE = 6
 REVIEW_TEXT = 9
 
+JOINER_CONNECTION_QUEUES = "joiner_pending"
 
 class ClientConnection:
     def __init__(
@@ -51,20 +52,30 @@ class ClientConnection:
         self.messaging: Goutong = messaging_module(
             host=messaging_host, port=messaging_port
         )
-        self.messaging.add_queues(BOOKS_QUEUE, REVIEWS_QUEUE)
+
+        reviews_queue = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
+        self.messaging.add_queues(BOOKS_QUEUE, reviews_queue)
+
+
         self.EOFs_received = 0
         self.reviews = b""
         self.books = b""
 
     def handle_connection(self):
         results_queue = RESULTS_QUEUE_PREFIX + str(self.conn_id)
-        self.messaging.add_queues(results_queue)
+        self.messaging.add_queues(results_queue, JOINER_CONNECTION_QUEUES)
+
+        body = {"conn_id": self.conn_id}
+        message = Message(body)
+        self.messaging.send_to_queue(JOINER_CONNECTION_QUEUES, message)
+
         self.messaging.set_callback(
             results_queue, self.forward_results, args=()
         )
 
         self.__dispatch_data(BOOKS_QUEUE)
-        self.__dispatch_data(REVIEWS_QUEUE)
+        reviews_queue = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
+        self.__dispatch_data(reviews_queue)
         self.messaging.listen()
         self.conn.close()
 

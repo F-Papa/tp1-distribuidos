@@ -58,3 +58,10 @@ class Goutong:
             except Exception as e:
                 # Already closed by another Node
                 pass
+    
+    def ack_n_messages(self, n: int):
+        for _ in range(n):
+            self.channel.basic_ack()
+
+    def ack_all_messages(self):
+        self.channel.basic_ack(multiple=True)

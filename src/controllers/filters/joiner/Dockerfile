@@ -6,7 +6,7 @@ COPY ./src/controllers/filters/joiner/main.py ./main.py
 COPY ./src/messaging ./src/messaging
 COPY ./src/exceptions ./src/exceptions
 COPY ./src/utils ./src/utils
-COPY ./src/data_access/data_access.py ./src/data_access/data_access.py
+COPY ./src/data_store/data_store.py ./src/data_store/data_store.py
 
 ENTRYPOINT ["python", "main.py"]
 # ENTRYPOINT ["/bin/sh"]

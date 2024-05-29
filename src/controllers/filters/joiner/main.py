@@ -1,203 +1,315 @@
 import json
+import logging
 import os
-from typing import Any
+from typing import Optional
+from src.data_store.data_store import DataStore
+from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
-import sys
-import logging
-import signal
-
 from src.utils.config_loader import Configuration
-from src.exceptions.shutting_down import ShuttingDown
-from src.data_access.data_access import DataAccess
 
 
-class SwitchingState(Exception):
-    pass
+class JoinerState:
+    IDLE = 0
+    RECEIVING_BOOKS = 1
+    RECEIVING_REVIEWS = 2
+
+    FILE_NAME = "joiner_state.txt"
+
+    def __init__(
+        self, state: int, current_connection: Optional[int], eof_received: int
+    ):
+        if state not in [
+            JoinerState.IDLE,
+            JoinerState.RECEIVING_BOOKS,
+            JoinerState.RECEIVING_REVIEWS,
+        ]:
+            raise ValueError(f"Invalid state: {state}")
+        self._phase = state
+        self._eof_received = eof_received
+        self._current_connection = current_connection
+
+    @classmethod
+    def restore_or_init(cls) -> "JoinerState":
+        # Create file with default values if it doesn't exist
+        if not os.path.exists(JoinerState.FILE_NAME):
+            with open(JoinerState.FILE_NAME, "w") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "state": cls.IDLE,
+                            "current_connection": None,
+                            "eof_received": 0,
+                        }
+                    )
+                )
+
+        # Load values from file
+        with open(JoinerState.FILE_NAME, "r") as f:
+            saved_state = json.loads(f.readline())
+
+        return JoinerState(
+            saved_state["state"],
+            saved_state["current_connection"],
+            saved_state["eof_received"],
+        )
+
+    # Query Methods
+    def receiving_books(self) -> bool:
+        return self._phase == JoinerState.RECEIVING_BOOKS
+
+    def receiving_reviews(self) -> bool:
+        return self._phase == JoinerState.RECEIVING_REVIEWS
+
+    def idle(self) -> bool:
+        return self._phase == JoinerState.IDLE
+
+    # Command Methods
+    def mark_eof_received(self):
+        self._eof_received += 1
+        self.save()
+
+    def mark_idle(self):
+        self._phase = JoinerState.IDLE
+        self._current_connection = None
+        self.eof_received = 0
+        self.save()
+
+    def mark_receiving_books(self, connection_id: int):
+        self._phase = JoinerState.RECEIVING_BOOKS
+        self._current_connection = connection_id
+        self._eof_received = 0
+        self.save()
+
+    def mark_receiving_reviews(self):
+        self._phase = JoinerState.RECEIVING_REVIEWS
+        self._eof_received = 0
+        self.save()
+
+    def save(self):
+        tmp_file = "temp_" + JoinerState.FILE_NAME
+
+        with open(tmp_file, "w") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "state": self._phase,
+                        "current_connection": self._current_connection,
+                        "eof_received": self._eof_received,
+                    }
+                )
+                + "\n"
+            )
+
+        os.replace(tmp_file, JoinerState.FILE_NAME)
+
+    def __str__(self) -> str:
+        return f"JoinerState(phase={self._phase}, current_connection={self._current_connection})"
 
 
 class Joiner:
-    RECEIVING_BOOKS = 1
-    RECEIVING_REVIEWS = 2
-    REVIEWS_INPUT_QUEUE = "joiner_reviews_queue"
-    BOOKS_INPUT_QUEUE = "joiner_books_queue"
-    CONTROL_QUEUE = "joiner_control"
-    CONTROL_GROUP = "CONTROL"
-    OUTPUT_Q3_4 = "review_counter_queue"
-    OUTPUT_Q5 = "sentiment_analyzer_queue"
+    DATA_FILE_NAME = "joiner_data.txt"
+    PENDING_CONN_QUEUE = "joiner_pending"
+    BOOKS_QUEUE_PREFIX = "books_queue_"
+    REVIEWS_QUEUE_PREFIX = "reviews_queue_"
+    Q5_OUTPUT_QUEUE = "sentiment_analyzer_queue"
+    Q3_4_OUTPUT_QUEUE = "review_counter_queue"
 
     def __init__(
-        self, items_per_batch: int, books_q3_4: DataAccess, books_q5: DataAccess
+        self,
+        config: Configuration,
+        data: DataStore,
+        restored_state: JoinerState,
+        messaging_module: type,
     ):
+        self._messaging_module = messaging_module
+        self._batch_limit = config.get("BATCH_LIMIT")
+        self._unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
+        self._data = data
+        self._state = restored_state
+        self._unacked_messages = 0
 
-        self.shutting_down = False
-        self.eof_received = 0
-        self.items_per_batch = items_per_batch
-        self.state = self.RECEIVING_BOOKS
-        self.books_q3_4 = books_q3_4
-        self.books_q5 = books_q5
+        self._shutting_down = False
+        self._messaging_host = config.get("MESSAGING_HOST")
+        self._messaging_port = config.get("MESSAGING_PORT")
 
-        self.batch_q3_4 = []
-        self.batch_q5 = []
-        self._init_messaging()
-        self._set_receive_books()
-
-    def listen(self):
-        if self.state == self.RECEIVING_BOOKS:
-            logging.info("Listening for Books")
-        else:
-            logging.info("Listening for Reviews")
+    def start(self):
         try:
-            self.messaging.listen()
-        except SwitchingState:
-            logging.info("Switching State")
-            if self.state == self.RECEIVING_BOOKS:
-                self._set_receive_reviews()
-            else:
-                self._set_receive_books()
-            self.listen()
+            self._start_aux()
         except ShuttingDown:
-            logging.debug("Stopping Listening")
+            logging.info("Shutting down")
 
-    def shutdown(self):
-        logging.info("Initiating Graceful Shutdown")
-        #msg = Message({"ShutDown": True})
-        # self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
-        self.shutting_down = True
-        self.messaging.close()
-        raise ShuttingDown
+    # Control Flow
 
-    def _init_messaging(self):
-        self.messaging = Goutong()
-        self.messaging.add_queues(
-            self.REVIEWS_INPUT_QUEUE,
-            self.BOOKS_INPUT_QUEUE,
-            self.CONTROL_QUEUE,
-            self.OUTPUT_Q3_4,
-            self.OUTPUT_Q5,
+    def _start_aux(self):
+        if self._state.receiving_books():
+            self._receive_books()
+        elif self._state.receiving_reviews():
+            self.receive_reviews()
+
+        while not self._shutting_down:
+            self._accept_next_connection()
+            self._receive_books()
+            self.receive_reviews()
+
+    def _accept_next_connection(self):
+        logging.info("Accepting Next Connection")
+        self._state.mark_idle()
+        self._data.clear()
+
+        self._messaging: Goutong = self._messaging_module(
+            self._messaging_host, self._messaging_port
         )
-        self.messaging.add_broadcast_group(self.CONTROL_GROUP, [self.CONTROL_QUEUE])
-        self.messaging.set_callback(self.CONTROL_QUEUE, self.callback_control)
+        self._messaging.add_queues(Joiner.PENDING_CONN_QUEUE)
 
-    def _set_receive_books(self):
-        self.state = self.RECEIVING_BOOKS
-        self.eof_received = 0
-        self.books_q3_4.clear()
-        self.books_q5.clear()
-
-        self.messaging.set_callback(
-            self.BOOKS_INPUT_QUEUE, self._handle_receiving_books
+        self._messaging.set_callback(
+            Joiner.PENDING_CONN_QUEUE, self._accept_next_connection_callback
         )
+        self._messaging.listen()
 
-    def _set_receive_reviews(self):
-        self.state = self.RECEIVING_REVIEWS
-        self.eof_received = 0
-        self.messaging.set_callback(
-            self.REVIEWS_INPUT_QUEUE, self._handle_receiving_reviews
+    def _accept_next_connection_callback(self, messaging: Goutong, msg: Message):
+        self._state.mark_receiving_books(msg.get("conn_id"))
+        messaging.close()
+
+    # Books methods
+
+    def _receive_books(self):
+        logging.info("Receiving Books")
+        self._messaging = self._messaging_module(
+            self._messaging_host, self._messaging_port
         )
+        if self._state._current_connection is None:
+            raise ValueError("No connection to receive books from")
 
-    def _send_EOF(self, connection_id: int):
-        msg = Message({"conn_id": connection_id, "queries": [3, 4], "EOF": True})
-        self.messaging.send_to_queue(self.OUTPUT_Q3_4, msg)
-        logging.debug(f"Sent EOF to: {self.OUTPUT_Q3_4}")
+        books_queue = Joiner.BOOKS_QUEUE_PREFIX + str(self._state._current_connection)
+        self._messaging.add_queues(books_queue)
 
-        msg = Message({"conn_id": connection_id, "queries": 5, "EOF": True})
-        self.messaging.send_to_queue(self.OUTPUT_Q5, msg)
-        logging.debug(f"Sent EOF to: {self.OUTPUT_Q5}")
+        self._messaging.set_callback(books_queue, self._receive_books_callback)
+        self._messaging.listen()
 
-    def _handle_receiving_books(self, messaging: Goutong, msg: Message):
+    def _receive_books_callback(self, messaging: Goutong, msg: Message):
         queries = msg.get("queries")
-        connection_id = msg.get("conn_id")
-
-        if msg.has_key("EOF"):
-            logging.info(f"Received EOF number {self.eof_received+1} from query {queries}")
-            if self.state == self.RECEIVING_BOOKS:
-                self.eof_received += 1
-                if self.eof_received == 2:
-                    raise SwitchingState
-            return
-
         books = msg.get("data")
 
-        if 3 in queries or 4 in queries:
-            for book in books:
-                self.books_q3_4.add(book["title"], book["authors"])
-        elif 5 in queries:
-            for book in books:
-                self.books_q5.add(book["title"], True)
+        if books:
+            for b in books:
+                value = b["authors"] if 3 in queries else True
+                self._data.add([queries, b["title"]], value)
 
-    def _handle_receiving_reviews(self, messaging: Goutong, msg: Message):
-        connection_id = msg.get("conn_id")
-        queries = msg.get("queries")
-        if msg.has_key("EOF"):
-            logging.info(f"Received EOF from query {queries}")
-            if len(self.batch_q3_4) > 0:
-                self._send_batch_q3_4(connection_id)
-                self.batch_q3_4.clear()
-            if len(self.batch_q5) > 0:
-                self._send_batch_q5(connection_id)
-                self.batch_q5.clear()
+        is_EOF = msg.get("EOF")
 
-            self._send_EOF(connection_id)
-            raise SwitchingState
+        self._unacked_messages += 1
+        if self._unacked_messages >= self._unacked_msg_limit or is_EOF:
+            self._data.commit_to_disk()
+            # messaging.ack_all_messages()
+            self._unacked_messages = 0
 
+        if is_EOF:
+            self._state.mark_eof_received()
+            if self._state._eof_received > 1:
+                self._messaging.close()
+
+    # Reviews methods
+    def receive_reviews(self):
+        logging.info("Receiving Reviews")
+        self._state.mark_receiving_reviews()
+        self._messaging = self._messaging_module(
+            self._messaging_host, self._messaging_port
+        )
+
+        reviews_queue = Joiner.REVIEWS_QUEUE_PREFIX + str(
+            self._state._current_connection
+        )
+        self._messaging.add_queues(reviews_queue)
+
+        self._messaging.set_callback(reviews_queue, self._receive_reviews_callback)
+        self._messaging.listen()
+
+    def _receive_reviews_callback(self, messaging: Goutong, msg: Message):
         reviews = msg.get("data")
 
-        for review in reviews:
+        if reviews:
+            self._receive_reviews_q5(messaging, reviews)
+            self._receive_reviews_q3_4(messaging, reviews)
 
-            # Check if the review's title is in the books for query 3 and 4
-            entry_q3_4 = self.books_q3_4.get(review["title"])
-            if entry_q3_4 is not None:
-                authors = entry_q3_4.value
-                title = review["title"]
-                review_score = review["review/score"]
-                self.batch_q3_4.append((title, authors, review_score))
-                if len(self.batch_q3_4) >= self.items_per_batch:
-                    self._send_batch_q3_4(connection_id)
-                    self.batch_q3_4.clear()
+        # Forward EOF
+        if msg.get("EOF"):
+            body = {
+                "conn_id": self._state._current_connection,
+                "queries": [5],
+                "data": [],
+                "EOF": True,
+            }
+            msg = Message(body)
+            messaging.send_to_queue(Joiner.Q5_OUTPUT_QUEUE, msg)
 
-            # Check if the review's title is in the books for query 5
-            entry_q5 = self.books_q5.get(review["title"])
-            if entry_q5 is not None:
-                title = review["title"]
-                review_text = review["review/text"]
-                self.batch_q5.append((title, review_text))
+            body = {
+                "conn_id": self._state._current_connection,
+                "queries": [3, 4],
+                "data": [],
+                "EOF": True,
+            }
+            msg = Message(body)
+            messaging.send_to_queue(Joiner.Q3_4_OUTPUT_QUEUE, msg)
 
-                if len(self.batch_q5) >= self.items_per_batch:
-                    self._send_batch_q5(connection_id)
-                    self.batch_q5.clear()
+        # Acknowledge message
+        # messaging.ack_n_messages(1)
 
-    def _send_batch_q3_4(self, connection_id: int):
-        data = list(
-            map(
-                lambda item: {
-                    "title": item[0],
-                    "authors": item[1],
-                    "review/score": item[2],
-                },
-                self.batch_q3_4,
-            )
-        )
-        msg = Message({"conn_id": connection_id, "queries": [3, 4], "data": data})
-        self.messaging.send_to_queue(self.OUTPUT_Q3_4, msg)
+        # Stop listening
+        if msg.get("EOF"):
+            messaging.close()
 
-    def _send_batch_q5(self, connection_id: int):
-        data = list(
-            map(lambda item: {"title": item[0], "review/text": item[1]}, self.batch_q5)
-        )
-        msg = Message({"conn_id": connection_id, "queries": [5], "data": data})
-        self.messaging.send_to_queue(self.OUTPUT_Q5, msg)
+    def _receive_reviews_q5(self, messaging: Goutong, reviews: list):
+        batch = []
+        queries = [5]
+        output_queue = Joiner.Q5_OUTPUT_QUEUE
 
-    def callback_control(self, messaging: Goutong, msg: Message):
-        if msg.has_key("ShutDown"):
-            self.shutting_down = True
-            raise ShuttingDown
+        # Find reviews that have a title in the data
+        for r in reviews:
+            key = [queries, r["title"]]
+            value = self._data.get(key)
+            if value:
+                batch.append({"title": r["title"], "review/text": r["review/text"]})
+
+        # Send the reviews
+        while batch:
+            to_send = pop_n(batch, self._batch_limit)
+            body = {
+                "conn_id": self._state._current_connection,
+                "queries": queries,
+                "data": to_send,
+            }
+            msg = Message(body)
+            messaging.send_to_queue(output_queue, msg)
+
+    def _receive_reviews_q3_4(self, messaging: Goutong, reviews: list):
+        batch = []
+        queries = [3, 4]
+        output_queue = Joiner.Q3_4_OUTPUT_QUEUE
+
+        # Find reviews that have a title in the data
+        for r in reviews:
+            key = [queries, r["title"]]
+            value = self._data.get(key)
+            if value:
+                batch.append({"title": r["title"], "authors": value, "review/score": r["review/score"]})
+
+        # Send the reviews
+        while batch:
+            to_send = pop_n(batch, self._batch_limit)
+            body = {
+                "conn_id": self._state._current_connection,
+                "queries": queries,
+                "data": to_send,
+            }
+            msg = Message(body)
+            messaging.send_to_queue(output_queue, msg)
 
 
-# Graceful Shutdown
-def sigterm_handler(joiner: Joiner):
-    logging.info("SIGTERM received.")
-    joiner.shutdown()
+def pop_n(a_list: list, n: int) -> list:
+    to_return = a_list[:n]
+    del a_list[:n]
+    return to_return
 
 
 def config_logging(level: str):
@@ -216,45 +328,28 @@ def config_logging(level: str):
     pika_logger.setLevel(logging.ERROR)
 
 
-def main():
+if __name__ == "__main__":
+
     required = {
-        "ITEMS_PER_BATCH": int,
-        "CACHE_VACANTS": int,
         "LOGGING_LEVEL": str,
-        "N_PARTITIONS": int,
+        "BATCH_LIMIT": int,
+        "MAX_ITEMS_IN_MEMORY": int,
+        "UNACKED_MSG_LIMIT": int,
+        "MESSAGING_HOST": str,
+        "MESSAGING_PORT": int,
     }
 
-    filter_config = Configuration.from_file(required, "config.ini")
-    filter_config.update_from_env()
-    filter_config.validate()
+    joiner_config = Configuration.from_file(required, "config.ini")
+    joiner_config.update_from_env()
+    joiner_config.validate()
 
-    config_logging(filter_config.get("LOGGING_LEVEL"))
-    logging.info(filter_config)
+    config_logging(joiner_config.get("LOGGING_LEVEL"))
 
-    books_q3_4 = DataAccess(
-        str,
-        list,
-        filter_config.get("CACHE_VACANTS") // 2,
-        filter_config.get("N_PARTITIONS"),
-        "q3_4_books",
-    )
+    recovered_state = JoinerState.restore_or_init()
+    logging.info(recovered_state)
 
-    books_q5 = DataAccess(
-        str,
-        bool,
-        filter_config.get("CACHE_VACANTS") // 2,
-        filter_config.get("N_PARTITIONS"),
-        "q5_books",
-    )
+    recovered_data = DataStore.restore_or_init(Joiner.DATA_FILE_NAME)
+    logging.info(f"Recovered data: {recovered_data.num_items()} items")
 
-    joiner = Joiner(
-        items_per_batch=filter_config.get("ITEMS_PER_BATCH"),
-        books_q3_4=books_q3_4,
-        books_q5=books_q5,
-    )
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(joiner))
-    joiner.listen()
-
-
-if __name__ == "__main__":
-    main()
+    joiner = Joiner(joiner_config, recovered_data, recovered_state, Goutong)
+    joiner.start()
