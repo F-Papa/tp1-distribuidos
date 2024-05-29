@@ -127,13 +127,16 @@ class Joiner:
         self._unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self._data = data
         self._state = restored_state
-        self._unacked_messages = 0
+        self._unacked_delivery_ids = []
 
         self._shutting_down = False
         self._messaging_host = config.get("MESSAGING_HOST")
         self._messaging_port = config.get("MESSAGING_PORT")
 
     def start(self):
+        self._messaging = self._messaging_module(
+            self._messaging_host, self._messaging_port
+        )
         try:
             self._start_aux()
         except ShuttingDown:
@@ -168,16 +171,16 @@ class Joiner:
     def _accept_next_connection_callback(self, messaging: Goutong, msg: Message):
         self._state.mark_receiving_books(msg.get("conn_id"))
         # messaging.ack_n_messages(1)
-        messaging.ack_all_messages()
-        messaging.close()
+        messaging.ack_delivery(msg.delivery_id)
+        messaging.stop_consuming(msg.queue_name)
 
     # Books methods
 
     def _receive_books(self):
         logging.info("Receiving Books")
-        self._messaging = self._messaging_module(
-            self._messaging_host, self._messaging_port
-        )
+        # self._messaging = self._messaging_module(
+        #     self._messaging_host, self._messaging_port
+        # )
         if self._state._current_connection is None:
             raise ValueError("No connection to receive books from")
 
@@ -198,7 +201,7 @@ class Joiner:
 
         is_EOF = msg.get("EOF")
 
-        self._unacked_messages += 1
+        self._unacked_delivery_ids.append(msg.delivery_id)
 
         if is_EOF:
             if self._state._eof_received == 0:
@@ -206,28 +209,29 @@ class Joiner:
             else:
                 self._state.mark_receiving_reviews()
         
-        if self._unacked_messages >= self._unacked_msg_limit or is_EOF:
+        if len(self._unacked_delivery_ids) >= self._unacked_msg_limit or is_EOF:
             self._data.commit_to_disk()
-            messaging.ack_all_messages()
-            self._unacked_messages = 0
+            for delivery_id in self._unacked_delivery_ids:
+                messaging.ack_delivery(delivery_id)
+            self._unacked_delivery_ids.clear()
         
         if self._state.receiving_reviews():
-            messaging.close()
+            messaging.stop_consuming(msg.queue_name)
 
 
     # Reviews methods
     def receive_reviews(self):
         logging.info("Receiving Reviews")
-        self._messaging = self._messaging_module(
-            self._messaging_host, self._messaging_port
-        )
+        # self._messaging = self._messaging_module(
+        #     self._messaging_host, self._messaging_port
+        # )
 
         reviews_queue = Joiner.REVIEWS_QUEUE_PREFIX + str(
             self._state._current_connection
         )
         self._messaging.add_queues(reviews_queue)
 
-        self._messaging.set_callback(reviews_queue, self._receive_reviews_callback, auto_ack=True)
+        self._messaging.set_callback(reviews_queue, self._receive_reviews_callback, auto_ack=False)
         self._messaging.listen()
 
     def _receive_reviews_callback(self, messaging: Goutong, msg: Message):
@@ -245,8 +249,7 @@ class Joiner:
                 "data": [],
                 "EOF": True,
             }
-            msg = Message(body)
-            messaging.send_to_queue(Joiner.Q5_OUTPUT_QUEUE, msg)
+            messaging.send_to_queue(Joiner.Q5_OUTPUT_QUEUE, Message(body))
 
             body = {
                 "conn_id": self._state._current_connection,
@@ -254,17 +257,19 @@ class Joiner:
                 "data": [],
                 "EOF": True,
             }
-            msg = Message(body)
-            messaging.send_to_queue(Joiner.Q3_4_OUTPUT_QUEUE, msg)
+            messaging.send_to_queue(Joiner.Q3_4_OUTPUT_QUEUE, Message(body))
 
         # Acknowledge message
         # messaging.ack_n_messages(1)
-        messaging.ack_all_messages()
-
         # Stop listening
+
         if msg.get("EOF"):
             self._state.mark_idle()
-            messaging.close()
+        
+        messaging.ack_delivery(msg.delivery_id)
+
+        if msg.get("EOF"):
+            messaging.stop_consuming(msg.queue_name)
 
 
     def _receive_reviews_q5(self, messaging: Goutong, reviews: list):

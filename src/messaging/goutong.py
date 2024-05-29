@@ -15,6 +15,7 @@ class Goutong:
             pika.ConnectionParameters(host=host, port=port)
         )
         self.channel = self.connection.channel()
+        self.consumer_ids = {}
 
     def add_queues(self, *args):
         for queue_name in args:
@@ -41,11 +42,18 @@ class Goutong:
         self, queue_name: str, callback: Callable, auto_ack=True, args: tuple = ()
     ):
         custom_callback = lambda ch, method, properties, body: callback(
-            self, Message.unmarshal(body.decode()), *args
+            self, Message.unmarshal(body.decode()).with_id(method.delivery_tag).from_queue(queue_name), *args
         )
-        self.channel.basic_consume(
+
+        consumer_id = self.channel.basic_consume(
             queue=queue_name, on_message_callback=custom_callback, auto_ack=auto_ack
         )
+
+        logging.info(f"ID: {consumer_id} | Listening to: {queue_name}")
+        self.consumer_ids[queue_name] = consumer_id
+
+    def stop_consuming(self, queue_name: str):
+        self.channel.basic_cancel(self.consumer_ids[queue_name])
 
     def add_broadcast_group(self, group_name: str, queue_names: list[str]):
         self.channel.exchange_declare(exchange=group_name, exchange_type="fanout")
@@ -63,3 +71,7 @@ class Goutong:
 
     def ack_all_messages(self):
         self.channel.basic_ack(multiple=True)
+
+    def ack_delivery(self, delivery_id: int):
+        # logging.info(f"Acknowledging message: {delivery_id}")
+        self.channel.basic_ack(delivery_tag=delivery_id)
