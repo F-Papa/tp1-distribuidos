@@ -65,7 +65,7 @@ class JoinerState:
         return self._phase == JoinerState.IDLE
 
     # Command Methods
-    def mark_eof_received(self):
+    def mark_first_eof_received(self):
         self._eof_received += 1
         self.save()
 
@@ -142,15 +142,13 @@ class Joiner:
     # Control Flow
 
     def _start_aux(self):
-        if self._state.receiving_books():
-            self._receive_books()
-        elif self._state.receiving_reviews():
-            self.receive_reviews()
-
         while not self._shutting_down:
-            self._accept_next_connection()
-            self._receive_books()
-            self.receive_reviews()
+            if self._state.idle():
+                self._accept_next_connection()
+            elif self._state.receiving_books():
+                self._receive_books()
+            elif self._state.receiving_reviews():
+                self.receive_reviews()
 
     def _accept_next_connection(self):
         logging.info("Accepting Next Connection")
@@ -163,12 +161,14 @@ class Joiner:
         self._messaging.add_queues(Joiner.PENDING_CONN_QUEUE)
 
         self._messaging.set_callback(
-            Joiner.PENDING_CONN_QUEUE, self._accept_next_connection_callback
+            Joiner.PENDING_CONN_QUEUE, self._accept_next_connection_callback, auto_ack=False
         )
         self._messaging.listen()
 
     def _accept_next_connection_callback(self, messaging: Goutong, msg: Message):
         self._state.mark_receiving_books(msg.get("conn_id"))
+        # messaging.ack_n_messages(1)
+        messaging.ack_all_messages()
         messaging.close()
 
     # Books methods
@@ -184,7 +184,7 @@ class Joiner:
         books_queue = Joiner.BOOKS_QUEUE_PREFIX + str(self._state._current_connection)
         self._messaging.add_queues(books_queue)
 
-        self._messaging.set_callback(books_queue, self._receive_books_callback)
+        self._messaging.set_callback(books_queue, self._receive_books_callback, auto_ack=False)
         self._messaging.listen()
 
     def _receive_books_callback(self, messaging: Goutong, msg: Message):
@@ -199,20 +199,25 @@ class Joiner:
         is_EOF = msg.get("EOF")
 
         self._unacked_messages += 1
-        if self._unacked_messages >= self._unacked_msg_limit or is_EOF:
-            self._data.commit_to_disk()
-            # messaging.ack_all_messages()
-            self._unacked_messages = 0
 
         if is_EOF:
-            self._state.mark_eof_received()
-            if self._state._eof_received > 1:
-                self._messaging.close()
+            if self._state._eof_received == 0:
+                self._state.mark_first_eof_received()
+            else:
+                self._state.mark_receiving_reviews()
+        
+        if self._unacked_messages >= self._unacked_msg_limit or is_EOF:
+            self._data.commit_to_disk()
+            messaging.ack_all_messages()
+            self._unacked_messages = 0
+        
+        if self._state.receiving_reviews():
+            messaging.close()
+
 
     # Reviews methods
     def receive_reviews(self):
         logging.info("Receiving Reviews")
-        self._state.mark_receiving_reviews()
         self._messaging = self._messaging_module(
             self._messaging_host, self._messaging_port
         )
@@ -222,7 +227,7 @@ class Joiner:
         )
         self._messaging.add_queues(reviews_queue)
 
-        self._messaging.set_callback(reviews_queue, self._receive_reviews_callback)
+        self._messaging.set_callback(reviews_queue, self._receive_reviews_callback, auto_ack=True)
         self._messaging.listen()
 
     def _receive_reviews_callback(self, messaging: Goutong, msg: Message):
@@ -254,10 +259,13 @@ class Joiner:
 
         # Acknowledge message
         # messaging.ack_n_messages(1)
+        messaging.ack_all_messages()
 
         # Stop listening
         if msg.get("EOF"):
+            self._state.mark_idle()
             messaging.close()
+
 
     def _receive_reviews_q5(self, messaging: Goutong, reviews: list):
         batch = []

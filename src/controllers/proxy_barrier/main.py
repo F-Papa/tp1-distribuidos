@@ -26,7 +26,7 @@ class ProxyBarrier:
         control_queue_name = barrier_config.get("FILTER_TYPE") + "_barrier_control"
         messaging.add_queues(control_queue_name)
         messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-        messaging.set_callback(control_queue_name, self.callback_control, ())
+        messaging.set_callback(control_queue_name, self.callback_control, auto_ack=True)
         signal.signal(
             signal.SIGTERM, lambda sig, frame: self.sigterm_handler(messaging)
         )
@@ -51,8 +51,8 @@ class ProxyBarrier:
             )
 
             # Set callbacks
-            self.messaging.set_callback(self.input_queue_name, self.distribute_data)
-            self.messaging.set_callback(self.eof_queue_name, self.eof_received)
+            self.messaging.set_callback(self.input_queue_name, self.distribute_data, auto_ack=True)
+            self.messaging.set_callback(self.eof_queue_name, self.eof_received, auto_ack=True)
 
     def start(self):
         if not self.shutting_down:

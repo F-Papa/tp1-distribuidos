@@ -70,7 +70,7 @@ class ClientConnection:
         self.messaging.send_to_queue(JOINER_CONNECTION_QUEUES, message)
 
         self.messaging.set_callback(
-            results_queue, self.forward_results, args=()
+            results_queue, self.forward_results, args=(), auto_ack=True
         )
 
         self.__dispatch_data(BOOKS_QUEUE)

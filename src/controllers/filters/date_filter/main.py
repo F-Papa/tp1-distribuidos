@@ -74,8 +74,8 @@ def main():
     messaging.add_queues(*own_queues)
     messaging.add_queues(OUTPUT_Q1)
     messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    messaging.set_callback(control_queue_name, callback_control, ())
-    messaging.set_callback(input_queue_name, callback_filter, (filter_config,))
+    messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
+    messaging.set_callback(input_queue_name, callback_filter, auto_ack=True, args=(filter_config,))
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 

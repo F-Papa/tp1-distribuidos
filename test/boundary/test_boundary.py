@@ -72,7 +72,7 @@ class MockMessaging:
         # Append the message to the queue
         self.dict[queue_name].append(message.marshal())
 
-    def set_callback(self, queue_name: str, callback: Callable, args: tuple = ()):
+    def set_callback(self, queue_name: str, callback: Callable, auto_ack: bool = True, args: tuple = ()):
         pass
 
 

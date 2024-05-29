@@ -33,7 +33,7 @@ class InputController:
         control_queue_name = CONTROL_QUEUE_PREFIX + str(self._filter_number)
         self._messaging.add_queues(control_queue_name)
 
-        self._messaging.set_callback(BOOKS_QUEUE, self._dispatch_books, args=())
+        self._messaging.set_callback(BOOKS_QUEUE, self._dispatch_books, auto_ack=True)
         messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
 
     def start(self):

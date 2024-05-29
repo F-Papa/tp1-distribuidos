@@ -37,12 +37,14 @@ class Goutong:
             exchange=group_name, routing_key="", body=message.marshal()
         )
 
-    def set_callback(self, queue_name: str, callback: Callable, args: tuple = ()):
+    def set_callback(
+        self, queue_name: str, callback: Callable, auto_ack=True, args: tuple = ()
+    ):
         custom_callback = lambda ch, method, properties, body: callback(
             self, Message.unmarshal(body.decode()), *args
         )
         self.channel.basic_consume(
-            queue=queue_name, on_message_callback=custom_callback, auto_ack=True
+            queue=queue_name, on_message_callback=custom_callback, auto_ack=auto_ack
         )
 
     def add_broadcast_group(self, group_name: str, queue_names: list[str]):
@@ -58,10 +60,6 @@ class Goutong:
             except Exception as e:
                 # Already closed by another Node
                 pass
-    
-    def ack_n_messages(self, n: int):
-        for _ in range(n):
-            self.channel.basic_ack()
 
     def ack_all_messages(self):
         self.channel.basic_ack(multiple=True)
