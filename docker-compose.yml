@@ -96,6 +96,7 @@ services:
     volumes:
       - ./src/controllers/filters/date_filter/config.ini:/config.ini
       - ./src/controllers/filters/date_filter/main.py:/main.py
+      - ./state/date_filter1/:/state
 
   category_filter_proxy_barrier:
     build:
@@ -128,6 +129,7 @@ services:
     volumes:
       - ./src/controllers/filters/category_filter/config.ini:/config.ini
       - ./src/controllers/filters/category_filter/main.py:/main.py
+      - ./state/category_filter1/:/state
 
   decade_counter:
     build:
@@ -172,6 +174,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer1/:/state
 
   sentiment_analyzer2:
     build:
@@ -188,6 +191,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer2/:/state
 
   sentiment_analyzer3:
     build:
@@ -204,6 +208,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer3/:/state
 
   sentiment_analyzer4:
     build:
@@ -220,6 +225,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer4/:/state
 
   sentiment_analyzer5:
     build:
@@ -236,6 +242,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer5/:/state
 
   sentiment_analyzer6:
     build:
@@ -252,6 +259,7 @@ services:
     volumes:
       - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer6/:/state
 
   joiner:
     build:

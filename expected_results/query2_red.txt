@@ -1,0 +1,7 @@
+"Robert Louis Stevenson"
+"Joseph Conrad"
+"Mark Twain"
+"Edgar Allan Poe"
+"Rudyard Kipling"
+"Charles Dickens"
+"William Shakespeare"

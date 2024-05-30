@@ -1,0 +1,15 @@
+{"title": "Enterprise Linux at Work: How to Build 10 Distributed Applications for Your Organization", "authors": ["Stephen Asbury"], "publisher": "John Wiley & Sons Incorporated"}
+{"title": "Open Source Network Administration (Prentice Hall Series in Computer Networking and Distributed Systems)", "authors": ["James M. Kretchmar"], "publisher": "Prentice Hall Professional"}
+{"title": "Distributed Systems Architecture: A Middleware Approach", "authors": ["Arno Puder", "Kay R\u00f6mer", "Frank Pilhofer"], "publisher": "Elsevier"}
+{"title": "IBM&reg; WebSphere&reg; Application Server for Distributed Platforms and z/OS&reg;: An Administrator's Guide", "authors": ["James W. Cortada"], "publisher": "MIT Press"}
+{"title": "Holographic Reduced Representation: Distributed Representation for Cognitive Structures (Center for the Study of Language and Information - Lecture Notes)", "authors": ["Ignacio Rojas", "Gonzalo Joya", "Andreu Catal\u00e0"], "publisher": "Springer Nature"}
+{"title": "Distributed .NET Programming in VB .NET", "authors": ["Tom Barnaby"], "publisher": "Apress"}
+{"title": "Distributed Com Application Development Using Visual C++ 6.0 with CDROM (Prentice Hall Series on Microsoft Technologies)", "authors": ["Jim Maloney"], "publisher": "Prentice Hall"}
+{"title": "Malware: Fighting Malicious Code (Prentice Hall Series in Computer Networking and Distributed)", "authors": ["Ed Skoudis", "Lenny Zeltser"], "publisher": "Prentice Hall Professional"}
+{"title": "Inside Distributed COM (Mps)", "authors": ["Intermational Conference Ifip Tcs 200", "International Federation for Information Processing", "Springer-verlag"], "publisher": "Springer Science & Business Media"}
+{"title": "Replication Techniques in Distributed Systems (Advances in Database Systems)", "authors": ["Abdelsalam A. Helal", "Abdelsalam A. Heddaya", "Bharat B. Bhargava"], "publisher": "Springer Science & Business Media"}
+{"title": "Engineering Distributed Objects: Second International Workshop, EDO 2000 Davis, CA, USA, November 2-3, 2000 Revised Papers (Lecture Notes in Computer Science)", "authors": ["Wolfgang Emmerich", "Stefan Tai"], "publisher": "Springer"}
+{"title": "Parallel and Distributed Programming Using C++", "authors": ["Cameron Hughes", "Tracey Hughes"], "publisher": "Addison-Wesley Professional"}
+{"title": "ASP.NET Distributed Data Applications", "authors": ["Alex Homer", "David Sussman"], "publisher": "Apress"}
+{"title": "Elements of Distributed Computing", "authors": ["Vijay K. Garg"], "publisher": "John Wiley & Sons"}
+{"title": "Trends in Distributed Systems: Towards a Universal Service Market: Third International IFIP/GI Working Conference, USM 2000 Munich, Germany, September ... (Lecture Notes in Computer Science)", "authors": ["Claudia Linnhoff-Popien", "Heinz-Gerd Hegering"], "publisher": "Springer"}
