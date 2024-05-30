@@ -63,6 +63,7 @@ services:
     volumes:
       - ./src/controllers/filters/title_filter/config.ini:/config.ini
       - ./src/controllers/filters/title_filter/main.py:/main.py
+      - ./state/title_filter1/:/state
 
   date_filter_proxy_barrier:
     build:

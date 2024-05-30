@@ -24,6 +24,8 @@ class ProxyBarrier:
         # Graceful Shutdown Handling
         self.shutting_down = False
         control_queue_name = barrier_config.get("FILTER_TYPE") + "_barrier_control"
+        self.transaction_prefix = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+        self.next_transaction = 1
         messaging.add_queues(control_queue_name)
         messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
         messaging.set_callback(control_queue_name, self.callback_control, auto_ack=True)
@@ -70,9 +72,11 @@ class ProxyBarrier:
             # Forward EOF
             logging.debug("Forwarding EOF")
             forward_to = msg.get("forward_to")
-            to_send = {"conn_id": msg.get("conn_id"), "queries": msg.get("queries"), "EOF": True}
-            msg = Message(to_send)
             for queue in forward_to:
+                transaction_id = f"{self.transaction_prefix}_{self.next_transaction}"
+                self.next_transaction += 1
+                to_send = {"conn_id": msg.get("conn_id"), "queries": msg.get("queries"), "EOF": True, "transaction_id": transaction_id}
+                msg = Message(to_send)
                 self.messaging.send_to_queue(queue, msg)
             self.eof_count = 0
 
@@ -87,7 +91,16 @@ class ProxyBarrier:
         if msg.has_key("EOF"):
             self.messaging.broadcast_to_group(self.broadcast_group_name, msg)
             return
-
+        
+        # Add transaction id
+        data = msg.get("data")
+        queries = msg.get("queries")
+        transaction_id = f"{self.transaction_prefix}_{self.next_transaction}"
+        conn_id = msg.get("conn_id")
+        
+        self.next_transaction += 1
+        msg = Message({"conn_id": conn_id, "data": data, "queries": queries, "transaction_id": transaction_id})
+        
         # round-robin data
         self.messaging.send_to_queue(self.filter_queues[self.current_queue], msg)
         # logging.debug(f"Passed to: {self.filter_queues[self.current_queue]}")

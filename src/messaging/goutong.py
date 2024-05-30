@@ -49,7 +49,7 @@ class Goutong:
             queue=queue_name, on_message_callback=custom_callback, auto_ack=auto_ack
         )
 
-        logging.info(f"ID: {consumer_id} | Listening to: {queue_name}")
+        # logging.debug(f"ID: {consumer_id} | Listening to: {queue_name}")
         self.consumer_ids[queue_name] = consumer_id
 
     def stop_consuming(self, queue_name: str):
@@ -73,5 +73,7 @@ class Goutong:
         self.channel.basic_ack(multiple=True)
 
     def ack_delivery(self, delivery_id: int):
-        # logging.info(f"Acknowledging message: {delivery_id}")
         self.channel.basic_ack(delivery_tag=delivery_id)
+
+    def nack_delivery(self, delivery_id: int):
+        self.channel.basic_nack(delivery_tag=delivery_id)
