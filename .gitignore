@@ -3,3 +3,4 @@ data
 results/*
 src/client/results/*
 __pycache__
+state
