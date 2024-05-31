@@ -92,10 +92,14 @@ def main():
 
     # Main Flow
     try:
-        if not state.committed and not shutting_down:
-            handle_uncommited_transactions(messaging, state)
         while not shutting_down:
-            main_loop(messaging, input_queue_name, state)
+            if not state.committed:
+                handle_uncommited_transactions(messaging, state)
+            
+            messaging.set_callback(
+                input_queue_name, callback_title_filter, auto_ack=False, args=(state,)
+            )
+            messaging.listen()
     except ShuttingDown:
         pass
 
@@ -120,10 +124,7 @@ def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
 
 
 def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
-    messaging.set_callback(
-        input_queue_name, callback_title_filter, auto_ack=False, args=(state,)
-    )
-    messaging.listen()
+
     if state.get("books_received"):
         to_send = filter_data(state.get("books_received"))
         _send_batch_q1(
