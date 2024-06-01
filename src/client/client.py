@@ -36,6 +36,8 @@ class Client:
     def run(self):
         # Connect
 
+        print("CWD:", os.getcwd())
+
         batch = []
         files = [BOOKS_FILE, REVIEWS_FILE]
         parsing_func = [parsing.parse_book_line, parsing.parse_review_line]

@@ -3,6 +3,9 @@ from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
 import signal
+import os
+
+from src.controller_state.controller_state import ControllerState
 
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
@@ -29,6 +32,7 @@ def sigterm_handler(messaging: Goutong):
     global shutting_down
     logging.info("SIGTERM received. Initiating Graceful Shutdown.")
     shutting_down = True
+    raise ShuttingDown
     #msg = Message({"ShutDown": True})
     # messaging.broadcast_to_group(CONTROL_GROUP, msg)
 
@@ -62,6 +66,26 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
+    # Load State
+    controller_id = f"{FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
+
+    extra_fields = {
+        "books_received": [],
+        "conn_id": 0,
+        "queries": [],
+        "EOF": False,
+    }
+
+    state = ControllerState(
+        controller_id=controller_id,
+        file_path=f"state/{controller_id}.json",
+        temp_file_path=f"state/{controller_id}.tmp",
+        extra_fields=extra_fields,
+    )
+
+    if os.path.exists(state.file_path):
+        state.update_from_file(state.file_path)
+
     messaging = Goutong()
 
     # Set up the queues
@@ -73,22 +97,61 @@ def main():
     own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
     messaging.add_queues(*own_queues)
     messaging.add_queues(OUTPUT_Q1)
-    messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
-    messaging.set_callback(input_queue_name, callback_filter, auto_ack=True, args=(filter_config,))
+    #messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
+    #messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
-    # Start listening
-    if not shutting_down:
-        try:
-            messaging.listen()
-        except ShuttingDown:
-            logging.debug("Shutdown Message Received via Control Broadcast")
+    # Main Flow
+    try:
+        if not state.committed and not shutting_down:
+            pass
+            handle_uncommited_transactions(messaging, state)
+        while not shutting_down:
+            main_loop(messaging, input_queue_name, state)
+    except ShuttingDown:
+        pass
 
-    messaging.close()
-    logging.info("Shutting Down.")
+    finally:
+        logging.info("Shutting Down.")
+        messaging.close()
+        state.save_to_disk()
 
+def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
+    if state.get("books_received"):
+        (to_send_q1, to_send_q3_4) = filter_data(state.get("books_received"), queries=state.get("queries"))
+        _send_batches(
+            messaging=messaging,
+            batch_q1=to_send_q1,
+            batch_q3_4=to_send_q3_4,
+            connection_id=state.get("conn_id"),
+            queries=state.get("queries"),
+        )
+    if state.get("EOF"):
+        _send_EOF(messaging=messaging, connection_id=state.get("conn_id"))
+    state.mark_transaction_committed()
+
+def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
+    messaging.set_callback(
+        input_queue_name, callback_filter, auto_ack=False, args=(state,)
+    )
+    logging.debug(f"escucho {input_queue_name}")
+    messaging.listen()
+
+    if state.get("books_received"):
+        (to_send_q1, to_send_q3_4) = filter_data(state.get("books_received"), state.get("queries"))
+        _send_batches(
+            messaging=messaging,
+            batch_q1=to_send_q1,
+            batch_q3_4=to_send_q3_4,
+            connection_id=state.get("conn_id"),
+            queries=state.get("queries")
+        )
+
+    if state.get("EOF"):
+        _send_EOF(messaging, state.get("conn_id"))
+
+    state.mark_transaction_committed()
 
 def callback_control(messaging: Goutong, msg: Message):
     global shutting_down
@@ -112,13 +175,17 @@ def _columns_for_query3_4(book: dict) -> dict:
         "authors": book["authors"],
     }
 
+def _send_batches(messaging: Goutong, batch_q1: list, batch_q3_4: list, connection_id: int, queries: list):
+    if batch_q1:
+        _send_batch_q1(messaging, batch_q1, connection_id)
+    if batch_q3_4:
+        _send_batch_q3_4(messaging, batch_q3_4, connection_id)
 
 def _send_batch_q1(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query1, batch))
     msg = Message({"conn_id": connection_id, "queries": [1], "data": data})
     messaging.send_to_queue(OUTPUT_Q1, msg)
     # logging.debug(f"Sent Data to: {OUTPUT_Q1}")
-
 
 def _send_batch_q3_4(messaging: Goutong, batch: list, connection_id: int):
     data = list(map(_columns_for_query3_4, batch))
@@ -136,45 +203,51 @@ def _send_EOF(messaging: Goutong, connection_id: int):
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
-def callback_filter(messaging: Goutong, msg: Message, config: Configuration):
+def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
     # logging.debug(f"Received: {msg.marshal()}")
+    transaction_id = msg.get("transaction_id")
+
+    # Ignore duplicate transactions
+    if transaction_id in state.transactions_received:
+        messaging.ack_delivery(msg.delivery_id)
+        logging.info(f"Received Duplicate Transaction {msg.get('transaction_id')}")
+        return
+
+    # Add new data to state
+    eof = msg.has_key("EOF")
+    books_received = msg.get("data") if msg.has_key("data") else []
+    conn_id = msg.get("conn_id")
+    transaction_id = msg.get("transaction_id")
+
+    state.set("books_received", books_received)
+    state.set("conn_id", conn_id)
+    state.set("queries", msg.get("queries"))
+    state.set("EOF", eof)
+    state.mark_transaction_received(transaction_id)
+    state.save_to_disk()
 
     queries = msg.get("queries")
     connection_id = msg.get("conn_id")
 
+        # Acknowledge message now that it's saved
+    messaging.ack_delivery(msg.delivery_id)
+    messaging.stop_consuming(msg.queue_name)
+    logging.debug(f"no escucho mas queue {msg.queue_name}")
 
-    if msg.has_key("EOF"):
-        # Forward EOF and Keep Consuming
-        _send_EOF(messaging, connection_id)
-        return
+def filter_data(data: list, queries: list):
+    filtered_data_q1 = []
+    filtered_data_q3_4 = []
 
-    books = msg.get("data")
-    batch_q1 = []
-    batch_q3_4 = []
-
-    for book in books:
+    for book in data:
         year = book.get("year")
-
-        # Query 1 flow
         if LOWER_Q1 <= year <= UPPER_Q1:
-            batch_q1.append(book)
-            if len(batch_q1) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q1(messaging, batch_q1, connection_id)
-                batch_q1.clear()
-
-        # Queries 3 and 4 flow
+            filtered_data_q1.append(book)
         if LOWER_Q3_4 <= year <= UPPER_Q3_4:
-            batch_q3_4.append(book)
-            if len(batch_q3_4) >= config.get("ITEMS_PER_BATCH"):
-                _send_batch_q3_4(messaging, batch_q3_4, connection_id)
-                batch_q3_4.clear()
+            filtered_data_q3_4.append(book)
 
-    # Send remaining
-    if batch_q1:
-        _send_batch_q1(messaging, batch_q1, connection_id)
-    if batch_q3_4:
-        _send_batch_q3_4(messaging, batch_q3_4, connection_id)
-
+    if filtered_data_q1 or filtered_data_q3_4:
+        logging.info(f"Filtered {len(filtered_data_q1) + len(filtered_data_q3_4)} items")
+    return (filtered_data_q1, filtered_data_q3_4)
 
 if __name__ == "__main__":
     main()
