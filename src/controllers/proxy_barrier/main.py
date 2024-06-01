@@ -89,6 +89,7 @@ class ProxyBarrier:
         # logging.debug(f"Received: {msg.marshal()}")
 
         if msg.has_key("EOF"):
+            logging.debug(f"RECIBI EOF QUERY {msg.get('conn_id')}")
             self.messaging.broadcast_to_group(self.broadcast_group_name, msg)
             return
         

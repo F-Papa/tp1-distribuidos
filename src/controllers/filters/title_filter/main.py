@@ -8,7 +8,6 @@ import signal
 
 from src.messaging.message import Message
 from src.utils.config_loader import Configuration
-from src.exceptions.shutting_down import ShuttingDown
 
 FILTER_TYPE = "title_filter"
 EOF_QUEUE = "title_filter_eof"
@@ -92,14 +91,10 @@ def main():
 
     # Main Flow
     try:
+        if not state.committed and not shutting_down:
+            handle_uncommited_transactions(messaging, state)
         while not shutting_down:
-            if not state.committed:
-                handle_uncommited_transactions(messaging, state)
-            
-            messaging.set_callback(
-                input_queue_name, callback_title_filter, auto_ack=False, args=(state,)
-            )
-            messaging.listen()
+            main_loop(messaging, input_queue_name, state)
     except ShuttingDown:
         pass
 
@@ -124,6 +119,11 @@ def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
 
 
 def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
+    messaging.set_callback(
+        input_queue_name, callback_title_filter, auto_ack=False, args=(state,)
+    )
+    logging.debug(f"escucho {input_queue_name}")
+    messaging.listen()
 
     if state.get("books_received"):
         to_send = filter_data(state.get("books_received"))
@@ -165,19 +165,20 @@ def callback_title_filter(messaging: Goutong, msg: Message, state: ControllerSta
     # Acknowledge message now that it's saved
     messaging.ack_delivery(msg.delivery_id)
     messaging.stop_consuming(msg.queue_name)
+    logging.debug(f"no escucho mas queue {msg.queue_name}")
 
 
 def filter_data(data: list):
-    to_return = []
+    filtered_data = []
 
     for book in data:
         title = book.get("title")
         if KEYWORD_Q1.lower() in title.lower():
-            to_return.append(book)
+            filtered_data.append(book)
 
-    if to_return:
-        logging.info(f"Filtered {len(to_return)} items")
-    return to_return
+    if filtered_data:
+        logging.info(f"Filtered {len(filtered_data)} items")
+    return filtered_data
 
 
 def _columns_for_query1(book: dict) -> dict:
@@ -195,7 +196,7 @@ def _send_batch_q1(messaging: Goutong, batch: list, conn_id: int, queries: list[
         msg_content = {"conn_id": conn_id, "queries": [1], "data": data}
         msg = Message(msg_content)
         messaging.send_to_queue(OUTPUT_Q1, msg)
-        logging.info("Sending Batch to Category Filter")
+        logging.debug("Sending Batch to Category Filter")
 
 
 def _send_EOF(messaging: Goutong, conn_id: int):
