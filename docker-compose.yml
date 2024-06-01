@@ -41,7 +41,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=title_filter
-      - FILTER_COUNT=1
+      - FILTER_COUNT=2
       - LOGGING_LEVEL=INFO
     networks:
       - tp1_testing_net
@@ -65,6 +65,23 @@ services:
       - ./src/controllers/filters/title_filter/main.py:/main.py
       - ./state/title_filter1/:/state
 
+  title_filter2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
+    container_name: title_filter2
+    image: title_filter:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/title_filter/config.ini:/config.ini
+      - ./src/controllers/filters/title_filter/main.py:/main.py
+      - ./state/title_filter2/:/state
+
   date_filter_proxy_barrier:
     build:
       context: ./
@@ -74,7 +91,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=date_filter
-      - FILTER_COUNT=1
+      - FILTER_COUNT=2
       - LOGGING_LEVEL=INFO
     networks:
       - tp1_testing_net
@@ -97,6 +114,23 @@ services:
       - ./src/controllers/filters/date_filter/config.ini:/config.ini
       - ./src/controllers/filters/date_filter/main.py:/main.py
       - ./state/date_filter1/:/state
+
+  date_filter2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/date_filter/Dockerfile
+    container_name: date_filter2
+    image: date_filter:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/date_filter/config.ini:/config.ini
+      - ./src/controllers/filters/date_filter/main.py:/main.py
+      - ./state/date_filter2/:/state
 
   category_filter_proxy_barrier:
     build:

@@ -1,13 +1,13 @@
 {"title": "The Book of Memories (Jewish Latin America)"}
 {"title": "The Innocent Flower"}
 {"title": "The Riverside Literature Series Number 1: Evangeline"}
-{"title": "Misterioso"}
-{"title": "Ice Blade, Vol. 2: Snow Country"}
-{"title": "El padrino (Byblos: Narrativa)"}
 {"title": "Terra Nostra"}
-{"title": "Famous trials of history,"}
+{"title": "Ice Blade, Vol. 2: Snow Country"}
+{"title": "Misterioso"}
+{"title": "El padrino (Byblos: Narrativa)"}
 {"title": "El padrino (La Trama)"}
 {"title": "The Classic Book of Science Fiction"}
+{"title": "Famous trials of history,"}
 {"title": "Longarm 109: Bloody"}
 {"title": "Centaur of the North: Stories"}
 {"title": "Magnetic Hearts: Whispers Of Love\\White Diamonds\\Legacy (Arabesque)"}
@@ -17,19 +17,19 @@
 {"title": "The lighted box"}
 {"title": "Ex-Virgin"}
 {"title": "Bounce: A Screenplay"}
-{"title": "Fire-marks"}
-{"title": "The Searcher (Leisure Western)"}
 {"title": "From Isles of Dream: Visionary Stories and Poems of the Celtic Renaissance"}
-{"title": "Lovemakers"}
+{"title": "The Searcher (Leisure Western)"}
+{"title": "Fire-marks"}
 {"title": "Americas Stamps 1ST Edition"}
+{"title": "Lovemakers"}
 {"title": "Too Many Clients"}
 {"title": "Dark Fires"}
 {"title": "The White Mice"}
-{"title": "Kilgarthen"}
 {"title": "Star Risk, Ltd."}
 {"title": "Little Address Book of One Thousand Stars"}
-{"title": "The Stepman"}
+{"title": "Kilgarthen"}
 {"title": "Leaves from the Inn of the Last Home"}
+{"title": "The Stepman"}
 {"title": "Beyond Black"}
 {"title": "Jewel"}
 {"title": "The Best Short Stories of 1920 and the Yearbook of the American Short Story"}
@@ -37,8 +37,8 @@
 {"title": "TIME AND AGAIN (scribner paperback fiction)"}
 {"title": "There's Always a Trail & Home in the Valley (Louis L'Amour)"}
 {"title": "The Hollyhocks Trail"}
-{"title": "Seen and heard in India"}
 {"title": "David Copperfield: Parts 1 & 2 (Classic Books on Cassettes Collection)"}
+{"title": "Seen and heard in India"}
 {"title": "Children of the Dawn"}
 {"title": "mountain laurel"}
 {"title": "Chrissy's Endeavor (GLH Library)"}
@@ -47,14 +47,14 @@
 {"title": "Royal Summer"}
 {"title": "TOO MUCH FLESH AND JABEZ."}
 {"title": "Escape from Ghost Hotel"}
-{"title": "Children of the Bible"}
 {"title": "The Heirloom"}
+{"title": "Children of the Bible"}
 {"title": "Asian Storm (Don Pendleton's Mack Bolan : Stony Man)"}
+{"title": "Martin Van Buren (American statesmen, [v. 18])"}
 {"title": "Dark At Heart"}
 {"title": "The great fire of London: A story with interpolations and bifurcations"}
-{"title": "His Love Saved Her"}
 {"title": "Pennies on Her Eyes"}
-{"title": "Martin Van Buren (American statesmen, [v. 18])"}
+{"title": "His Love Saved Her"}
 {"title": "HIGH WALK."}
 {"title": "Live/Love: Lenticular Postcards (Optical Illusions)"}
 {"title": "The White Road (Morland Dynasty Series)"}
@@ -63,18 +63,18 @@
 {"title": "The Strength of Gideon and Other Stories"}
 {"title": "Angelina Jolie 2006 Sexy Poster Calendar"}
 {"title": "Revenge of the Damned"}
-{"title": "Justice Is Served"}
 {"title": "Sexy Book"}
-{"title": "Prodigal Summer by Kingsolver (hardcover edition)"}
+{"title": "Justice Is Served"}
 {"title": "THIRTY STRANGE STORIES"}
+{"title": "Prodigal Summer by Kingsolver (hardcover edition)"}
 {"title": "Shortchangers"}
 {"title": "Third Time Around"}
 {"title": "The middle parts of fortune: Somme & Ancre, 1916"}
-{"title": "Candide and Philosophical Letters (Modern Library)"}
 {"title": "The Rim of the Prairie"}
+{"title": "Candide and Philosophical Letters (Modern Library)"}
 {"title": "Lee's Lieutenants, Vol. III: Gettysburg to Appomattox"}
-{"title": "Mosses from an Old Manse"}
 {"title": "Mosses From an Old Manse"}
+{"title": "Mosses from an Old Manse"}
 {"title": "Feeding Five Thousand:: Hosiah's Story"}
 {"title": "The G.I.F.T.S. of Joy"}
 {"title": "Ben Retallick"}
@@ -108,8 +108,8 @@
 {"title": "Playboy January 2002 Chyna Joanie Laurer Holiday Anniversary Issue"}
 {"title": "Squeeze play (Penguin crime fiction)"}
 {"title": "Witches Brew in the Pew?"}
-{"title": "Sudden Death - SIGNED"}
 {"title": "The Tempest: Calista's Song"}
+{"title": "Sudden Death - SIGNED"}
 {"title": "Ghost Stories of Venice"}
 {"title": "The Feelies"}
 {"title": "THE PETAYBEE SEQUENCE: Book (1) One: Powers that Be; Book (2) Two: Power Lines; Book (3) Three: Power Play"}
@@ -155,8 +155,8 @@
 {"title": "Hustler Adult Magazine:October 2003"}
 {"title": "Fires of Spring"}
 {"title": "Billy Martin Meets the Pontiff: And Other Baseball Stories"}
-{"title": "One Tree, The: Book Two of The 2nd Chronicles of Thomas Covenant"}
 {"title": "The Secret of the Lighthouse"}
+{"title": "One Tree, The: Book Two of The 2nd Chronicles of Thomas Covenant"}
 {"title": "The Lincoln Rhyme Collection"}
 {"title": "Cherokee Dawn"}
 {"title": "Roll over and Play Dead"}
@@ -179,14 +179,14 @@
 {"title": "COME, MY BELOVED."}
 {"title": "Come, my beloved"}
 {"title": "Something to Talk About"}
-{"title": "The Forsaken Flower"}
 {"title": "The Summer of the Hand (Out of This World)"}
-{"title": "The Desert Hawks (The Wells Fargo Trail Books)"}
+{"title": "The Forsaken Flower"}
 {"title": "Publish and Perish"}
+{"title": "The Desert Hawks (The Wells Fargo Trail Books)"}
 {"title": "Warhaven"}
-{"title": "Queen Lucia: Make Way for Lucia"}
-{"title": "The Algerine Captive: or, The Life and Adventures of Doctor Updike Underhill (Modern Library Classics)"}
 {"title": "Precision Kill (Don Pendleton)"}
+{"title": "The Algerine Captive: or, The Life and Adventures of Doctor Updike Underhill (Modern Library Classics)"}
+{"title": "Queen Lucia: Make Way for Lucia"}
 {"title": "Sword of Chaos"}
 {"title": "Regards: The Selected Nonfiction of John Gregory Dunne"}
 {"title": "A Trilogy: The Singer, the Song and the Finale (Boxed Set of 3): A Mythic Retelling of the Story of the New Testament"}
@@ -212,12 +212,12 @@
 {"title": "The Jungle Book (Great Illustrated Classics, E224-37)"}
 {"title": "She was a Bigamist: Was she a woman without Honor? Or a Woman who loved too much?"}
 {"title": "Poison Belt"}
-{"title": "Reprisal (Don Pendleton's Mack Bolan : Stony Man)"}
 {"title": "The Evil and the Guilty (Great Books Foundation 50th Anniversary Series)"}
-{"title": "Flashpoint: Gay Male Sexual Writing"}
+{"title": "Reprisal (Don Pendleton's Mack Bolan : Stony Man)"}
 {"title": "Zoboa"}
-{"title": "Robbie Taggart: Highland Sailor (The Highland Collection, Book 2)"}
+{"title": "Flashpoint: Gay Male Sexual Writing"}
 {"title": "Brainfade"}
+{"title": "Robbie Taggart: Highland Sailor (The Highland Collection, Book 2)"}
 {"title": "Aquatic Readiness Developing Water Competence in Young Children"}
 {"title": "Great Bev"}
 {"title": "The Cosmological Eye"}
@@ -232,8 +232,8 @@
 {"title": "Star Wars Dark Apprentice Volume Jedi"}
 {"title": "Captive Secrets"}
 {"title": "The Before Columbus Foundation Fiction Anthology"}
-{"title": "Shadow of the Hawk. *A saga of the Southwest,Book VIII."}
 {"title": "Plucking the Skylark"}
+{"title": "Shadow of the Hawk. *A saga of the Southwest,Book VIII."}
 {"title": "Groundswell: The Second Diva Book of Short Stories"}
 {"title": "The Clock Winder & Celestial Navigation & Searching for Caleb"}
 {"title": "Loon Song"}
@@ -255,3 +255,9 @@
 {"title": "Unlikely Duet (Caledonia Chronicles, Pt. 1.)"}
 {"title": "Sasquatch Adventures: Bigfoot And His Friends"}
 {"title": "Copper Moon"}
+{"title": "How Sweet It Is / Second-Chance Groom (Harlequin Duets, No. 11)"}
+{"title": "Peacemaker Rawhide (Avalon Western)"}
+{"title": "My heart's in the highlands"}
+{"title": "To Follow Yahweh's Plan"}
+{"title": "Stories of Georgia"}
+{"title": "The Gift Stone"}

@@ -105,7 +105,6 @@ def main():
     # Main Flow
     try:
         if not state.committed and not shutting_down:
-            pass
             handle_uncommited_transactions(messaging, state)
         while not shutting_down:
             main_loop(messaging, input_queue_name, state)
@@ -218,18 +217,16 @@ def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
     books_received = msg.get("data") if msg.has_key("data") else []
     conn_id = msg.get("conn_id")
     transaction_id = msg.get("transaction_id")
+    queries = msg.get("queries")
 
     state.set("books_received", books_received)
     state.set("conn_id", conn_id)
-    state.set("queries", msg.get("queries"))
+    state.set("queries", queries)
     state.set("EOF", eof)
     state.mark_transaction_received(transaction_id)
     state.save_to_disk()
 
-    queries = msg.get("queries")
-    connection_id = msg.get("conn_id")
-
-        # Acknowledge message now that it's saved
+    # Acknowledge message now that it's saved
     messaging.ack_delivery(msg.delivery_id)
     messaging.stop_consuming(msg.queue_name)
     logging.debug(f"no escucho mas queue {msg.queue_name}")
