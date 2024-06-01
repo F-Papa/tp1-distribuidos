@@ -61,7 +61,7 @@ def main():
     controller_id = f"{FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
 
     extra_fields = {
-        "books_received": [],
+        "filtered_books": [],
         "conn_id": 0,
         "queries": [],
         "EOF": False,
@@ -91,10 +91,12 @@ def main():
 
     # Main Flow
     try:
-        if not state.committed and not shutting_down:
-            handle_uncommited_transactions(messaging, state)
         while not shutting_down:
-            main_loop(messaging, input_queue_name, state)
+            if not state.committed:
+                handle_uncommited_transactions(messaging, state)
+            get_next_message(
+                messaging=messaging, input_queue_name=input_queue_name, state=state
+            )
     except ShuttingDown:
         pass
 
@@ -104,38 +106,24 @@ def main():
         state.save_to_disk()
 
 
-def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
-    if state.get("books_received"):
-        to_send = filter_data(state.get("books_received"))
-        _send_batch_q1(
-            messaging=messaging,
-            batch=to_send,
-            conn_id=state.get("conn_id"),
-            queries=state.get("queries"),
-        )
-    if state.get("EOF"):
-        _send_EOF(messaging=messaging, conn_id=state.get("conn_id"))
-    state.mark_transaction_committed()
-
-
-def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
+def get_next_message(messaging: Goutong, input_queue_name: str, state: ControllerState):
     messaging.set_callback(
         input_queue_name, callback_title_filter, auto_ack=False, args=(state,)
     )
-    logging.debug(f"escucho {input_queue_name}")
     messaging.listen()
 
-    if state.get("books_received"):
-        to_send = filter_data(state.get("books_received"))
-        _send_batch_q1(
+
+def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
+    if state.get("filtered_books"):
+        _send_batch(
             messaging=messaging,
-            batch=to_send,
+            batch=state.get("filtered_books"),
             conn_id=state.get("conn_id"),
             queries=state.get("queries"),
+            transaction_id=state.id_for_next_transaction(),
         )
-
     if state.get("EOF"):
-        _send_EOF(messaging, state.get("conn_id"))
+        _send_EOF(messaging=messaging, conn_id=state.get("conn_id"))
 
     state.mark_transaction_committed()
 
@@ -150,15 +138,17 @@ def callback_title_filter(messaging: Goutong, msg: Message, state: ControllerSta
         return
 
     # Add new data to state
-    eof = msg.has_key("EOF")
     books_received = msg.get("data") if msg.has_key("data") else []
+    filtered_books = filter_data(books_received)
+    eof = msg.has_key("EOF")
     conn_id = msg.get("conn_id")
     transaction_id = msg.get("transaction_id")
 
-    state.set("books_received", books_received)
+    state.set("filtered_books", filtered_books)
     state.set("conn_id", conn_id)
     state.set("queries", msg.get("queries"))
     state.set("EOF", eof)
+    state.set("committed", False)
     state.mark_transaction_received(transaction_id)
     state.save_to_disk()
 
@@ -190,13 +180,24 @@ def _columns_for_query1(book: dict) -> dict:
     }
 
 
-def _send_batch_q1(messaging: Goutong, batch: list, conn_id: int, queries: list[int]):
+def _send_batch(
+    messaging: Goutong,
+    batch: list,
+    conn_id: int,
+    queries: list[int],
+    transaction_id: str,
+):
+    msg_content = {
+        "transaction_id": transaction_id,
+        "conn_id": conn_id,
+        "queries": queries,
+    }
     if batch:
         data = list(map(_columns_for_query1, batch))
-        msg_content = {"conn_id": conn_id, "queries": [1], "data": data}
-        msg = Message(msg_content)
-        messaging.send_to_queue(OUTPUT_Q1, msg)
-        logging.debug("Sending Batch to Category Filter")
+        msg_content["data"] = data
+
+    msg = Message(msg_content)
+    messaging.send_to_queue(OUTPUT_Q1, msg)
 
 
 def _send_EOF(messaging: Goutong, conn_id: int):
