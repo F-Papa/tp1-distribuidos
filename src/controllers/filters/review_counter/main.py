@@ -63,9 +63,13 @@ class ReviewCounter:
         self.messaging.add_queues(*own_queues)
 
         self.messaging.add_broadcast_group(self.CONTROL_GROUP, [control_queue_name])
-        self.messaging.set_callback(control_queue_name, self.callback_control, auto_ack=True)
+        self.messaging.set_callback(
+            control_queue_name, self.callback_control, auto_ack=True
+        )
 
-        self.messaging.set_callback(self.INPUT_QUEUE, self.callback_filter, auto_ack=True)
+        self.messaging.set_callback(
+            self.INPUT_QUEUE, self.callback_filter, auto_ack=True
+        )
 
     def listen(self):
         try:
@@ -76,7 +80,7 @@ class ReviewCounter:
     def shutdown(self):
         logging.info("Initiating Graceful Shutdown")
         self.shutting_down = True
-        #msg = Message({"ShutDown": True})
+        # msg = Message({"ShutDown": True})
         # self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
         self.messaging.close()
         raise ShuttingDown
@@ -88,7 +92,7 @@ class ReviewCounter:
 
     def _send_EOF(self, conn_id: int):
 
-        msg = Message({"conn_id": conn_id, "queries": [3,4], "EOF": True})
+        msg = Message({"conn_id": conn_id, "queries": [3, 4], "EOF": True})
         output_q3 = self.OUTPUT_QUEUE_PREFIX + str(conn_id)
         self.messaging.send_to_queue(output_q3, msg)
         logging.debug(f"Sent EOF to: {output_q3}")
@@ -120,8 +124,8 @@ class ReviewCounter:
 
             self._send_q4_batch(conn_id=conn_id)
 
-            logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
-            logging.info(f"MSGS RECIBIDOS {self.msg_received}")
+            # logging.info(f"EN TOTAL FUERON {self.reviews.cached_entries}")
+            # logging.info(f"MSGS RECIBIDOS {self.msg_received}")
             self._reset_state()
             self._send_EOF(conn_id)
             return

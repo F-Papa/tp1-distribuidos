@@ -57,7 +57,7 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    #Load State
+    # Load State
     controller_id = f"{FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
 
     extra_fields = {
@@ -89,8 +89,8 @@ def main():
     messaging.add_queues(*own_queues)
     messaging.add_queues(OUTPUT_QUEUE)
 
-    #messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    #messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
+    # messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
+    # messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
@@ -108,19 +108,26 @@ def main():
         messaging.close()
         state.save_to_disk()
 
+
 def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
     logging.debug("Handling possible pending commit")
     if state.get("reviews_received"):
-        #logging.debug(f"ESTADO:{state}")
+        # logging.debug(f"ESTADO:{state}")
         to_send = analyze_reviews(state.get("reviews_received"))
         _send_batch(
             messaging=messaging,
             batch=to_send,
             conn_id=state.get("conn_id"),
+            transaction_id=state.id_for_next_transaction(),
         )
     if state.get("EOF"):
-        _send_EOF(messaging=messaging, conn_id=state.get("conn_id"))
+        _send_EOF(
+            messaging=messaging,
+            conn_id=state.get("conn_id"),
+            transaction_id=state.id_for_next_transaction() + "_EOF",
+        )
     state.mark_transaction_committed()
+
 
 def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
     messaging.set_callback(
@@ -129,6 +136,7 @@ def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState)
     logging.debug(f"Escucho queue {input_queue_name}")
     messaging.listen()
 
+    transaction_id = state.id_for_next_transaction()
 
     if state.get("reviews_received"):
         logging.debug("ANALIZO")
@@ -137,13 +145,19 @@ def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState)
             messaging=messaging,
             batch=to_send,
             conn_id=state.get("conn_id"),
+            transaction_id=state.id_for_next_transaction(),
         )
         logging.debug("Mande al SIG")
 
     if state.get("EOF"):
-        _send_EOF(messaging, state.get("conn_id"))
+        _send_EOF(
+            messaging,
+            state.get("conn_id"),
+            transaction_id=state.id_for_next_transaction() + "_EOF",
+        )
 
     state.mark_transaction_committed()
+
 
 def callback_control(messaging: Goutong, msg: Message):
     global shutting_down
@@ -152,25 +166,38 @@ def callback_control(messaging: Goutong, msg: Message):
         raise ShuttingDown
 
 
-def _send_EOF(messaging: Goutong, conn_id: int):
-    msg = Message({"conn_id": conn_id, "queries": [5], "EOF": True, "forward_to": [OUTPUT_QUEUE]})
+def _send_EOF(messaging: Goutong, conn_id: int, transaction_id: str):
+    msg = Message(
+        {
+            "transaction_id": transaction_id,
+            "conn_id": conn_id,
+            "queries": [5],
+            "EOF": True,
+            "forward_to": [OUTPUT_QUEUE],
+        }
+    )
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
 def _analyze_sentiment(text: str):
     blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity # type: ignore
+    sentiment = blob.sentiment.polarity  # type: ignore
     return sentiment
 
 
 def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
     transaction_id = msg.get("transaction_id")
-    logging.debug(f"RECIBO MENSAJE CON ID {transaction_id} STATE: {state.transactions_received} ")
+    logging.debug(
+        f"RECIBO MENSAJE CON ID {transaction_id} STATE: {state.transactions_received} "
+    )
     # Ignore duplicate transactions
     if transaction_id in state.transactions_received:
         messaging.ack_delivery(msg.delivery_id)
-        logging.info(f"Received Duplicate Transaction {msg.get('transaction_id')}")
+        logging.info(
+            f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+            + msg.marshal()[:100]
+        )
         return
 
     # Add new data to state
@@ -201,11 +228,19 @@ def analyze_reviews(reviews: list):
         sentiment = _analyze_sentiment(review_text)
         analyzed_reviews.append({"title": review["title"], "sentiment": sentiment})
 
-    logging.info(f"Analyzed {len(analyzed_reviews)} reviews")
+    logging.debug(f"Analyzed {len(analyzed_reviews)} reviews")
     return analyzed_reviews
 
-def _send_batch(messaging: Goutong, batch: list, conn_id: int):
-    msg = Message({"conn_id": conn_id, "queries": [5], "data": batch})
+
+def _send_batch(messaging: Goutong, batch: list, conn_id: int, transaction_id: str):
+    msg = Message(
+        {
+            "transaction_id": transaction_id,
+            "conn_id": conn_id,
+            "queries": [5],
+            "data": batch,
+        }
+    )
     messaging.send_to_queue(OUTPUT_QUEUE, msg)
     logging.debug(f"Sent Data to: {OUTPUT_QUEUE}")
 

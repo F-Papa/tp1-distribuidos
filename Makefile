@@ -22,7 +22,9 @@ filters-logs:
 
 filters-down:
 	docker compose -f ./docker-compose.yml down -t 0
-	sudo rm -R ./state
+	sudo rm -Rf ./state
+
+filters-reset: filters-down filters-up
 
 boundary-up:
 	docker run -it -e LOGGING_LEVEL=INFO -e ITEMS_PER_BATCH=$(BOUNDARY_ITEMS_PER_BATCH) -v ./boundary.py:/main.py -v ./results:/results -v $(BOOKS_ENTITY):/books.csv -v $(REVIEWS_ENTITY):/reviews.csv --rm --network tp1_testing_net boundary

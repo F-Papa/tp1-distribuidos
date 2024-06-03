@@ -138,7 +138,7 @@ def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
         _send_EOF(
             messaging=messaging,
             connection_id=state.get("conn_id"),
-            transaction_id=state.id_for_next_transaction(),
+            transaction_id=state.id_for_next_transaction() + "_EOF",
         )
     state.mark_transaction_committed()
 
@@ -233,7 +233,6 @@ def _send_EOF(messaging: Goutong, connection_id: int, transaction_id: str):
         }
     )
     messaging.send_to_queue(EOF_QUEUE, msg)
-    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
 
 
 def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
@@ -243,7 +242,10 @@ def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
     # Ignore duplicate transactions
     if transaction_id in state.transactions_received:
         messaging.ack_delivery(msg.delivery_id)
-        logging.info(f"Received Duplicate Transaction {msg.get('transaction_id')}")
+        logging.info(
+            f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+            + msg.marshal()[:100]
+        )
         return
 
     # Add new data to state
@@ -281,10 +283,6 @@ def filter_data(data: list):
         if LOWER_Q3_4 <= year <= UPPER_Q3_4:
             filtered_data_q3_4.append(book)
 
-    if filtered_data_q1 or filtered_data_q3_4:
-        logging.info(
-            f"Filtered {len(filtered_data_q1) + len(filtered_data_q3_4)} items"
-        )
     return (filtered_data_q1, filtered_data_q3_4)
 
 

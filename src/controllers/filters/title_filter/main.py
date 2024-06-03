@@ -84,7 +84,7 @@ class TitleFilter:
                 transaction_id=self._state.id_for_next_transaction(),
             )
         if self._state.get("EOF"):
-            self._send_EOF(messaging=self._messaging, conn_id=self._state.get("conn_id"))
+            self._send_EOF(messaging=self._messaging, conn_id=self._state.get("conn_id"), transaction_id=self._state.id_for_next_transaction() + "_EOF")
 
         self._state.mark_transaction_committed()
 
@@ -148,9 +148,9 @@ class TitleFilter:
         messaging.send_to_queue(OUTPUT_Q1, msg)
 
 
-    def _send_EOF(self, messaging: Goutong, conn_id: int):
+    def _send_EOF(self, messaging: Goutong, conn_id: int, transaction_id: str):
         msg = Message(
-            {"conn_id": conn_id, "EOF": True, "forward_to": [OUTPUT_Q1], "queries": [1]}
+            {"transaction_id": transaction_id, "conn_id": conn_id, "EOF": True, "forward_to": [OUTPUT_Q1], "queries": [1]}
         )
         messaging.send_to_queue(EOF_QUEUE, msg)
         logging.debug(f"Sent EOF to: {EOF_QUEUE}")
