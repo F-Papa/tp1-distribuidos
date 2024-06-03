@@ -140,7 +140,7 @@ def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
             messaging=messaging,
             connection_id=state.get("conn_id"),
             queries=queries,
-            transaction_id=state.id_for_next_transaction(),
+            transaction_id=state.id_for_next_transaction() + "_EOF",
         )
 
     state.mark_transaction_committed()
@@ -152,10 +152,22 @@ def _send_EOF_by_queryID(
     logging.info(f"SENDING EOF TO {queries}")
     if 1 in queries:
         output_queue = OUTPUT_Q1_PREFIX + str(connection_id)
-        _send_EOF(messaging, output_queue, connection_id, queries, transaction_id)
+        _send_EOF(
+            messaging,
+            forward_to=output_queue,
+            connection_id=connection_id,
+            queries=[1],
+            transaction_id=transaction_id,
+        )
     if 5 in queries:
         output_queue = OUTPUT_Q5_PREFIX + str(connection_id)
-        _send_EOF(messaging, output_queue, connection_id, queries, transaction_id)
+        _send_EOF(
+            messaging,
+            forward_to=output_queue,
+            connection_id=connection_id,
+            queries=[5],
+            transaction_id=transaction_id,
+        )
 
 
 def callback_control(messaging: Goutong, msg: Message):
@@ -200,8 +212,6 @@ def _send_batch_q1(
             "data": data,
         }
     )
-    if connection_id == 2:
-        logging.info(f" Sending {connection_id}, Query 1")
     output_queue = OUTPUT_Q1_PREFIX + str(connection_id)
     messaging.send_to_queue(output_queue, msg)
     logging.debug(f"Sent Data to: {output_queue}")
@@ -220,8 +230,6 @@ def _send_batch_q5(
         }
     )
 
-    if connection_id == 2:
-        logging.info(f" Sending {connection_id}, Query 5")
     output_queue = OUTPUT_Q5_PREFIX + str(connection_id)
     messaging.add_queues(output_queue)
     messaging.send_to_queue(output_queue, msg)
@@ -235,6 +243,7 @@ def _send_EOF(
     queries: list,
     transaction_id: str,
 ):
+
     msg = Message(
         {
             "transaction_id": transaction_id,
@@ -255,13 +264,29 @@ def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
     # Ignore duplicate transactions
     if transaction_id in state.transactions_received:
         messaging.ack_delivery(msg.delivery_id)
-        logging.info(f"Received Duplicate Transaction {msg.get('transaction_id')}")
+        logging.info(
+            f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+            + msg.marshal()[:100]
+        )
         return
 
     # Add new data to state
     eof = msg.has_key("EOF")
     books_received = msg.get("data") if msg.has_key("data") else []
-    queries = msg.get("queries")
+
+    if 1 in msg.get("queries"):
+        queries = [1]
+    elif 5 in msg.get("queries"):
+        queries = [5]
+    else:
+        to_show = {
+            "transaction_id": msg.get("transaction_id"),
+            "conn_id": msg.get("conn_id"),
+            "queries": msg.get("queries"),
+            "data": msg.get("data"),
+            "EOF": msg.get("EOF"),
+        }
+        raise ValueError(f"Invalid queries: {to_show}")
     filtered_books = filter_data(books_received, queries)
 
     conn_id = msg.get("conn_id")

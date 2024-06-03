@@ -123,7 +123,11 @@ def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
             transaction_id=state.id_for_next_transaction(),
         )
     if state.get("EOF"):
-        _send_EOF(messaging=messaging, conn_id=state.get("conn_id"))
+        _send_EOF(
+            messaging=messaging,
+            conn_id=state.get("conn_id"),
+            transaction_id=state.id_for_next_transaction() + "_EOF",
+        )
 
     state.mark_transaction_committed()
 
@@ -134,7 +138,10 @@ def callback_title_filter(messaging: Goutong, msg: Message, state: ControllerSta
     # Ignore duplicate transactions
     if transaction_id in state.transactions_received:
         messaging.ack_delivery(msg.delivery_id)
-        logging.info(f"Received Duplicate Transaction {msg.get('transaction_id')}")
+        logging.info(
+            f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+            + msg.marshal()[:100]
+        )
         return
 
     # Add new data to state
@@ -166,8 +173,6 @@ def filter_data(data: list):
         if KEYWORD_Q1.lower() in title.lower():
             filtered_data.append(book)
 
-    if filtered_data:
-        logging.info(f"Filtered {len(filtered_data)} items")
     return filtered_data
 
 
@@ -200,9 +205,15 @@ def _send_batch(
     messaging.send_to_queue(OUTPUT_Q1, msg)
 
 
-def _send_EOF(messaging: Goutong, conn_id: int):
+def _send_EOF(messaging: Goutong, conn_id: int, transaction_id: str):
     msg = Message(
-        {"conn_id": conn_id, "EOF": True, "forward_to": [OUTPUT_Q1], "queries": [1]}
+        {
+            "transaction_id": transaction_id,
+            "conn_id": conn_id,
+            "EOF": True,
+            "forward_to": [OUTPUT_Q1],
+            "queries": [1],
+        }
     )
     messaging.send_to_queue(EOF_QUEUE, msg)
     logging.debug(f"Sent EOF to: {EOF_QUEUE}")

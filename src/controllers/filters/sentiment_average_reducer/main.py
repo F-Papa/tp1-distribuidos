@@ -56,9 +56,13 @@ class SentimentReducer:
         self.messaging.add_queues(*own_queues)
 
         self.messaging.add_broadcast_group(self.CONTROL_GROUP, [control_queue_name])
-        self.messaging.set_callback(control_queue_name, self.callback_control, auto_ack=True)
+        self.messaging.set_callback(
+            control_queue_name, self.callback_control, auto_ack=True
+        )
 
-        self.messaging.set_callback(self.INPUT_QUEUE, self.callback_filter, auto_ack=True)
+        self.messaging.set_callback(
+            self.INPUT_QUEUE, self.callback_filter, auto_ack=True
+        )
 
     def listen(self):
         try:
@@ -69,7 +73,7 @@ class SentimentReducer:
     def shutdown(self):
         logging.info("Initiating Graceful Shutdown")
         self.shutting_down = True
-        #msg = Message({"ShutDown": True})
+        # msg = Message({"ShutDown": True})
         # self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
         self.messaging.close()
         raise ShuttingDown

@@ -17,21 +17,6 @@ services:
       - ./src/boundary/config.ini:/config.ini
       - ./src/boundary/boundary.py:/boundary.py
 
-  input_controller_1:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/io/input/Dockerfile
-    container_name: input_controller_1
-    image: input_controller:latest
-    entrypoint: python3 input_controller.py
-    environment:
-      - FILTER_NUMBER=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/io/input/config.ini:/config.ini
-      - ./src/controllers/io/input/input_controller.py:/input_controller.py
-
   title_filter_proxy_barrier:
     build:
       context: ./
@@ -47,6 +32,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/proxy_barrier/main.py:/main.py
+      - ./state/proxy_barrier_title_filter/:/state
 
   title_filter1:
     build:
@@ -97,6 +83,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/proxy_barrier/main.py:/main.py
+      - ./state/proxy_barrier_date_filter/:/state
 
   date_filter1:
     build:
@@ -147,6 +134,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/proxy_barrier/main.py:/main.py
+      - ./state/proxy_barrier_category_filter/:/state
 
   category_filter1:
     build:
@@ -192,6 +180,7 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/proxy_barrier/main.py:/main.py
+      - ./state/proxy_barrier_sentiment_analyzer/:/state
 
   sentiment_analyzer1:
     build:
