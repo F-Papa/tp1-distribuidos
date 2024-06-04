@@ -9,10 +9,7 @@ import signal
 from src.messaging.message import Message
 from src.utils.config_loader import Configuration
 
-FILTER_TYPE = "title_filter"
 EOF_QUEUE = "title_filter_eof"
-CONTROL_GROUP = "CONTROL"
-
 KEYWORD_Q1 = "distributed"
 OUTPUT_Q1 = "category_filter_queue"
 
@@ -20,17 +17,26 @@ shutting_down = False
 
 
 class TitleFilter:
-    def __init__(self, filter_config: Configuration, state: ControllerState, messaging: Goutong):
+    FILTER_TYPE = "title_filter"
+    
+    def __init__(self, filter_config: Configuration, state: ControllerState, messaging: Goutong, title_keyword: str, output_queue: str, eof_queue: str):
         self._shutting_down = False
         self._state = state
+
+        if os.path.exists(state.file_path):
+            state.update_from_file()
+            
         self._config = filter_config
         control_queue_name = (
-            FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
+            self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
         )
-        self.input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
-
+        self.input_queue_name = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+        self.title_keyword = title_keyword
+        self.output_queue = output_queue
+        self.eof_queue = eof_queue
+    
         self._messaging = messaging
-        messaging.add_queues(control_queue_name, self.input_queue_name, EOF_QUEUE, OUTPUT_Q1)
+        messaging.add_queues(control_queue_name, self.input_queue_name, self.eof_queue, self.output_queue)
         
     def start(self):
         
@@ -53,7 +59,7 @@ class TitleFilter:
 
         for book in data:
             title = book.get("title")
-            if KEYWORD_Q1.lower() in title.lower():
+            if self.title_keyword.lower() in title.lower():
                 filtered_data.append(book)
 
         if filtered_data:
@@ -122,7 +128,6 @@ class TitleFilter:
     def _columns_for_query1(self, book: dict) -> dict:
         return {
             "title": book["title"],
-            "authors": book["authors"],
             "publisher": book["publisher"],
             "categories": book["categories"],
         }
@@ -145,15 +150,15 @@ class TitleFilter:
             msg_content["data"] = data
 
         msg = Message(msg_content)
-        messaging.send_to_queue(OUTPUT_Q1, msg)
+        messaging.send_to_queue(self.output_queue, msg)
 
 
     def _send_EOF(self, messaging: Goutong, conn_id: int, transaction_id: str):
         msg = Message(
-            {"transaction_id": transaction_id, "conn_id": conn_id, "EOF": True, "forward_to": [OUTPUT_Q1], "queries": [1]}
+            {"transaction_id": transaction_id, "conn_id": conn_id, "EOF": True, "forward_to": [self.output_queue], "queries": [1]}
         )
-        messaging.send_to_queue(EOF_QUEUE, msg)
-        logging.debug(f"Sent EOF to: {EOF_QUEUE}")
+        messaging.send_to_queue(self.eof_queue, msg)
+        logging.debug(f"Sent EOF to: {self.eof_queue}")
 
 
 
@@ -188,7 +193,7 @@ def main():
     logging.info(filter_config)
 
     # Load State
-    controller_id = f"{FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
+    controller_id = f"{TitleFilter.FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
 
     extra_fields = {
         "filtered_books": [],
@@ -205,11 +210,11 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        state.update_from_file(state.file_path)
+        state.update_from_file()
 
     messaging = Goutong()
 
-    title_filter = TitleFilter(filter_config, state, messaging)
+    title_filter = TitleFilter(filter_config, state, messaging, KEYWORD_Q1, OUTPUT_Q1, EOF_QUEUE)
     signal.signal(signal.SIGTERM, lambda sig, frame: title_filter.sigterm_handler())
     title_filter.start()
 

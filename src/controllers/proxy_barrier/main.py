@@ -283,7 +283,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        state.update_from_file(state.file_path)
+        state.update_from_file()
 
     config_logging(barrier_config.get("LOGGING_LEVEL"))
     logging.info(barrier_config)

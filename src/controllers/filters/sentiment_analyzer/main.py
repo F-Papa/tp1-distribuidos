@@ -75,7 +75,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        state.update_from_file(state.file_path)
+        state.update_from_file()
 
     messaging = Goutong()
 
