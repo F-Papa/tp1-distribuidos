@@ -26,6 +26,8 @@ class ControllerState:
             setattr(self, key, extra_fields[key])
 
     def save_to_disk(self):
+        pass
+
         to_save = {
             "next_transaction": self.next_transaction,
             "transactions_received": self.transactions_received,
@@ -50,8 +52,8 @@ class ControllerState:
             raise Exception(f"{key} was not declared in the constructor")
         setattr(self, key, value)
 
-    def update_from_file(self, file_path: str):
-        with open(file_path, "r") as f:
+    def update_from_file(self):
+        with open(self.file_path, "r") as f:
             file_lines = f.readlines()
 
         if not self._is_file_valid(file_lines):
