@@ -57,23 +57,23 @@ def boundary_service_text():
       - ./src/boundary/boundary.py:/boundary.py
 """
 
-def input_controller_text(i: int):
-    return f"""\
-  input_controller_{i}:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/io/input/Dockerfile
-    container_name: input_controller_{i}
-    image: input_controller:latest
-    entrypoint: python3 input_controller.py
-    environment:
-      - FILTER_NUMBER={i}
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/io/input/config.ini:/config.ini
-      - ./src/controllers/io/input/input_controller.py:/input_controller.py
-"""
+# def input_controller_text(i: int):
+#     return f"""\
+#   input_controller_{i}:
+#     build:
+#       context: ./
+#       dockerfile: ./src/controllers/io/input/Dockerfile
+#     container_name: input_controller_{i}
+#     image: input_controller:latest
+#     entrypoint: python3 input_controller.py
+#     environment:
+#       - FILTER_NUMBER={i}
+#     networks:
+#       - tp1_testing_net
+#     volumes:
+#       - ./src/controllers/io/input/config.ini:/config.ini
+#       - ./src/controllers/io/input/input_controller.py:/input_controller.py
+# """
 
 def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_level: str):
 
@@ -261,8 +261,8 @@ if __name__ == "__main__":
         f.write("\n")
 
         # Input Controller
-        f.write(input_controller_text(1))
-        f.write("\n")
+        # f.write(input_controller_text(1))
+        # f.write("\n")
 
         # Title filters & barrier
         f.write(
