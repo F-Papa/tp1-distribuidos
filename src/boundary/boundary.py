@@ -87,14 +87,17 @@ class ClientConnection:
 
     def forward_results(self, messaging: Goutong, msg: Message):
         if msg.has_key("EOF"):
-            to_show = {
-                "transaction_id": msg.get("transaction_id"),
-                "conn_id": self.conn_id,
-                "EOF": msg.get("EOF"),
-                "data": str(msg.get("data"))[:50],
-                "queries": msg.get("queries"),
-            }
-            logging.info(f"EOF Received: {to_show}")
+            # to_show = {
+            #     "transaction_id": msg.get("transaction_id"),
+            #     "conn_id": self.conn_id,
+            #     "EOF": msg.get("EOF"),
+            #     "data": str(msg.get("data"))[:50],
+            #     "queries": msg.get("queries"),
+            # }
+            # logging.info(f"EOF Received: {to_show}")
+            queries = msg.get("queries")
+            for q in queries:
+                logging.info(f"[Conn: {self.conn_id}] Received EOF for query {q}")
 
         encoded_msg = msg.marshal().encode("utf-8")
         length = len(encoded_msg).to_bytes(BATCH_SIZE_LEN, byteorder="big")

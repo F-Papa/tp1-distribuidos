@@ -162,7 +162,6 @@ class CategoryFilter:
     def _send_EOF_by_queryID(
         self, messaging: Goutong, connection_id: int, queries: list, transaction_id: str
     ):
-        logging.info(f"SENDING EOF TO {queries}")
         if 1 in queries:
             output_queue = self.output_queue_q1_prefix + str(connection_id)
             self._send_EOF(

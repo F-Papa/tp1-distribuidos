@@ -76,7 +76,6 @@ class ProxyBarrier:
         logging.info("Shutting Down.")
 
     def eof_callback(self, messaging: Goutong, msg: Message, state: ControllerState):
-        print("YELLOW")
         eof_count = state.get("barrier.eof_count")
         queries = msg.get("queries")
         conn_id = msg.get("conn_id")
@@ -112,11 +111,11 @@ class ProxyBarrier:
     def handle_uncommitted_eof(self, messaging: Goutong, state: ControllerState):
         received = state.get("barrier.eof_count")
         expected = self.barrier_config.get("FILTER_COUNT")
-
-        logging.info(f"Received: {received}, Expected: {expected}")
-
         conn_id = state.get("conn_id")
         queries = state.get("queries")
+        key = f"{conn_id}_{queries}"
+        logging.info(f"[Conn {conn_id}, Queries: {queries}] Received: {received[key]}/{expected} EOFs. ")
+
         eof_count = state.get("barrier.eof_count")
         eof_count_this_flow = eof_count[f"{conn_id}_{queries}"]
 
@@ -130,7 +129,7 @@ class ProxyBarrier:
                     "EOF": True,
                 }
                 msg = Message(to_send)
-                logging.info(f"Forwarding EOF | Queue: {queue}, msg: {msg.marshal()}")
+                # logging.info(f"Forwarding EOF | Queue: {queue}, msg: {msg.marshal()}")
                 self.messaging.send_to_queue(queue, msg)
 
             del eof_count[f"{conn_id}_{queries}"]

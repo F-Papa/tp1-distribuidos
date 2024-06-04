@@ -59,8 +59,6 @@ class TitleFilter:
             if self.title_keyword.lower() in title.lower():
                 filtered_data.append(book)
 
-        if filtered_data:
-            logging.info(f"Filtered {len(filtered_data)} items")
         return filtered_data
 
     # Graceful Shutdown
