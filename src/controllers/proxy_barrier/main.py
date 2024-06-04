@@ -83,6 +83,7 @@ class ProxyBarrier:
         logging.info("Shutting Down.")
 
     def eof_callback(self, messaging: Goutong, msg: Message, state: ControllerState):
+        print("YELLOW")
         eof_count = state.get("barrier.eof_count")
         queries = msg.get("queries")
         conn_id = msg.get("conn_id")
@@ -141,7 +142,7 @@ class ProxyBarrier:
 
             del eof_count[f"{conn_id}_{queries}"]
             state.set("barrier.eof_count", eof_count)
-        state.mark_transaction_committed()
+            state.mark_transaction_committed()
         state.save_to_disk()
 
     def increase_current_queue_index(self):
@@ -208,8 +209,10 @@ class ProxyBarrier:
 
         # round-robin data
         queue_idx = state.get("proxy.current_queue")
-        self.messaging.send_to_queue(self.filter_queues[queue_idx], msg)
-        self.increase_current_queue_index()
+
+        if data:
+            self.messaging.send_to_queue(self.filter_queues[queue_idx], msg)
+            self.increase_current_queue_index()
 
         if state.get("proxy.EOF"):
             # Forward EOF

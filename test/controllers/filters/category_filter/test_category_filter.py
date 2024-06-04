@@ -18,7 +18,6 @@ from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.message import Message
 from test.mocks.mock_messaging import MockMessaging, ProvokedError
 
-
 def test_category_filter_works_if_no_faults():
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -181,6 +180,7 @@ def test_category_filter_works_if_no_faults():
     assert json.dumps(expected_eof_q5) in eof
     assert json.dumps(expected_data_q1) in data
     assert json.dumps(expected_data_q5) in data
+
 
     time.sleep(0.1)
     # Clean up
