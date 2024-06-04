@@ -101,15 +101,14 @@ class MockMessaging:
         if self.queued_msgs.get(queue_name) is None:
             self.queued_msgs[queue_name] = []
 
-        print(f"About to send: {message.marshal()}")        
+        print(f"About to send: {message.marshal()}")
         if self.crash_on_send:
-            if self.msgs_sent == self.crash_on_send:
+            if self.msgs_sent + 1 == self.crash_on_send:
                 self.msgs_sent += 1
                 print(f"Crashing on send")
                 raise ProvokedError()
 
         if queue_name in self.queues_to_export:
-
             if self.exported_msgs.get(queue_name) is None:
                 self.exported_msgs[queue_name] = []
             self.exported_msgs[queue_name].append(message.marshal())

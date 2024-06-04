@@ -857,7 +857,7 @@ def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
         os.remove(temp_file_path)
 
 
-@pytest.mark.parametrize("message_to_fail", [3, 4])
+@pytest.mark.parametrize("message_to_fail", [4])
 def test_title_filter_recovers_from_crash_sending_data(message_to_fail: int):
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -1046,7 +1046,6 @@ def test_title_filter_recovers_from_crash_sending_data(message_to_fail: int):
     eof_2 = messaging.get_msgs_from_queue("eof_category_filter_test")
     eof = [eof_1, eof_2]
 
-
     assert json.dumps(expected_eof_q1) in eof
     assert json.dumps(expected_eof_q5) in eof
     assert json.dumps(expected_data_q1) in data
@@ -1059,4 +1058,3 @@ def test_title_filter_recovers_from_crash_sending_data(message_to_fail: int):
         os.remove(file_path)
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
-

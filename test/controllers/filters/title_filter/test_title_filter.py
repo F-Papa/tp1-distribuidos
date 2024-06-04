@@ -515,7 +515,7 @@ def test_title_filter_recovers_from_crash_sending_data():
         5672,
         queues_to_export=["output_title_filter_test", "eof_title_filter_test"],
         msgs_to_consume=2,
-        crash_on_send=2,  # The first will be sent from the test, the second from the filter
+        crash_on_send=3,  # The first will be sent from the test, the second from the filter
     )
 
     config = {
