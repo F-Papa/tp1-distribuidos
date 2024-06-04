@@ -53,8 +53,6 @@ class CategoryFilter:
         messaging.add_queues(
             self.input_queue,
             self.eof_queue,
-            self.output_queue_q1_prefix,
-            self.output_queue_q5_prefix,
         )
 
     def start(self):
