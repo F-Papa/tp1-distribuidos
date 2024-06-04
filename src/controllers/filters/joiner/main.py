@@ -164,7 +164,6 @@ class Joiner:
         self._messaging: Goutong = self._messaging_module(
             self._messaging_host, self._messaging_port
         )
-        self._messaging.add_queues(Joiner.PENDING_CONN_QUEUE)
 
         self._messaging.set_callback(
             Joiner.PENDING_CONN_QUEUE,
@@ -192,7 +191,6 @@ class Joiner:
             raise ValueError("No connection to receive books from")
 
         books_queue = Joiner.BOOKS_QUEUE_PREFIX + str(self._state._current_connection)
-        self._messaging.add_queues(books_queue)
 
         self._messaging.set_callback(
             books_queue, self._receive_books_callback, auto_ack=False
@@ -237,7 +235,6 @@ class Joiner:
         reviews_queue = Joiner.REVIEWS_QUEUE_PREFIX + str(
             self._state._current_connection
         )
-        self._messaging.add_queues(reviews_queue)
 
         self._messaging.set_callback(
             reviews_queue, self._receive_reviews_callback, auto_ack=False

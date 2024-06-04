@@ -103,7 +103,6 @@ def test_category_filter_works_if_no_faults():
         msgs_to_consume=1,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body))
 
     # Start the filter
@@ -169,7 +168,6 @@ def test_category_filter_works_if_no_faults():
         os.remove(file_path)
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
-
 
 def test_category_filter_works_if_no_faults_multiple_messages():
     controller_id = "date_filter_test"
@@ -269,7 +267,6 @@ def test_category_filter_works_if_no_faults_multiple_messages():
         msgs_to_consume=2,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_1))
     messaging.send_to_queue(input_queue, Message(msg_body_2))
 
@@ -347,7 +344,6 @@ def test_category_filter_works_if_no_faults_multiple_messages():
         os.remove(file_path)
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
-
 
 def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
     controller_id = "date_filter_test"
@@ -465,7 +461,6 @@ def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
         msgs_to_consume=3,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_1_conn_1))
     messaging.send_to_queue(input_queue, Message(msg_body_conn_2))
     messaging.send_to_queue(input_queue, Message(msg_body_2_conn_1))
@@ -568,7 +563,6 @@ def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
         os.remove(file_path)
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
-
 
 def test_category_filter_recovers_from_crash_on_first_send():
     controller_id = "date_filter_test"
@@ -687,7 +681,6 @@ def test_category_filter_recovers_from_crash_on_first_send():
         crash_on_send=4,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_1_conn_1))
     messaging.send_to_queue(input_queue, Message(msg_body_conn_2))
     messaging.send_to_queue(input_queue, Message(msg_body_2_conn_1))
@@ -822,7 +815,6 @@ def test_category_filter_recovers_from_crash_on_first_send():
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
 
-
 def test_category_filter_recovers_from_crash_on_second_send():
     controller_id = "date_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -940,7 +932,6 @@ def test_category_filter_recovers_from_crash_on_second_send():
         crash_on_send=5,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_1_conn_1))
     messaging.send_to_queue(input_queue, Message(msg_body_conn_2))
     messaging.send_to_queue(input_queue, Message(msg_body_2_conn_1))

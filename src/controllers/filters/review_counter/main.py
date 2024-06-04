@@ -58,15 +58,6 @@ class ReviewCounter:
         self.messaging = Goutong()
 
         # Set up the queues
-        control_queue_name = self.FILTER_TYPE + "_control"
-        own_queues = [self.INPUT_QUEUE, control_queue_name]
-        self.messaging.add_queues(*own_queues)
-
-        self.messaging.add_broadcast_group(self.CONTROL_GROUP, [control_queue_name])
-        self.messaging.set_callback(
-            control_queue_name, self.callback_control, auto_ack=True
-        )
-
         self.messaging.set_callback(
             self.INPUT_QUEUE, self.callback_filter, auto_ack=True
         )

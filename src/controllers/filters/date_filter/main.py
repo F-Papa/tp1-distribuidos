@@ -57,11 +57,6 @@ class DateFilter:
         self.output_q3_4_prefix = output_q3_4_prefix
         self.eof_queue = eof_queue
 
-        messaging.add_queues(
-            self.input_queue,
-            self.output_q1,
-            self.eof_queue,
-        )
 
     def start(self):
 
@@ -168,7 +163,6 @@ class DateFilter:
             }
         )
         output_queue = self.output_q3_4_prefix + str(connection_id)
-        self._messaging.add_queues(output_queue)
         self._messaging.send_to_queue(output_queue, msg)
         # logging.debug(f"Sent Data to: {OUTPUT_Q3_4}")
 

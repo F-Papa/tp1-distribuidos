@@ -15,7 +15,6 @@ OUTPUT_Q1 = "category_filter_queue"
 
 shutting_down = False
 
-
 class TitleFilter:
     FILTER_TYPE = "title_filter"
     
@@ -34,9 +33,7 @@ class TitleFilter:
         self.title_keyword = title_keyword
         self.output_queue = output_queue
         self.eof_queue = eof_queue
-    
         self._messaging = messaging
-        messaging.add_queues(control_queue_name, self.input_queue_name, self.eof_queue, self.output_queue)
         
     def start(self):
         
@@ -82,6 +79,9 @@ class TitleFilter:
 
     def handle_uncommited_transactions(self):
         if self._state.get("filtered_books"):
+
+            # list(map(lambda b: logging.info(f"Sending {b['title']}"), self._state.get("filtered_books")))
+
             self._send_batch(
                 messaging=self._messaging,
                 batch=self._state.get("filtered_books"),

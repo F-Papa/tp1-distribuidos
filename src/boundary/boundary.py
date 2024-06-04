@@ -59,9 +59,6 @@ class ClientConnection:
         self.transaction_prefix = f"client_connection_{self.conn_id}#"
         self.next_transaction_id = 1
 
-        reviews_queue = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
-        self.messaging.add_queues(reviews_queue, Q1_3_4_QUEUE)
-
         self.EOFs_received = 0
         self.reviews = b""
         self.books = b""
@@ -82,8 +79,6 @@ class ClientConnection:
 
         # Listen for results
         results_queue = RESULTS_QUEUE_PREFIX + str(self.conn_id)
-        self.messaging.add_queues(results_queue, JOINER_CONNECTION_QUEUES)
-
         self.messaging.set_callback(
             results_queue, self.forward_results, args=(), auto_ack=True
         )

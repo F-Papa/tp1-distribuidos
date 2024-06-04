@@ -63,7 +63,6 @@ def test_title_filter_works_if_no_faults():
         "EOF": True,
     }
 
-    messaging.add_queues("title_filter99")
     messaging.send_to_queue("title_filter99", Message(msg_body))
 
     # Start the filter
@@ -175,7 +174,6 @@ def test_title_filter_ignores_duplicate_transactions():
         "EOF": True,
     }
 
-    messaging.add_queues("title_filter99")
     messaging.send_to_queue("title_filter99", Message(msg_body1))
     messaging.send_to_queue("title_filter99", Message(msg_body1))
     messaging.send_to_queue("title_filter99", Message(msg_body2))
@@ -301,7 +299,6 @@ def test_title_filter_works_if_no_faults_multiple_messages():
         "EOF": True,
     }
 
-    messaging.add_queues("title_filter99")
     messaging.send_to_queue("title_filter99", Message(msg_body1))
     messaging.send_to_queue("title_filter99", Message(msg_body2))
 
@@ -426,7 +423,6 @@ def test_title_filter_works_if_no_faults_multiple_messages_and_connections():
         "EOF": True,
     }
 
-    messaging.add_queues("title_filter99")
     messaging.send_to_queue("title_filter99", Message(msg_body1))
     messaging.send_to_queue("title_filter99", Message(msg_body2))
 
@@ -553,7 +549,6 @@ def test_title_filter_recovers_from_crash_sending_data():
         "EOF": True,
     }
 
-    messaging.add_queues("title_filter99")
     messaging.send_to_queue("title_filter99", Message(msg_body1))
     messaging.send_to_queue("title_filter99", Message(msg_body2))
 

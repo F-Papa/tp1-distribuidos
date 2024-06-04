@@ -191,13 +191,6 @@ def main():
     messaging = Goutong()
 
     # Set up the queues
-    control_queue_name = FILTER_TYPE + "_control"
-    own_queues = [INPUT_QUEUE, control_queue_name]
-    messaging.add_queues(*own_queues)
-
-    messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
-
     messaging.set_callback(INPUT_QUEUE, callback_filter, auto_ack=True, args=(filter_config, author_caches))
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))

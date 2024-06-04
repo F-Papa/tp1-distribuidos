@@ -29,9 +29,6 @@ class ProxyBarrier:
 
         # Graceful Shutdown Handling
         self.shutting_down = False
-        control_queue_name = barrier_config.get("FILTER_TYPE") + "_barrier_control"
-        messaging.add_queues(control_queue_name)
-        messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
 
         self.eof_queue_name = barrier_config.get("FILTER_TYPE") + "_eof"
         self.input_queue_name = barrier_config.get("FILTER_TYPE") + "_queue"
@@ -44,10 +41,6 @@ class ProxyBarrier:
 
         # Add queues and broadcast group
         if not self.shutting_down:
-            self.messaging.add_queues(self.eof_queue_name)
-            self.messaging.add_queues(self.input_queue_name)
-            self.messaging.add_queues(*self.filter_queues)
-
             self.messaging.add_broadcast_group(
                 self.broadcast_group_name, self.filter_queues
             )

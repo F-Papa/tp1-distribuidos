@@ -11,20 +11,26 @@ from .message import Message
 
 class Goutong:
     def __init__(self, host: str = "rabbit", port: int = 5672):
+        self.queues_added = set()
         self.connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=host, port=port)
         )
         self.channel = self.connection.channel()
         self.consumer_ids = {}
 
-    def add_queues(self, *args):
-        for queue_name in args:
-            self.channel.queue_declare(queue=queue_name)
+    # def add_queues(self, *args):
+    #     self.queues_added.update(args)
+    #     for queue_name in args:
+    #         self.channel.queue_declare(queue=queue_name)
 
     def listen(self):
         self.channel.start_consuming()
 
     def send_to_queue(self, queue_name: str, message: Message):
+        if queue_name not in self.queues_added:
+            self.queues_added.add(queue_name)
+            self.channel.queue_declare(queue=queue_name)
+            # logging.warning(f"Segind message to undeclared queue: {queue_name}.")
         content_info = [
             f"{key}: {len(str(message.get(key)))} Bytes" for key in message.keys()
         ]
@@ -41,6 +47,10 @@ class Goutong:
     def set_callback(
         self, queue_name: str, callback: Callable, auto_ack=True, args: tuple = ()
     ):
+        if queue_name not in self.queues_added:
+            self.queues_added.add(queue_name)
+            self.channel.queue_declare(queue=queue_name)
+
         custom_callback = lambda ch, method, properties, body: callback(
             self, Message.unmarshal(body.decode()).with_id(method.delivery_tag).from_queue(queue_name), *args
         )
@@ -56,6 +66,11 @@ class Goutong:
         self.channel.basic_cancel(self.consumer_ids[queue_name])
 
     def add_broadcast_group(self, group_name: str, queue_names: list[str]):
+        for q in queue_names:
+            if q not in self.queues_added:
+                self.queues_added.add(q)
+                self.channel.queue_declare(q)
+
         self.channel.exchange_declare(exchange=group_name, exchange_type="fanout")
         for queue_name in queue_names:
             self.channel.queue_bind(exchange=group_name, queue=queue_name)

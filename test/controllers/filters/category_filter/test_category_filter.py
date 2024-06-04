@@ -106,7 +106,6 @@ def test_category_filter_works_if_no_faults():
         msgs_to_consume=2,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_q1))
     messaging.send_to_queue(input_queue, Message(msg_body_q5))
 
@@ -278,7 +277,6 @@ def test_category_filter_ignores_duplicate_transactions():
         msgs_to_consume=4,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_q1))
     messaging.send_to_queue(input_queue, Message(msg_body_q1))
     messaging.send_to_queue(input_queue, Message(msg_body_q5))
@@ -488,7 +486,6 @@ def test_category_filter_works_if_no_faults_multiple_messages():
         msgs_to_consume=4,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_q1_1))
     messaging.send_to_queue(input_queue, Message(msg_body_q5_1))
     messaging.send_to_queue(input_queue, Message(msg_body_q1_2))
@@ -732,7 +729,6 @@ def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
         msgs_to_consume=4,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_q1_conn_1))
     messaging.send_to_queue(input_queue, Message(msg_body_q5_conn_2_1))
     messaging.send_to_queue(input_queue, Message(msg_body_q1_conn_2))
@@ -940,7 +936,6 @@ def test_title_filter_recovers_from_crash_sending_data(message_to_fail: int):
         crash_on_send=message_to_fail,
     )
 
-    messaging.add_queues(input_queue)
     messaging.send_to_queue(input_queue, Message(msg_body_q1))
     messaging.send_to_queue(input_queue, Message(msg_body_q5))
 

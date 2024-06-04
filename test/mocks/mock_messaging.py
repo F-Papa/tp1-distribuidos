@@ -25,7 +25,7 @@ class MockMessaging:
         self.delivery_id = 1
         self.consumer_id = 1
         self.queues_to_export = queues_to_export
-        self.add_queues(*queues_to_export)
+        self._add_queues(*queues_to_export)
 
         self.exported_msgs = {}
         for q in queues_to_export:
@@ -54,9 +54,9 @@ class MockMessaging:
                 self.export_condvars[queue_name].wait()
             return self.exported_msgs[queue_name].pop(0)
 
-    def add_queues(self, *args):
+    def _add_queues(self, *args):
         for queue in args:
-            if self.queued_msgs.get(queue) is None:
+            if not queue in self.queued_msgs.keys():
                 print(f"Adding queue {queue}")
                 self.queued_msgs[queue] = []
                 self.callbacks[queue] = []
@@ -73,7 +73,7 @@ class MockMessaging:
 
         while self._should_listen():
             all_queues = list(self.callbacks.keys())
-            print(f"Callbacks: {self.callbacks}")
+            # print(f"Callbacks: {self.callbacks}")
             for queue in all_queues:
                 if not self.queued_msgs[queue]:
                     continue
@@ -115,10 +115,14 @@ class MockMessaging:
         del self.unacked_msgs[delivery_id]
 
     def send_to_queue(self, queue_name: str, message: Message):
-        if self.queued_msgs.get(queue_name) is None:
-            self.queued_msgs[queue_name] = []
+        self._add_queues(queue_name)
 
-        print(f"About to send: {message.marshal()} \n to: {queue_name}")
+        print(f"About to send: {message.marshal()} \n to: {queue_name}", end="")
+        if queue_name in self.queues_to_export:
+            print(" | Exported")
+        else:
+            print("")
+
         if self.crash_on_send:
             if self.msgs_sent + 1 == self.crash_on_send:
                 self.msgs_sent += 1
@@ -144,19 +148,19 @@ class MockMessaging:
         auto_ack: bool = True,
         args: tuple = (),
     ):
-        print(
-            f"Callback set | Queue: {queue_name} | Function: {callback.__name__} | Auto Ack: {auto_ack} | Args: {args}"
-        )
-        if self.callbacks.get(queue_name) is None:
-            self.callbacks[queue_name] = []
+        # print(
+        #     f"Callback set | Queue: {queue_name} | Function: {callback.__name__} | Auto Ack: {auto_ack} | Args: {args}"
+        # )
 
+        self._add_queues(queue_name)
         self.callbacks[queue_name].append((callback, args, auto_ack))
 
     def stop_consuming(self, queue_name: str):
         print(f"Stopped consuming {queue_name}")
-        del self.callbacks[queue_name]
+        self.callbacks[queue_name] = []
 
     def add_broadcast_group(self, group_name: str, queue_names: list[str]):
+        self._add_queues(*queue_names)
         self.broadcast_groups[group_name] = queue_names
 
     def broadcast_to_group(self, group_name: str, message: Message):

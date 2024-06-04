@@ -3,7 +3,7 @@ from src.utils.config_loader import Configuration
 import logging
 import signal
 import os
-from textblob import TextBlob
+from textblob import TextBlob # type: ignore
 
 from src.messaging.message import Message
 from src.exceptions.shutting_down import ShuttingDown
@@ -80,14 +80,8 @@ def main():
     messaging = Goutong()
 
     # Set up queues
-    control_queue_name = (
-        FILTER_TYPE + str(filter_config.get("FILTER_NUMBER")) + "_control"
-    )
     input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
 
-    own_queues = [input_queue_name, control_queue_name, EOF_QUEUE]
-    messaging.add_queues(*own_queues)
-    messaging.add_queues(OUTPUT_QUEUE)
 
     # messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
     # messaging.set_callback(control_queue_name, callback_control, auto_ack=True)

@@ -50,11 +50,6 @@ class CategoryFilter:
         self.output_queue_q5_prefix = output_queue_q5_prefix
         self._messaging = messaging
 
-        messaging.add_queues(
-            self.input_queue,
-            self.eof_queue,
-        )
-
     def start(self):
 
         # Main Flow
@@ -241,7 +236,6 @@ class CategoryFilter:
         )
 
         output_queue = self.output_queue_q5_prefix + str(connection_id)
-        messaging.add_queues(output_queue)
         messaging.send_to_queue(output_queue, msg)
         logging.debug(f"Sent Data to: {output_queue}")
 
