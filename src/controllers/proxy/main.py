@@ -177,7 +177,7 @@ def main():
     barrier_config = Configuration.from_env(required, "config.ini")
     barrier_config.validate()
 
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy"
 
     state = Proxy.default_state(
         controller_id=controller_id,
@@ -193,8 +193,8 @@ def main():
     logging.info(barrier_config)
 
     messaging = Goutong(sender_id=controller_id)
-    proxy_barrier = Proxy(barrier_config, messaging, state)
-    proxy_barrier.start()
+    proxy = Proxy(barrier_config, messaging, state)
+    proxy.start()
 
 
 if __name__ == "__main__":

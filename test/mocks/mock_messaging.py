@@ -58,7 +58,7 @@ class MockMessaging:
                 self.unacked_msgs[queue] = []
 
     def _requeue_msg(self, msg: Message):
-        print(f"*******Re-queuing message********")
+        print(chalk.red(f"*******Re-queuing message********"))
 
         self.send_to_queue(
             queue_name=msg.queue_name,
@@ -132,7 +132,7 @@ class MockMessaging:
         message = message.with_sender(sender_id)
 
         print(chalk.yellow("==========================================="))
-        print(chalk.yellow(f"TO: {queue_name} | FROM: {sender_id}"))
+        print(chalk.yellow(f"FROM: {sender_id} | TO: {queue_name}"))
         print(chalk.yellow(message.marshal()))
         print(chalk.yellow("==========================================="))
 

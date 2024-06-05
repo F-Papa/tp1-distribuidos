@@ -10,12 +10,12 @@ from src.messaging.message import Message
 from test.mocks.mock_messaging import MockMessaging, ProvokedError
 
 
-def test_proxy_barrier_dispatches_data_to_filters_based_on_conn_id():
+def test_proxy_dispatches_data_to_filters_based_on_conn_id():
     barrier_config = {"FILTER_COUNT": 2, "FILTER_TYPE": "test_filter"}
 
     conn_id_1 = 5
     conn_id_2 = 6
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy"
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
@@ -59,19 +59,19 @@ def test_proxy_barrier_dispatches_data_to_filters_based_on_conn_id():
         ],
     }
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
 
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+        proxy.input_queue(), Message(data_1), sender_id="another_filter"
     )
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_2), sender_id="another_filter"
+        proxy.input_queue(), Message(data_2), sender_id="another_filter"
     )
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_3), sender_id="another_filter"
+        proxy.input_queue(), Message(data_3), sender_id="another_filter"
     )
 
-    threading.Thread(target=proxy_barrier.start).start()
+    threading.Thread(target=proxy.start).start()
 
     expected_fwd_1 = {
         "sender": controller_id,
@@ -103,7 +103,7 @@ def test_proxy_barrier_dispatches_data_to_filters_based_on_conn_id():
         ],
     }
 
-    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+    filter_1_queue, filter_2_queue = proxy.filter_queues()
 
     fwd_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_2 = messaging.get_msgs_from_queue(filter_2_queue)
@@ -126,11 +126,11 @@ def test_proxy_barrier_dispatches_data_to_filters_based_on_conn_id():
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
 
-def test_proxy_barrier_dispatches_eof_to_all_filters():
+def test_proxy_dispatches_eof_to_all_filters():
     barrier_config = {"FILTER_COUNT": 2, "FILTER_TYPE": "test_filter"}
 
     conn_id = 5
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy"
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
@@ -163,16 +163,16 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
         temp_file_path=temp_file_path,
     )
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
 
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+        proxy.input_queue(), Message(data_1), sender_id="another_filter"
     )
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(eof_1), sender_id="another_filter"
+        proxy.input_queue(), Message(eof_1), sender_id="another_filter"
     )
 
-    threading.Thread(target=proxy_barrier.start).start()
+    threading.Thread(target=proxy.start).start()
 
     expected_data_filter_1 = {
         "sender": controller_id,
@@ -200,7 +200,7 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
         "EOF": True,
     }
 
-    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+    filter_1_queue, filter_2_queue = proxy.filter_queues()
 
     fwd_data_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
@@ -223,13 +223,13 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
 
-def test_proxy_barrier_recovers_from_crash_distributing_data():
+def test_proxy_recovers_from_crash_distributing_data():
     barrier_config = {"FILTER_COUNT": 2, "FILTER_TYPE": "test_filter"}
 
     conn_id_1 = 5
     conn_id_2 = 6
 
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy"
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
@@ -274,20 +274,20 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
         ],
     }
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
 
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+        proxy.input_queue(), Message(data_1), sender_id="another_filter"
     )
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_2), sender_id="another_filter"
+        proxy.input_queue(), Message(data_2), sender_id="another_filter"
     )
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(data_3), sender_id="another_filter"
+        proxy.input_queue(), Message(data_3), sender_id="another_filter"
     )
 
     try:
-        threading.Thread(target=proxy_barrier.start).start()
+        threading.Thread(target=proxy.start).start()
     except ProvokedError:
         pass
 
@@ -302,9 +302,9 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
     if os.path.exists(state.file_path):
         state.update_from_file()
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
 
-    threading.Thread(target=proxy_barrier.start).start()
+    threading.Thread(target=proxy.start).start()
 
     expected_fwd_1_filter_1 = {
         "sender": controller_id,
@@ -336,7 +336,7 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
         ],
     }
 
-    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+    filter_1_queue, filter_2_queue = proxy.filter_queues()
 
     fwd_1_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_1_filter_2 = messaging.get_msgs_from_queue(filter_2_queue)
@@ -359,12 +359,12 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
 
-def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
+def test_proxy_recovers_from_crash_dispatching_eof_to_its_filters():
     barrier_config = {"FILTER_COUNT": 2, "FILTER_TYPE": "test_filter"}
 
     conn_id_1 = 5
     conn_id_2 = 6
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
+    controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy"
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
@@ -389,14 +389,14 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
         "queries": [1],
     }
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
 
     messaging.send_to_queue(
-        proxy_barrier.input_queue(), Message(eof_1), sender_id="another_filter"
+        proxy.input_queue(), Message(eof_1), sender_id="another_filter"
     )
 
     try:
-        threading.Thread(target=proxy_barrier.start).start()
+        threading.Thread(target=proxy.start).start()
     except ProvokedError:
         pass
 
@@ -411,8 +411,8 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
     if os.path.exists(state.file_path):
         state.update_from_file()
 
-    proxy_barrier = Proxy(barrier_config, messaging, state=state)  # type: ignore
-    threading.Thread(target=proxy_barrier.start).start()
+    proxy = Proxy(barrier_config, messaging, state=state)  # type: ignore
+    threading.Thread(target=proxy.start).start()
 
     expected_eof = {
         "sender": controller_id,
@@ -422,7 +422,7 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
         "EOF": True,
     }
 
-    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+    filter_1_queue, filter_2_queue = proxy.filter_queues()
 
     fwd_eof1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof1_dup = messaging.get_msgs_from_queue(filter_1_queue)
