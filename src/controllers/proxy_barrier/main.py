@@ -17,8 +17,6 @@ CONTROL_GROUP = "CONTROL"
 
 
 class ProxyBarrier:
-    DATA = 1
-    EOF = 2
 
     def __init__(
         self, barrier_config: Configuration, messaging: Goutong, state: ControllerState
@@ -47,26 +45,21 @@ class ProxyBarrier:
 
     def start(self):
         try:
-            while not self.shutting_down:
-                if not self.state.committed:
-                    if self.state.get("type_last_message") == self.EOF:
-                        self.handle_uncommitted_eof(self.messaging, self.state)
-                    else:
-                        self.distribute_data(self.messaging, self.state)
+            if not self.shutting_down:
 
                 # Set callbacks
                 self.messaging.set_callback(
                     self.input_queue_name,
-                    self.data_callback,
+                    self._msg_from_other_cluster,
                     auto_ack=False,
-                    args=(self.state,),
                 )
+
                 self.messaging.set_callback(
                     self.eof_queue_name,
-                    self.eof_callback,
+                    self._eof_from_own_filters,
                     auto_ack=False,
-                    args=(self.state,),
                 )
+
                 self.messaging.listen()
 
         except ShuttingDown:
@@ -75,166 +68,169 @@ class ProxyBarrier:
         self.messaging.close()
         logging.info("Shutting Down.")
 
-    def eof_callback(self, messaging: Goutong, msg: Message, state: ControllerState):
-        eof_count = state.get("barrier.eof_count")
+    @classmethod
+    def default_state(cls, controller_id: str, file_path: str, temp_file_path: str) -> ControllerState:
+        return ControllerState(
+            controller_id=controller_id,
+            file_path=file_path,
+            temp_file_path=temp_file_path,
+            extra_fields={
+                "barrier.eof_counts": {},
+            },
+        )
+        
+
+
+    def _eof_from_own_filters(self, _: Goutong, msg: Message):
+        print("EOF from own filters")
+        eof_counts = self.state.get("barrier.eof_counts")
+        sender = msg.get("sender")
         queries = msg.get("queries")
         conn_id = msg.get("conn_id")
         transaction_id = msg.get("transaction_id")
+        forward_to = msg.get("forward_to")
 
-        if transaction_id in state.transactions_received:
-            messaging.ack_delivery(msg.delivery_id)
+        expected_transaction_id = self.state.next_inbound_transaction_id(sender=sender)
+        
+        # Duplicate transaction
+        if transaction_id < expected_transaction_id:
+            self.messaging.ack_delivery(msg.delivery_id)
             logging.info(
-                f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            print(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
             return
 
-        if eof_count.get(f"{conn_id}_{queries}"):
-            eof_count[f"{conn_id}_{queries}"] += 1
-        else:
-            eof_count[f"{conn_id}_{queries}"] = 1
+        # Some transactions were lost
+        if transaction_id > expected_transaction_id:
+            # Todo!
+            logging.info(
+                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
+            )
+            print(
+                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
+            )
+            return
 
-        state.set("barrier.eof_count", eof_count)
-        state.set("barrier.forward_to", msg.get("forward_to"))
-        state.set("committed", False)
-        state.set("type_last_message", self.EOF)
-        state.set("conn_id", conn_id)
-        state.set("queries", queries)
-        state.mark_transaction_received(transaction_id)
-        state.save_to_disk()
+        this_conn_and_query = str((conn_id, queries))
 
-        # Acknowledge message
-        messaging.ack_delivery(msg.delivery_id)
-        messaging.stop_consuming(self.input_queue_name)
-        messaging.stop_consuming(self.eof_queue_name)
+        # Increment count
+        new_count = eof_counts.get(this_conn_and_query, 0) + 1
+        # eof_counts[this_conn_and_query] = new_count
 
-    def handle_uncommitted_eof(self, messaging: Goutong, state: ControllerState):
-        received = state.get("barrier.eof_count")
-        expected = self.barrier_config.get("FILTER_COUNT")
-        conn_id = state.get("conn_id")
-        queries = state.get("queries")
-        key = f"{conn_id}_{queries}"
-        logging.info(f"[Conn {conn_id}, Queries: {queries}] Received: {received[key]}/{expected} EOFs. ")
-
-        eof_count = state.get("barrier.eof_count")
-        eof_count_this_flow = eof_count[f"{conn_id}_{queries}"]
-
-        if eof_count_this_flow == self.barrier_config.get("FILTER_COUNT"):
+        
+        if new_count == self.barrier_config.get("FILTER_COUNT"):
             # Forward EOF
-            for queue in state.get("barrier.forward_to"):
+            for queue in forward_to:
+                transaction_id = self.state.next_outbound_transaction_id(queue)
+
                 to_send = {
-                    "transaction_id": state.id_for_next_transaction(),
+                    "transaction_id": transaction_id,
                     "conn_id": conn_id,
                     "queries": queries,
                     "EOF": True,
                 }
+
                 msg = Message(to_send)
                 # logging.info(f"Forwarding EOF | Queue: {queue}, msg: {msg.marshal()}")
                 self.messaging.send_to_queue(queue, msg)
+                self.state.outbound_transaction_committed(queue)
 
-            del eof_count[f"{conn_id}_{queries}"]
-            state.set("barrier.eof_count", eof_count)
-            state.mark_transaction_committed()
-        state.save_to_disk()
+            del eof_counts[this_conn_and_query]
+        else:
+            eof_counts[this_conn_and_query] = new_count
 
-    def increase_current_queue_index(self):
-        old = self.state.get("proxy.current_queue")
-        plus_one = old + 1
-        overflow = plus_one % self.barrier_config.get("FILTER_COUNT")
+        self.state.set("barrier.eof_counts", eof_counts)
+        self.state.inbound_transaction_committed(sender)
+        self.state.save_to_disk()
+        self.messaging.ack_delivery(msg.delivery_id)
+        print("bye")
 
-        # logging.info(f"Old: {old}, Plus One: {plus_one}, Overflow: {overflow}")
-        self.state.set("proxy.current_queue", overflow)
 
-    def data_callback(self, messaging: Goutong, msg: Message, state: ControllerState):
-        # logging.info("Received Data")
-
+    def _msg_from_other_cluster(self, _: Goutong, msg: Message):
+        print("Message from other cluster")
         transaction_id = msg.get("transaction_id")
+        queries = msg.get("queries")
+        conn_id = msg.get("conn_id")
+        sender = msg.get("sender")
 
-        if transaction_id in state.transactions_received:
-            messaging.ack_delivery(msg.delivery_id)
+        expected_transaction_id = self.state.next_inbound_transaction_id(sender)
+
+        # Duplicate transaction
+        if transaction_id < expected_transaction_id:
+            self.messaging.ack_delivery(msg.delivery_id)
             logging.info(
-                f"Received Duplicate Transaction {msg.get('transaction_id')}: "
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
             return
 
-        # Retrieve data and queries
-        data = msg.get("data") if msg.has_key("data") else []
-        queries = msg.get("queries")
-        conn_id = msg.get("conn_id")
-        contains_eof = msg.get("EOF")
+        # Some transactions were lost
+        if transaction_id > expected_transaction_id:
+            # Todo!
+            logging.info(
+                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
+            )
+            print(
+                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
+            )
+            return
 
-        # Add data and queries to state
-        state.set("conn_id", conn_id)
-        state.set("queries", queries)
-        state.set("proxy.data", data)
-        state.set("proxy.EOF", contains_eof)
-        state.set("type_last_message", self.DATA)
-        state.set("committed", False)
+        # Forward data to one of the filters
+        if data := msg.get("data"):
+            destination_queue = self._calculate_destination_queue(transaction_id)
+            self._distribute_data(data=data, conn_id=conn_id, queries=queries,queue=destination_queue)
 
-        # Mark transaction as received
-        state.mark_transaction_received(transaction_id)
+        # Forward EOF to all filters
+        if msg.get("EOF"):
+            self._forward_end_of_file(conn_id=conn_id, queries=queries)
 
-        # Save state to disk
-        state.save_to_disk()
+        self.state.inbound_transaction_committed(sender)
+        self.state.save_to_disk()
+        self.messaging.ack_delivery(msg.delivery_id)
 
-        # Acknowledge message
-        messaging.ack_delivery(msg.delivery_id)
-        messaging.stop_consuming(self.input_queue_name)
-        messaging.stop_consuming(self.eof_queue_name)
+    def _calculate_destination_queue(self, transaction_id: int) -> str:
+        # Print calculation
+        return self.filter_queues[(transaction_id-1) % len(self.filter_queues)]
 
-    def distribute_data(self, messaging: Goutong, state: ControllerState):
+    def _forward_end_of_file(self, conn_id: int, queries: list[int]):
+        for queue in self.filter_queues:
+            transaction_id = self.state.next_outbound_transaction_id(queue)
+            msg_body = {
+                "transaction_id": transaction_id,
+                "conn_id": conn_id,
+                "queries": queries,
+                "EOF": True,
+            }
+            msg = Message(msg_body)
+            self.messaging.send_to_queue(queue, msg)
+        
+        for queue in self.filter_queues:
+            self.state.outbound_transaction_committed(queue)
 
-        # Add transaction id
-        data = state.get("proxy.data")
-        queries = state.get("queries")
-        conn_id = state.get("conn_id")
+    def _distribute_data(self, data: list, conn_id: int, queries: list[int], queue: str):
+        transaction_id = self.state.next_outbound_transaction_id(queue)
 
         msg_body = {
-            "transaction_id": state.id_for_next_transaction(),
+            "transaction_id": transaction_id,
             "conn_id": conn_id,
             "data": data,
             "queries": queries,
         }
 
         msg = Message(msg_body)
+        self.messaging.send_to_queue(queue, msg)
+        self.state.outbound_transaction_committed(queue)
 
-        # round-robin data
-        queue_idx = state.get("proxy.current_queue")
-
-        if data:
-            self.messaging.send_to_queue(self.filter_queues[queue_idx], msg)
-            self.increase_current_queue_index()
-
-        if state.get("proxy.EOF"):
-            # Forward EOF
-            for queue in self.filter_queues:
-                msg_body = {
-                    "transaction_id": state.id_for_next_transaction() + "_EOF",
-                    "conn_id": conn_id,
-                    "queries": queries,
-                    "EOF": True,
-                }
-                msg = Message(msg_body)
-                self.messaging.send_to_queue(queue, msg)
-
-            state.set("proxy.EOF", False)
-
-        # Mark transaction as committed
-        state.mark_transaction_committed()
-        state.save_to_disk()
-
-    def sigterm_handler(self, messaging: Goutong):
+    def shutdown(self, messaging: Goutong):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self.shutting_down = True
         # msg = Message({"ShutDown": True})
         # messaging.broadcast_to_group(CONTROL_GROUP, msg)
-
-    def callback_control(self, messaging: Goutong, msg: Message):
-        if msg.has_key("ShutDown"):
-            self.shutting_down = True
-            raise ShuttingDown
-
 
 def config_logging(level: str):
 
@@ -259,31 +255,20 @@ def main():
 
     controller_id = f"{barrier_config.get('FILTER_TYPE')}_proxy_barrier"
 
-    extra_fields = {
-        "type_last_message": ProxyBarrier.DATA,
-        "proxy.EOF": False,
-        "queries": [],
-        "conn_id": 0,
-        "proxy.current_queue": 0,
-        "proxy.data": [],
-        "barrier.eof_count": {},
-        "barrier.forward_to": "",
-    }
-
-    state = ControllerState(
+    state = ProxyBarrier.default_state(
         controller_id=controller_id,
-        file_path=f"state/{controller_id}.json",
-        temp_file_path=f"state/{controller_id}.tmp",
-        extra_fields=extra_fields,
+        file_path="state.json",
+        temp_file_path="state_temp.json",
     )
 
     if os.path.exists(state.file_path):
+        logging.info("Loading state from file...")
         state.update_from_file()
 
     config_logging(barrier_config.get("LOGGING_LEVEL"))
     logging.info(barrier_config)
 
-    messaging = Goutong()
+    messaging = Goutong(sender_id=controller_id)
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state)
     proxy_barrier.start()
 
