@@ -31,3 +31,7 @@ class Message:
     def from_queue(self, queue_name: str):
         self.queue_name = queue_name
         return self
+
+    def with_sender(self, sender_id: str):
+        self.content["sender"] = sender_id
+        return self

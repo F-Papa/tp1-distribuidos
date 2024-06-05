@@ -10,7 +10,8 @@ from .message import Message
 
 
 class Goutong:
-    def __init__(self, host: str = "rabbit", port: int = 5672):
+    def __init__(self, sender_id: str, host: str = "rabbit", port: int = 5672):
+        self.sender_id = sender_id
         self.queues_added = set()
         self.connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=host, port=port)
@@ -27,6 +28,7 @@ class Goutong:
         self.channel.start_consuming()
 
     def send_to_queue(self, queue_name: str, message: Message):
+        message = message.with_sender(self.sender_id)
         if queue_name not in self.queues_added:
             self.queues_added.add(queue_name)
             self.channel.queue_declare(queue=queue_name)

@@ -12,13 +12,15 @@ class ProvokedError(Exception):
 class MockMessaging:
     def __init__(
         self,
+        sender_id: str,
         host: str,
         port: int,
         queues_to_export: list[str],
-        msgs_to_consume: int,
+        times_to_listen: int,
         crash_on_listening: Optional[int] = None,
         crash_on_send: Optional[int] = None,
     ):
+        self.sender_id = sender_id
         self.queued_msgs = {}
         self.unacked_msgs = {}
         self.callbacks = {}
@@ -31,7 +33,7 @@ class MockMessaging:
         for q in queues_to_export:
             self.exported_msgs[q] = []
         self.export_condvars = defaultdict(threading.Condition)
-        self.msgs_to_consume = msgs_to_consume
+        self.msgs_to_consume = times_to_listen
         self.crash_on_listening = crash_on_listening
         self.crash_on_send = crash_on_send
         self.msgs_consumed = 0
@@ -62,6 +64,15 @@ class MockMessaging:
                 self.callbacks[queue] = []
                 self.unacked_msgs[queue] = []
 
+    def _requeue_msg(self, msg: Message):
+        print(f"*******Re-queuing message********")
+
+        self.send_to_queue(
+            queue_name=msg.queue_name,
+            message=msg,
+            sender_id=msg.get("sender"),
+        )
+
     def listen(self):
         if not self._should_listen():
             print("Max listenings reached.")
@@ -69,43 +80,48 @@ class MockMessaging:
 
         for queue, v in self.callbacks.items():
             if v:
-                print(f"Listening to {queue}...")
+                print(f"Listening to {queue}... ({len(self.queued_msgs[queue])} messages)")
 
         while self._should_listen():
             all_queues = list(self.callbacks.keys())
+
             # print(f"Callbacks: {self.callbacks}")
             for queue in all_queues:
-                if not self.queued_msgs[queue]:
-                    continue
-                if not self.callbacks.get(queue):
+                if not self.queued_msgs[queue] or not self.callbacks.get(queue):
                     continue
 
-                msg_str = self.queued_msgs[queue][0]
-
-                if self.crash_on_listening:
-                    if self.msgs_consumed == self.crash_on_listening:
-                        self.msgs_consumed += 1
-                        print(
-                            f"Crashing on listening: {self.crash_on_listening} | Msg: {msg_str}"
-                        )
-                        raise ProvokedError()
-
-                self.queued_msgs[queue].pop(0)
-
+                msg_str = self.queued_msgs[queue].pop(0)
                 msg = (
-                    Message.unmarshal(msg_str)
-                    .with_id(self.delivery_id)
-                    .from_queue(queue)
-                )
+                        Message.unmarshal(msg_str)
+                        .with_id(self.delivery_id)
+                        .from_queue(queue)
+                    ) 
+                
+                # if self.crash_on_listening:
+                #     if self.msgs_consumed == self.crash_on_listening:
+                #         self.msgs_consumed += 1
+                #         print(
+                #             f"Crashing on listening: {self.crash_on_listening} | Msg: {msg_str}"
+                #         )
+                #         # self.send_to_queue(message=msg, queue_name=queue, sender_id=msg.get("sender") + str(" (re-queued)"))
+                #         raise ProvokedError()
 
                 callback, args, auto_ack = self.callbacks[queue][0]
 
                 if not auto_ack:
                     self.unacked_msgs[self.delivery_id] = msg
-
-                callback(self, msg, *args)
-                self.msgs_consumed += 1
-                self.delivery_id += 1
+                try:
+                    callback(self, msg, *args)
+                except ProvokedError:
+                    raise ProvokedError
+                
+                finally:
+                    if self.delivery_id in self.unacked_msgs:
+                        del self.unacked_msgs[self.delivery_id]
+                        self._requeue_msg(msg)
+                    self.delivery_id += 1            
+                    self.msgs_consumed += 1
+                
 
     def ack_delivery(self, delivery_id: int):
         if not self.unacked_msgs.get(delivery_id):
@@ -114,14 +130,21 @@ class MockMessaging:
             )
         del self.unacked_msgs[delivery_id]
 
-    def send_to_queue(self, queue_name: str, message: Message):
+    def send_to_queue(self, queue_name: str, message: Message, sender_id: Optional[str] = None):
         self._add_queues(queue_name)
 
-        print(f"About to send: {message.marshal()} \n to: {queue_name}", end="")
+        if not sender_id:
+            sender_id = self.sender_id
+
+        message = message.with_sender(sender_id)
+
         if queue_name in self.queues_to_export:
-            print(" | Exported")
+            print("=================EXPORTED=================")
         else:
-            print("")
+            print("===============NOT EXPORTED===============")
+        print(f"TO: {queue_name} | FROM: {sender_id}")
+        print(message.marshal())
+        print("===========================================")
 
         if self.crash_on_send:
             if self.msgs_sent + 1 == self.crash_on_send:
