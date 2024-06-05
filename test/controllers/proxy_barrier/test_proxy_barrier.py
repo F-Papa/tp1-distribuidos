@@ -24,16 +24,10 @@ def test_proxy_barrier_forwards_successive_data_in_rr():
         temp_file_path=temp_file_path,
     )
 
-    input_queue = "test_filter_queue"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
-    output_queue = "output_queue"
-
     messaging = MockMessaging(
         host="test",
         port=1234,
         sender_id=controller_id,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=3,
     )
 
@@ -64,11 +58,18 @@ def test_proxy_barrier_forwards_successive_data_in_rr():
         ],
     }
 
-    messaging.send_to_queue(input_queue, Message(data_1), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_2), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_3), sender_id="another_filter")
-
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_2), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_3), sender_id="another_filter"
+    )
+
     threading.Thread(target=proxy_barrier.start).start()
 
     expected_fwd_1 = {
@@ -101,6 +102,8 @@ def test_proxy_barrier_forwards_successive_data_in_rr():
         ],
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_2 = messaging.get_msgs_from_queue(filter_2_queue)
     fwd_3 = messaging.get_msgs_from_queue(filter_1_queue)
@@ -111,9 +114,8 @@ def test_proxy_barrier_forwards_successive_data_in_rr():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
 
     time.sleep(0.1)
 
@@ -133,17 +135,12 @@ def test_proxy_barrier_forwards_eof_once_all_were_received_from_same_connection_
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
-    input_queue = "test_filter_queue"
-    eof_queue = "test_filter_eof"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
     output_queue = "output_queue"
 
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=4,
     )
 
@@ -180,17 +177,6 @@ def test_proxy_barrier_forwards_eof_once_all_were_received_from_same_connection_
         "forward_to": [output_queue],
     }
 
-    messaging.send_to_queue(input_queue, Message(data_filter_1), sender_id="filter1")
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_1_conn_1), sender_id="filter1"
-    )
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_2_conn_2), sender_id="filter2"
-    )
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_2_conn_1), sender_id="filter2"
-    )
-
     state = ProxyBarrier.default_state(
         controller_id=controller_id,
         file_path=file_path,
@@ -198,6 +184,19 @@ def test_proxy_barrier_forwards_eof_once_all_were_received_from_same_connection_
     )
 
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_filter_1), sender_id="filter1"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_1_conn_1), sender_id="filter1"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_2_conn_2), sender_id="filter2"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_2_conn_1), sender_id="filter2"
+    )
 
     threading.Thread(target=proxy_barrier.start).start()
 
@@ -219,6 +218,8 @@ def test_proxy_barrier_forwards_eof_once_all_were_received_from_same_connection_
         "EOF": True,
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_1 = messaging.get_msgs_from_queue(filter_1_queue)
     eof = messaging.get_msgs_from_queue(output_queue)
 
@@ -227,9 +228,9 @@ def test_proxy_barrier_forwards_eof_once_all_were_received_from_same_connection_
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
+    assert len(messaging.queued_msgs[output_queue]) == 0
 
     time.sleep(0.1)
 
@@ -248,23 +249,10 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
     file_path = f"test/{controller_id}.json"
     temp_file_path = f"test/{controller_id}.tmp"
 
-    state = ProxyBarrier.default_state(
-        controller_id=controller_id,
-        file_path=file_path,
-        temp_file_path=temp_file_path,
-    )
-
-    input_queue = "test_filter_queue"
-    eof_queue = "test_filter_eof"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
-    output_queue = "output_queue"
-
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=2,
     )
 
@@ -284,10 +272,20 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
         "queries": [1],
     }
 
-    messaging.send_to_queue(input_queue, Message(data_1), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(eof_1), sender_id="another_filter")
+    state = ProxyBarrier.default_state(
+        controller_id=controller_id,
+        file_path=file_path,
+        temp_file_path=temp_file_path,
+    )
 
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(eof_1), sender_id="another_filter"
+    )
 
     threading.Thread(target=proxy_barrier.start).start()
 
@@ -317,6 +315,8 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
         "EOF": True,
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_data_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof_filter_2 = messaging.get_msgs_from_queue(filter_2_queue)
@@ -327,9 +327,8 @@ def test_proxy_barrier_dispatches_eof_to_all_filters():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
 
     time.sleep(0.1)
 
@@ -355,18 +354,14 @@ def test_proxy_barrier_forwards_data_in_rr_multiple_connections():
         temp_file_path=temp_file_path,
     )
 
-    input_queue = "test_filter_queue"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
-    output_queue = "output_queue"
-
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=3,
     )
+
+    proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
 
     data_1 = {
         "transaction_id": 1,
@@ -395,11 +390,15 @@ def test_proxy_barrier_forwards_data_in_rr_multiple_connections():
         ],
     }
 
-    messaging.send_to_queue(input_queue, Message(data_1), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_2), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_3), sender_id="another_filter")
-
-    proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_2), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_3), sender_id="another_filter"
+    )
 
     threading.Thread(target=proxy_barrier.start).start()
 
@@ -433,6 +432,8 @@ def test_proxy_barrier_forwards_data_in_rr_multiple_connections():
         ],
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_1_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_1_filter_2 = messaging.get_msgs_from_queue(filter_2_queue)
     fwd_2_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
@@ -443,9 +444,8 @@ def test_proxy_barrier_forwards_data_in_rr_multiple_connections():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
 
     time.sleep(0.1)
 
@@ -470,16 +470,10 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
         temp_file_path=temp_file_path,
     )
 
-    input_queue = "test_filter_queue"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
-    output_queue = "output_queue"
-
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=5,
         crash_on_send=5,
     )
@@ -511,11 +505,17 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
         ],
     }
 
-    messaging.send_to_queue(input_queue, Message(data_1), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_2), sender_id="another_filter")
-    messaging.send_to_queue(input_queue, Message(data_3), sender_id="another_filter")
-
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_1), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_2), sender_id="another_filter"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_3), sender_id="another_filter"
+    )
 
     try:
         threading.Thread(target=proxy_barrier.start).start()
@@ -567,6 +567,8 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
         ],
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_1_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_1_filter_2 = messaging.get_msgs_from_queue(filter_2_queue)
     fwd_2_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
@@ -577,9 +579,8 @@ def test_proxy_barrier_recovers_from_crash_distributing_data():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
 
     time.sleep(0.1)
 
@@ -605,17 +606,12 @@ def test_proxy_barrier_recovers_from_crash_forwarding_eof_to_output_queue():
         temp_file_path=temp_file_path,
     )
 
-    input_queue = "test_filter_queue"
-    eof_queue = "test_filter_eof"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
     output_queue = "output_queue"
 
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=5,
         crash_on_send=6,
     )
@@ -653,20 +649,20 @@ def test_proxy_barrier_recovers_from_crash_forwarding_eof_to_output_queue():
         "forward_to": [output_queue],
     }
 
-    messaging.send_to_queue(
-        input_queue, Message(data_filter_1_conn_1), sender_id="filter1"
-    )
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_1_conn_1), sender_id="filter1"
-    )
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_2_conn_2), sender_id="filter2"
-    )
-    messaging.send_to_queue(
-        eof_queue, Message(eof_filter_2_conn_1), sender_id="filter2"
-    )
-
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(data_filter_1_conn_1), sender_id="filter1"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_1_conn_1), sender_id="filter1"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_2_conn_2), sender_id="filter2"
+    )
+    messaging.send_to_queue(
+        proxy_barrier.eof_queue(), Message(eof_filter_2_conn_1), sender_id="filter2"
+    )
 
     try:
         threading.Thread(target=proxy_barrier.start).start()
@@ -705,6 +701,7 @@ def test_proxy_barrier_recovers_from_crash_forwarding_eof_to_output_queue():
         "EOF": True,
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
     fwd_data_filter_1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof = messaging.get_msgs_from_queue(output_queue)
 
@@ -713,9 +710,9 @@ def test_proxy_barrier_recovers_from_crash_forwarding_eof_to_output_queue():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
+    assert len(messaging.queued_msgs[output_queue]) == 0
 
     time.sleep(0.1)
 
@@ -740,17 +737,10 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
         temp_file_path=temp_file_path,
     )
 
-    input_queue = "test_filter_queue"
-    eof_queue = "test_filter_eof"
-    filter_1_queue = "test_filter1"
-    filter_2_queue = "test_filter2"
-    output_queue = "output_queue"
-
     messaging = MockMessaging(
         sender_id=controller_id,
         host="test",
         port=1234,
-        queues_to_export=[filter_1_queue, filter_2_queue, output_queue],
         times_to_listen=2,
         crash_on_send=3,
     )
@@ -762,9 +752,11 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
         "queries": [1],
     }
 
-    messaging.send_to_queue(input_queue, Message(eof_1), sender_id="another_filter")
-
     proxy_barrier = ProxyBarrier(barrier_config, messaging, state=state)  # type: ignore
+
+    messaging.send_to_queue(
+        proxy_barrier.input_queue(), Message(eof_1), sender_id="another_filter"
+    )
 
     try:
         threading.Thread(target=proxy_barrier.start).start()
@@ -793,6 +785,8 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
         "EOF": True,
     }
 
+    filter_1_queue, filter_2_queue = proxy_barrier.filter_queues()
+
     fwd_eof1 = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof1_dup = messaging.get_msgs_from_queue(filter_1_queue)
     fwd_eof2 = messaging.get_msgs_from_queue(filter_2_queue)
@@ -803,9 +797,8 @@ def test_proxy_barrier_recovers_from_crash_dispatching_eof_to_its_filters():
 
     time.sleep(0.1)
 
-    assert len(messaging.exported_msgs[filter_1_queue]) == 0
-    assert len(messaging.exported_msgs[filter_2_queue]) == 0
-    assert len(messaging.exported_msgs[output_queue]) == 0
+    assert len(messaging.queued_msgs[filter_1_queue]) == 0
+    assert len(messaging.queued_msgs[filter_2_queue]) == 0
 
     time.sleep(0.1)
 

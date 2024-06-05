@@ -13,8 +13,6 @@ from src.messaging.goutong import Goutong
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
-CONTROL_GROUP = "CONTROL"
-
 
 class ProxyBarrier:
 
@@ -28,19 +26,19 @@ class ProxyBarrier:
         # Graceful Shutdown Handling
         self.shutting_down = False
 
-        self.eof_queue_name = barrier_config.get("FILTER_TYPE") + "_eof"
-        self.input_queue_name = barrier_config.get("FILTER_TYPE") + "_queue"
+        self._eof_queue = barrier_config.get("FILTER_TYPE") + "_eof"
+        self._input_queue = barrier_config.get("FILTER_TYPE") + "_queue"
         self.broadcast_group_name = barrier_config.get("FILTER_TYPE") + "_broadcast"
 
-        self.filter_queues = []
+        self._filter_queues = []
         for i in range(1, barrier_config.get("FILTER_COUNT") + 1):
             queue_name = barrier_config.get("FILTER_TYPE") + str(i)
-            self.filter_queues.append(queue_name)
+            self._filter_queues.append(queue_name)
 
         # Add queues and broadcast group
         if not self.shutting_down:
             self.messaging.add_broadcast_group(
-                self.broadcast_group_name, self.filter_queues
+                self.broadcast_group_name, self._filter_queues
             )
 
     def start(self):
@@ -49,13 +47,13 @@ class ProxyBarrier:
 
                 # Set callbacks
                 self.messaging.set_callback(
-                    self.input_queue_name,
+                    self._input_queue,
                     self._msg_from_other_cluster,
                     auto_ack=False,
                 )
 
                 self.messaging.set_callback(
-                    self.eof_queue_name,
+                    self._eof_queue,
                     self._eof_from_own_filters,
                     auto_ack=False,
                 )
@@ -68,8 +66,19 @@ class ProxyBarrier:
         self.messaging.close()
         logging.info("Shutting Down.")
 
+    def input_queue(self) -> str:
+        return self._input_queue
+
+    def eof_queue(self) -> str:
+        return self._eof_queue
+
+    def filter_queues(self) -> list[str]:
+        return self._filter_queues
+
     @classmethod
-    def default_state(cls, controller_id: str, file_path: str, temp_file_path: str) -> ControllerState:
+    def default_state(
+        cls, controller_id: str, file_path: str, temp_file_path: str
+    ) -> ControllerState:
         return ControllerState(
             controller_id=controller_id,
             file_path=file_path,
@@ -78,11 +87,8 @@ class ProxyBarrier:
                 "barrier.eof_counts": {},
             },
         )
-        
-
 
     def _eof_from_own_filters(self, _: Goutong, msg: Message):
-        print("EOF from own filters")
         eof_counts = self.state.get("barrier.eof_counts")
         sender = msg.get("sender")
         queries = msg.get("queries")
@@ -91,15 +97,11 @@ class ProxyBarrier:
         forward_to = msg.get("forward_to")
 
         expected_transaction_id = self.state.next_inbound_transaction_id(sender=sender)
-        
+
         # Duplicate transaction
         if transaction_id < expected_transaction_id:
             self.messaging.ack_delivery(msg.delivery_id)
             logging.info(
-                f"Received Duplicate Transaction {transaction_id} from {sender}: "
-                + msg.marshal()[:100]
-            )
-            print(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
@@ -111,9 +113,6 @@ class ProxyBarrier:
             logging.info(
                 f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
             )
-            print(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
             return
 
         this_conn_and_query = str((conn_id, queries))
@@ -122,7 +121,6 @@ class ProxyBarrier:
         new_count = eof_counts.get(this_conn_and_query, 0) + 1
         # eof_counts[this_conn_and_query] = new_count
 
-        
         if new_count == self.barrier_config.get("FILTER_COUNT"):
             # Forward EOF
             for queue in forward_to:
@@ -148,11 +146,8 @@ class ProxyBarrier:
         self.state.inbound_transaction_committed(sender)
         self.state.save_to_disk()
         self.messaging.ack_delivery(msg.delivery_id)
-        print("bye")
-
 
     def _msg_from_other_cluster(self, _: Goutong, msg: Message):
-        print("Message from other cluster")
         transaction_id = msg.get("transaction_id")
         queries = msg.get("queries")
         conn_id = msg.get("conn_id")
@@ -175,15 +170,14 @@ class ProxyBarrier:
             logging.info(
                 f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
             )
-            print(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
             return
 
         # Forward data to one of the filters
         if data := msg.get("data"):
             destination_queue = self._calculate_destination_queue(transaction_id)
-            self._distribute_data(data=data, conn_id=conn_id, queries=queries,queue=destination_queue)
+            self._distribute_data(
+                data=data, conn_id=conn_id, queries=queries, queue=destination_queue
+            )
 
         # Forward EOF to all filters
         if msg.get("EOF"):
@@ -194,11 +188,10 @@ class ProxyBarrier:
         self.messaging.ack_delivery(msg.delivery_id)
 
     def _calculate_destination_queue(self, transaction_id: int) -> str:
-        # Print calculation
-        return self.filter_queues[(transaction_id-1) % len(self.filter_queues)]
+        return self._filter_queues[(transaction_id - 1) % len(self._filter_queues)]
 
     def _forward_end_of_file(self, conn_id: int, queries: list[int]):
-        for queue in self.filter_queues:
+        for queue in self._filter_queues:
             transaction_id = self.state.next_outbound_transaction_id(queue)
             msg_body = {
                 "transaction_id": transaction_id,
@@ -208,11 +201,13 @@ class ProxyBarrier:
             }
             msg = Message(msg_body)
             self.messaging.send_to_queue(queue, msg)
-        
-        for queue in self.filter_queues:
+
+        for queue in self._filter_queues:
             self.state.outbound_transaction_committed(queue)
 
-    def _distribute_data(self, data: list, conn_id: int, queries: list[int], queue: str):
+    def _distribute_data(
+        self, data: list, conn_id: int, queries: list[int], queue: str
+    ):
         transaction_id = self.state.next_outbound_transaction_id(queue)
 
         msg_body = {
@@ -231,6 +226,7 @@ class ProxyBarrier:
         self.shutting_down = True
         # msg = Message({"ShutDown": True})
         # messaging.broadcast_to_group(CONTROL_GROUP, msg)
+
 
 def config_logging(level: str):
 

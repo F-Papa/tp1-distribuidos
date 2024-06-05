@@ -3,7 +3,7 @@ import threading
 from typing import Callable, Optional
 from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.message import Message
-
+import chalk
 
 class ProvokedError(Exception):
     pass
@@ -15,7 +15,6 @@ class MockMessaging:
         sender_id: str,
         host: str,
         port: int,
-        queues_to_export: list[str],
         times_to_listen: int,
         crash_on_listening: Optional[int] = None,
         crash_on_send: Optional[int] = None,
@@ -26,13 +25,7 @@ class MockMessaging:
         self.callbacks = {}
         self.delivery_id = 1
         self.consumer_id = 1
-        self.queues_to_export = queues_to_export
-        self._add_queues(*queues_to_export)
-
-        self.exported_msgs = {}
-        for q in queues_to_export:
-            self.exported_msgs[q] = []
-        self.export_condvars = defaultdict(threading.Condition)
+        self.condvars = defaultdict(threading.Condition)
         self.msgs_to_consume = times_to_listen
         self.crash_on_listening = crash_on_listening
         self.crash_on_send = crash_on_send
@@ -51,10 +44,10 @@ class MockMessaging:
 
     # This method is used to get the messages from the exported queues, only used for testing
     def get_msgs_from_queue(self, queue_name: str):
-        with self.export_condvars[queue_name]:
-            if not self.exported_msgs.get(queue_name):
-                self.export_condvars[queue_name].wait()
-            return self.exported_msgs[queue_name].pop(0)
+        if not self.queued_msgs.get(queue_name):
+            with self.condvars[queue_name]:
+                self.condvars[queue_name].wait()
+        return self.queued_msgs[queue_name].pop(0)
 
     def _add_queues(self, *args):
         for queue in args:
@@ -138,30 +131,21 @@ class MockMessaging:
 
         message = message.with_sender(sender_id)
 
-        if queue_name in self.queues_to_export:
-            print("=================EXPORTED=================")
-        else:
-            print("===============NOT EXPORTED===============")
-        print(f"TO: {queue_name} | FROM: {sender_id}")
-        print(message.marshal())
-        print("===========================================")
+        print(chalk.yellow("==========================================="))
+        print(chalk.yellow(f"TO: {queue_name} | FROM: {sender_id}"))
+        print(chalk.yellow(message.marshal()))
+        print(chalk.yellow("==========================================="))
 
         if self.crash_on_send:
             if self.msgs_sent + 1 == self.crash_on_send:
                 self.msgs_sent += 1
-                print(f"Crashing on send")
+                print(chalk.red(f"Crashing on send"))
                 raise ProvokedError()
 
-        if queue_name in self.queues_to_export:
-            if self.exported_msgs.get(queue_name) is None:
-                self.exported_msgs[queue_name] = []
-            self.exported_msgs[queue_name].append(message.marshal())
-            with self.export_condvars[queue_name]:
-                self.export_condvars[queue_name].notify()
-        # Append the message to the queue
-        else:
-            self.queued_msgs[queue_name].append(message.marshal())
-
+        if condvar := self.condvars.get(queue_name):
+            with condvar:
+                condvar.notify()
+        self.queued_msgs[queue_name].append(message.marshal())
         self.msgs_sent += 1
 
     def set_callback(
