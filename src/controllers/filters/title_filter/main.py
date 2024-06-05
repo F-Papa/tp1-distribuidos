@@ -31,11 +31,9 @@ class TitleFilter:
         )
         self.title_keyword = title_keyword
         self._output_queue = output_queue
-        self._eof_queue = self.FILTER_TYPE + "_eof"
         self._messaging = messaging
 
     def start(self):
-
         # Main Flow
         try:
             if not self._shutting_down:
@@ -85,9 +83,6 @@ class TitleFilter:
     def output_queue(self):
         return self._output_queue
 
-    def eof_queue(self):
-        return self._eof_queue
-
     def _callback_title_filter(self, _: Goutong, msg: Message):
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
@@ -123,7 +118,7 @@ class TitleFilter:
         if filtered_books := self._filter_data(msg.get("data")):
             filtered_books = [self._columns_for_query1(b) for b in filtered_books]
             transaction_id = self._state.next_outbound_transaction_id(
-                self._output_queue
+                self.output_queue()
             )
 
             msg_content = {
@@ -132,25 +127,25 @@ class TitleFilter:
                 "queries": queries,
                 "data": filtered_books,
             }
-            self._messaging.send_to_queue(self._output_queue, Message(msg_content))
-            self._state.outbound_transaction_committed(self._output_queue)
+            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
+            self._state.outbound_transaction_committed(self.output_queue())
 
         # Send End of File
         if msg.get("EOF"):
             transaction_id = self._state.next_outbound_transaction_id(
-                self._eof_queue
+                self.output_queue()
             )
 
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "EOF": True,
-                "forward_to": [self._output_queue],
+                "forward_to": [self.output_queue()],
                 "queries": [1],
             }
 
-            self._messaging.send_to_queue(self._eof_queue, Message(msg_content))
-            self._state.outbound_transaction_committed(self._eof_queue)
+            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
+            self._state.outbound_transaction_committed(self.output_queue())
 
         self._state.inbound_transaction_committed(sender)
         self._state.save_to_disk()

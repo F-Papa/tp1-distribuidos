@@ -86,7 +86,7 @@ def test_title_filter_works_if_no_faults():
 
     expected_eof = {
         "sender":  controller_id,
-        "transaction_id": 1,
+        "transaction_id": 2,
         "conn_id": conn_id,
         "EOF": True,
         "forward_to": ["output_title_filter_test"],
@@ -95,7 +95,7 @@ def test_title_filter_works_if_no_faults():
 
     # Get actual results
     data = messaging.get_msgs_from_queue(filter.output_queue())
-    eof = messaging.get_msgs_from_queue(filter.eof_queue())
+    eof = messaging.get_msgs_from_queue(filter.output_queue())
 
     assert json.loads(data) == expected_data
     assert json.loads(eof) == expected_eof
@@ -206,7 +206,7 @@ def test_title_filter_ignores_duplicate_transactions():
 
     expected_eof = {
         "sender": controller_id,
-        "transaction_id": 1,
+        "transaction_id": 3,
         "conn_id": conn_id,
         "EOF": True,
         "forward_to": ["output_title_filter_test"],
@@ -216,7 +216,7 @@ def test_title_filter_ignores_duplicate_transactions():
     # Get actual results
     data_1 = messaging.get_msgs_from_queue(filter.output_queue())
     data_2 = messaging.get_msgs_from_queue(filter.output_queue())
-    eof = messaging.get_msgs_from_queue(filter.eof_queue())
+    eof = messaging.get_msgs_from_queue(filter.output_queue())
 
     assert json.loads(data_1) == expected_data1
     assert json.loads(data_2) == expected_data2
@@ -324,7 +324,7 @@ def test_title_filter_works_if_no_faults_multiple_messages():
 
     expected_eof = {
         "sender": controller_id,
-        "transaction_id": 1,
+        "transaction_id": 3,
         "conn_id": conn_id,
         "EOF": True,
         "forward_to": ["output_title_filter_test"],
@@ -334,7 +334,7 @@ def test_title_filter_works_if_no_faults_multiple_messages():
     # Get actual results
     data1 = messaging.get_msgs_from_queue(filter.output_queue())
     data2 = messaging.get_msgs_from_queue(filter.output_queue())
-    eof = messaging.get_msgs_from_queue(filter.eof_queue())
+    eof = messaging.get_msgs_from_queue(filter.output_queue())
 
     assert json.loads(eof) == expected_eof
     assert json.loads(data1) == expected_data1
@@ -444,7 +444,7 @@ def test_title_filter_works_if_no_faults_multiple_messages_and_connections():
 
     expected_eof = {
         "sender": controller_id,
-        "transaction_id": 1,
+        "transaction_id": 3,
         "conn_id": 100,
         "EOF": True,
         "forward_to": ["output_title_filter_test"],
@@ -454,7 +454,7 @@ def test_title_filter_works_if_no_faults_multiple_messages_and_connections():
     # Get actual results
     data1 = messaging.get_msgs_from_queue(filter.output_queue())
     data2 = messaging.get_msgs_from_queue(filter.output_queue())
-    eof = messaging.get_msgs_from_queue(filter.eof_queue())
+    eof = messaging.get_msgs_from_queue(filter.output_queue())
 
     assert json.loads(eof) == expected_eof
     assert json.loads(data1) == expected_data1
@@ -590,7 +590,7 @@ def test_title_filter_recovers_from_crash_sending_data():
 
     expected_eof = {
         "sender": controller_id,
-        "transaction_id": 1,
+        "transaction_id": 3,
         "conn_id": conn_id,
         "EOF": True,
         "forward_to": ["output_title_filter_test"],
@@ -600,7 +600,7 @@ def test_title_filter_recovers_from_crash_sending_data():
     # Get actual results
     data1 = messaging.get_msgs_from_queue(filter.output_queue())
     data2 = messaging.get_msgs_from_queue(filter.output_queue())
-    eof = messaging.get_msgs_from_queue(filter.eof_queue())
+    eof = messaging.get_msgs_from_queue(filter.output_queue())
 
     assert json.loads(eof) == expected_eof
     assert json.loads(data1) == expected_data1
