@@ -188,7 +188,7 @@ def main():
     logging.info(filter_config)
 
     author_caches = defaultdict(lambda: AuthorCache(filter_config.get("CACHE_VACANTS")))
-    messaging = Goutong()
+    messaging = Goutong(sender_id=FILTER_TYPE)
 
     # Set up the queues
     messaging.set_callback(INPUT_QUEUE, callback_filter, auto_ack=True, args=(filter_config, author_caches))

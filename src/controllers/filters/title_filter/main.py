@@ -64,7 +64,8 @@ class TitleFilter:
 
     def _filter_data(self, data: list):
         filtered_data = []
-
+        if not data:
+            return filtered_data
         for book in data:
             title = book.get("title")
             if self.title_keyword.lower() in title.lower():
@@ -199,6 +200,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
+        logging.info("Loading state from file...")
         state.update_from_file()
 
     messaging = Goutong(sender_id=controller_id)

@@ -9,7 +9,8 @@ from src.messaging.message import Message
 from src.utils.config_loader import Configuration
 
 
-counter = 0
+counter_q5 = 1
+counter_q3_4 = 1
 
 
 class JoinerState:
@@ -111,6 +112,7 @@ class JoinerState:
 
 
 class Joiner:
+    FILTER_TYPE = "joiner"
     DATA_FILE_NAME = "joiner_data.txt"
     PENDING_CONN_QUEUE = "joiner_pending"
     BOOKS_QUEUE_PREFIX = "books_queue_"
@@ -123,9 +125,9 @@ class Joiner:
         config: Configuration,
         data: DataStore,
         restored_state: JoinerState,
-        messaging_module: type,
+        messaging: Goutong,
     ):
-        self._messaging_module = messaging_module
+        self._messaging = messaging
         self._batch_limit = config.get("BATCH_LIMIT")
         self._unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self._data = data
@@ -137,9 +139,6 @@ class Joiner:
         self._messaging_port = config.get("MESSAGING_PORT")
 
     def start(self):
-        self._messaging = self._messaging_module(
-            self._messaging_host, self._messaging_port
-        )
         try:
             self._start_aux()
         except ShuttingDown:
@@ -161,10 +160,6 @@ class Joiner:
         self._state.mark_idle()
         self._data.clear()
 
-        self._messaging: Goutong = self._messaging_module(
-            self._messaging_host, self._messaging_port
-        )
-
         self._messaging.set_callback(
             Joiner.PENDING_CONN_QUEUE,
             self._accept_next_connection_callback,
@@ -184,9 +179,6 @@ class Joiner:
         logging.info(
             "Receiving Books on queue books_" + str(self._state._current_connection)
         )
-        # self._messaging = self._messaging_module(
-        #     self._messaging_host, self._messaging_port
-        # )
         if self._state._current_connection is None:
             raise ValueError("No connection to receive books from")
 
@@ -228,10 +220,6 @@ class Joiner:
     # Reviews methods
     def receive_reviews(self):
         logging.info("Receiving Reviews")
-        # self._messaging = self._messaging_module(
-        #     self._messaging_host, self._messaging_port
-        # )
-
         reviews_queue = Joiner.REVIEWS_QUEUE_PREFIX + str(
             self._state._current_connection
         )
@@ -243,7 +231,7 @@ class Joiner:
 
     def _receive_reviews_callback(self, messaging: Goutong, msg: Message):
         reviews = msg.get("data")
-        global counter
+        global counter_q5, counter_q3_4
 
         if reviews:
             self._receive_reviews_q5(messaging, reviews)
@@ -252,16 +240,16 @@ class Joiner:
         # Forward EOF
         if msg.get("EOF"):
             body = {
-                "transaction_id": counter,
+                "transaction_id": counter_q5,
                 "conn_id": self._state._current_connection,
                 "queries": [5],
                 "data": [],
                 "EOF": True,
             }
             messaging.send_to_queue(Joiner.Q5_OUTPUT_QUEUE, Message(body))
-
+            counter_q5 += 1
             body = {
-                "transaction_id": counter,
+                "transaction_id": counter_q3_4,
                 "conn_id": self._state._current_connection,
                 "queries": [3, 4],
                 "data": [],
@@ -269,7 +257,7 @@ class Joiner:
             }
             messaging.send_to_queue(Joiner.Q3_4_OUTPUT_QUEUE, Message(body))
 
-            counter += 1
+            counter_q3_4 += 1
         # Acknowledge message
         # messaging.ack_n_messages(1)
         # Stop listening
@@ -283,7 +271,7 @@ class Joiner:
             messaging.stop_consuming(msg.queue_name)
 
     def _receive_reviews_q5(self, messaging: Goutong, reviews: list):
-        global counter
+        global counter_q5
         batch = []
         output_queue = Joiner.Q5_OUTPUT_QUEUE
 
@@ -298,18 +286,18 @@ class Joiner:
         while batch:
             to_send = pop_n(batch, self._batch_limit)
             body = {
-                "transaction_id": counter,
+                "transaction_id": counter_q5,
                 "conn_id": self._state._current_connection,
                 "queries": [5],
                 "data": to_send,
             }
             msg = Message(body)
             messaging.send_to_queue(output_queue, msg)
-            counter += 1
+            counter_q5 += 1
 
     def _receive_reviews_q3_4(self, messaging: Goutong, reviews: list):
         batch = []
-        global counter
+        global counter_q3_4
         output_queue = Joiner.Q3_4_OUTPUT_QUEUE
 
         # Find reviews that have a title in the data
@@ -329,14 +317,14 @@ class Joiner:
         while batch:
             to_send = pop_n(batch, self._batch_limit)
             body = {
-                "transaction_id": counter,
+                "transaction_id": counter_q3_4,
                 "conn_id": self._state._current_connection,
                 "queries": [3, 4],
                 "data": to_send,
             }
             msg = Message(body)
             messaging.send_to_queue(output_queue, msg)
-            counter += 1
+            counter_q3_4 += 1
 
 
 def pop_n(a_list: list, n: int) -> list:
@@ -384,5 +372,10 @@ if __name__ == "__main__":
     recovered_data = DataStore.restore_or_init(Joiner.DATA_FILE_NAME)
     logging.info(f"Recovered data: {recovered_data.num_items()} items")
 
-    joiner = Joiner(joiner_config, recovered_data, recovered_state, Goutong)
+    messaging = Goutong(
+        "joiner",
+        joiner_config.get("MESSAGING_HOST"),
+        joiner_config.get("MESSAGING_PORT"),
+    )
+    joiner = Joiner(joiner_config, recovered_data, recovered_state, messaging=messaging)
     joiner.start()

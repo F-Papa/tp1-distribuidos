@@ -15,7 +15,7 @@ Uso:
 TITLE_FILTER_COUNT = 2
 DATE_FILTER_COUNT = 2
 CATEGORY_FILTER_COUNT = 1
-SENTIMENT_ANALYZER_COUNT = 6
+SENTIMENT_ANALYZER_COUNT = 12
 ITEMS_PER_BATCH = 700
 BARRIER_LOGGING_LEVEL = "INFO"
 
@@ -75,15 +75,15 @@ def boundary_service_text():
 #       - ./src/controllers/io/input/input_controller.py:/input_controller.py
 # """
 
-def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_level: str):
+def proxy_service_text(filter_type: str, filter_count: int, logging_level: str):
 
     return f"""\
-  {filter_type}_proxy_barrier:
+  {filter_type}_proxy:
     build:
       context: ./
-      dockerfile: ./src/controllers/proxy_barrier/Dockerfile
-    container_name: {filter_type}_proxy_barrier
-    image: proxy_barrier:latest
+      dockerfile: ./src/controllers/proxy/Dockerfile
+    container_name: {filter_type}_proxy
+    image: proxy:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE={filter_type}
@@ -92,7 +92,7 @@ def proxy_barrier_service_text(filter_type: str, filter_count: int, logging_leve
     networks:
       - tp1_testing_net
     volumes:
-      - ./src/controllers/proxy_barrier/main.py:/main.py
+      - ./src/controllers/proxy/main.py:/main.py
 """
 
 
@@ -266,7 +266,7 @@ if __name__ == "__main__":
 
         # Title filters & barrier
         f.write(
-            proxy_barrier_service_text(
+            proxy_service_text(
                 "title_filter", TITLE_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -278,7 +278,7 @@ if __name__ == "__main__":
 
         # Date filters & barrier
         f.write(
-            proxy_barrier_service_text(
+            proxy_service_text(
                 "date_filter", DATE_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
         # Category filters & barrier
         f.write(
-            proxy_barrier_service_text(
+            proxy_service_text(
                 "category_filter", CATEGORY_FILTER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )
@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
         # Sentiment Analyzer
         f.write(
-            proxy_barrier_service_text(
+            proxy_service_text(
                 "sentiment_analyzer", SENTIMENT_ANALYZER_COUNT, BARRIER_LOGGING_LEVEL
             )
         )

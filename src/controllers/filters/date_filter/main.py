@@ -109,6 +109,9 @@ class DateFilter:
 
     def _filter_data_q1(self, data: list) -> list:
         filtered_data = []
+        if not data:
+            return filtered_data
+
         for book in data:
             year = book.get("year")
             if self.lower_q1 <= year <= self.upper_q1:
@@ -117,6 +120,8 @@ class DateFilter:
 
     def _filter_data_q3_4(self, data: list) -> list:
         filtered_data = []
+        if not data:
+            return filtered_data
         for book in data:
             year = book.get("year")
             if self.lower_q3_4 <= year <= self.upper_q3_4:

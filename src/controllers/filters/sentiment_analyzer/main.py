@@ -3,7 +3,7 @@ from src.utils.config_loader import Configuration
 import logging
 import signal
 import os
-from textblob import TextBlob # type: ignore
+from textblob import TextBlob  # type: ignore
 
 from src.messaging.message import Message
 from src.exceptions.shutting_down import ShuttingDown
@@ -11,10 +11,9 @@ from src.controller_state.controller_state import ControllerState
 
 
 FILTER_TYPE = "sentiment_analyzer"
-EOF_QUEUE = "sentiment_analyzer_eof"
-CONTROL_GROUP = "CONTROL"
 
 OUTPUT_QUEUE = "sentiment_average_queue"
+EOF_QUEUE = OUTPUT_QUEUE  # "sentiment_analyzer_eof"
 
 shutting_down = False
 
@@ -75,16 +74,13 @@ def main():
     )
 
     if os.path.exists(state.file_path):
+        logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong()
+    messaging = Goutong(sender_id=controller_id)
 
     # Set up queues
     input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
-
-
-    # messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    # messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
 
@@ -151,13 +147,6 @@ def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState)
         )
 
     state.mark_transaction_committed()
-
-
-def callback_control(messaging: Goutong, msg: Message):
-    global shutting_down
-    if msg.has_key("ShutDown"):
-        shutting_down = True
-        raise ShuttingDown
 
 
 def _send_EOF(messaging: Goutong, conn_id: int, transaction_id: str):

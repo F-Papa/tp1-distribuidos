@@ -35,9 +35,6 @@ class CategoryFilter:
     ):
         self._shutting_down = False
         self._state = state
-        self._shutting_down = False
-        if os.path.exists(state.file_path):
-            state.update_from_file()
 
         self._config = filter_config
         self._input_queue = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
@@ -104,10 +101,7 @@ class CategoryFilter:
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
         transaction_id = msg.get("transaction_id")
-        conn_id = msg.get("conn_id")
-        output_queue_q1 = self.output_queue_q1(conn_id)
-        output_queue_q5 = self.output_queue_q5(conn_id)
-
+        queries = msg.get("queries")
         # Duplicate transaction
         if transaction_id < expected_transaction_id:
             self._messaging.ack_delivery(msg.delivery_id)
@@ -133,77 +127,66 @@ class CategoryFilter:
             return
 
         # Send filtered data to Query 1
-        sent_q1 = False
-        if filtered_books_q1 := self._filter_by_category(
-            msg.get("data"), self._category_q1
-        ):
-            filtered_books = [self._columns_for_query1(b) for b in filtered_books_q1]
-            transaction_id = self._state.next_outbound_transaction_id(output_queue_q1)
+        if 1 in queries:
+            self.callback_aux_q1(msg)
 
-            msg_content = {
-                "transaction_id": transaction_id,
-                "conn_id": conn_id,
-                "queries": [1],
-                "data": filtered_books,
-            }
+        elif 5 in queries:
+            self.callback_aux_q5(msg)
 
-            if msg.get("EOF"):
-                msg_content["EOF"] = True
+    def callback_aux_q5(self, msg: Message):
+        conn_id = msg.get("conn_id")
+        output_queue_q5 = self.output_queue_q5(conn_id)
+        filtered_books = self._filter_by_category(msg.get("data"), self._category_q5)
+        filtered_books = [self._columns_for_query5(b) for b in filtered_books]
+        
+        transaction_id = self._state.next_outbound_transaction_id(output_queue_q5)
+        msg_content = {
+            "transaction_id": transaction_id,
+            "conn_id": conn_id,
+            "queries": [5]
+        }
 
-            self._messaging.send_to_queue(output_queue_q1, Message(msg_content))
-            sent_q1 = True
+        if filtered_books:
+            msg_content["data"] = filtered_books
 
-        elif msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(output_queue_q1)
-            msg_content = {
-                "transaction_id": transaction_id,
-                "conn_id": conn_id,
-                "queries": [1],
-                "EOF": True,
-            }
-            self._messaging.send_to_queue(output_queue_q1, Message(msg_content))
-            sent_q1 = True
+        if msg.get("EOF"):
+            msg_content["EOF"] = True
 
-        # Send filtered data to Query 5
-        sent_q5 = False
-        if filtered_books_q5 := self._filter_by_category(
-            msg.get("data"), self._category_q5
-        ):
-            filtered_books = [self._columns_for_query5(b) for b in filtered_books_q5]
-            transaction_id = self._state.next_outbound_transaction_id(output_queue_q5)
-            msg_content = {
-                "transaction_id": transaction_id,
-                "conn_id": conn_id,
-                "queries": [5],
-                "data": filtered_books,
-            }
+        self._messaging.send_to_queue(output_queue_q5, Message(msg_content))
+        self._state.outbound_transaction_committed(output_queue_q5)
+        self._state.inbound_transaction_committed(msg.get("sender"))
+        self._messaging.ack_delivery(msg.delivery_id)      
 
-            if msg.get("EOF"):
-                msg_content["EOF"] = True
 
-            self._messaging.send_to_queue(output_queue_q5, Message(msg_content))
-            sent_q5 = True
-        elif msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(output_queue_q5)
-            msg_content = {
-                "transaction_id": transaction_id,
-                "conn_id": conn_id,
-                "queries": [5],
-                "EOF": True,
-            }
-            self._messaging.send_to_queue(output_queue_q5, Message(msg_content))
-            sent_q5 = True
+    def callback_aux_q1(self, msg: Message):
+        conn_id = msg.get("conn_id")
+        output_queue_q1 = self.output_queue_q1(conn_id)
 
-        if sent_q1:
-            self._state.outbound_transaction_committed(output_queue_q1)
-        if sent_q5:
-            self._state.outbound_transaction_committed(output_queue_q5)
+        filtered_books_q1 = self._filter_by_category(msg.get("data"), self._category_q1)
+        filtered_books_q1 = [self._columns_for_query1(b) for b in filtered_books_q1]
+        
+        transaction_id = self._state.next_outbound_transaction_id(output_queue_q1)
+        msg_content = {
+            "transaction_id": transaction_id,
+            "conn_id": conn_id,
+            "queries": [1],
+        }
+        if filtered_books_q1:
+            msg_content["data"] = filtered_books_q1
 
-        self._state.inbound_transaction_committed(sender)
+        if msg.get("EOF"):
+            msg_content["EOF"] = True
+
+        self._messaging.send_to_queue(output_queue_q1, Message(msg_content))
+        self._state.outbound_transaction_committed(output_queue_q1)
+        self._state.inbound_transaction_committed(msg.get("sender"))
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _filter_by_category(self, data: list, category: str) -> list:
         filtered_data = []
+        if not data:
+            return filtered_data
+
         for book in data:
             categories = book.get("categories")
 
@@ -264,6 +247,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
+        logging.info("Loading state from file...")
         state.update_from_file()
 
     messaging = Goutong(sender_id=controller_id)

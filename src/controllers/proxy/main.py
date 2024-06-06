@@ -103,15 +103,13 @@ class Proxy:
             return
 
         # Forward data to one of the filters
-        if data := msg.get("data"):
+        data = msg.get("data")
+        has_eof = msg.get("EOF")
+        if data or has_eof:
             destination_queue = self._calculate_destination_queue(conn_id=conn_id)
             self._distribute_data(
-                data=data, conn_id=conn_id, queries=queries, queue=destination_queue
+                data=data, conn_id=conn_id, queries=queries, queue=destination_queue, eof=has_eof
             )
-
-        # Forward EOF to all filters
-        if msg.get("EOF"):
-            self._forward_end_of_file(conn_id=conn_id, queries=queries)
 
         self.state.inbound_transaction_committed(sender)
         self.state.save_to_disk()
@@ -136,16 +134,19 @@ class Proxy:
             self.state.outbound_transaction_committed(queue)
 
     def _distribute_data(
-        self, data: list, conn_id: int, queries: list[int], queue: str
+        self, data: list, conn_id: int, queries: list[int], queue: str, eof: bool
     ):
         transaction_id = self.state.next_outbound_transaction_id(queue)
-
         msg_body = {
             "transaction_id": transaction_id,
             "conn_id": conn_id,
-            "data": data,
             "queries": queries,
         }
+        if data:
+            msg_body["data"] = data
+
+        if eof:
+            msg_body["EOF"] = True
 
         msg = Message(msg_body)
         self.messaging.send_to_queue(queue, msg)

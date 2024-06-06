@@ -1,3 +1,4 @@
+from collections import defaultdict
 import json
 import logging
 import multiprocessing
@@ -36,6 +37,7 @@ BATCH_SIZE_LEN = 4
 # REVIEW_SCORE = 6
 # REVIEW_TEXT = 9
 
+
 JOINER_CONNECTION_QUEUES = "joiner_pending"
 
 
@@ -54,10 +56,9 @@ class ClientConnection:
         self.__shutting_down = False
         self.items_per_batch = items_per_batch
         self.messaging: Goutong = messaging_module(
-            host=messaging_host, port=messaging_port
+            sender_id=Boundary.CONTROLLER_TYPE, host=messaging_host, port=messaging_port
         )
-        self.transaction_prefix = f"client_connection_{self.conn_id}#"
-        self.next_transaction_id = 1
+        self.next_transaction_ids = defaultdict(lambda: 1)
 
         self.EOFs_received = 0
         self.reviews = b""
@@ -74,7 +75,6 @@ class ClientConnection:
         self.__dispatch_books()
 
         # Send reviews to the messaging server
-        reviews_queue = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
         self.__dispatch_reviews()
 
         # Listen for results
@@ -87,17 +87,18 @@ class ClientConnection:
 
     def forward_results(self, messaging: Goutong, msg: Message):
         if msg.has_key("EOF"):
-            # to_show = {
-            #     "transaction_id": msg.get("transaction_id"),
-            #     "conn_id": self.conn_id,
-            #     "EOF": msg.get("EOF"),
-            #     "data": str(msg.get("data"))[:50],
-            #     "queries": msg.get("queries"),
-            # }
-            # logging.info(f"EOF Received: {to_show}")
-            queries = msg.get("queries")
-            for q in queries:
-                logging.info(f"[Conn: {self.conn_id}] Received EOF for query {q}")
+            to_show = {
+                "transaction_id": msg.get("transaction_id"),
+                "conn_id": self.conn_id,
+                "EOF": msg.get("EOF"),
+                "data": str(msg.get("data"))[:50],
+                "queries": msg.get("queries"),
+                "sender": msg.get("sender"),
+            }
+            logging.info(f"EOF Received: {to_show}")
+            # queries = msg.get("queries")
+            # for q in queries:
+            #     logging.info(f"[Conn: {self.conn_id}] Received EOF for query {q}")
 
         encoded_msg = msg.marshal().encode("utf-8")
         length = len(encoded_msg).to_bytes(BATCH_SIZE_LEN, byteorder="big")
@@ -142,12 +143,11 @@ class ClientConnection:
 
     # Encodes a batch of books to the messaging server encoded in the correct format
     def __send_batch_books(self, batch: list, eof_reached: bool):
-        transaction_id = self.transaction_prefix + str(self.next_transaction_id)
 
         data_q1_3_4, data_q2, data_q5 = self.__separate_columns_by_query(batch)
         # Queries 1,3,4
         msg_body = {
-            "transaction_id": transaction_id,
+            "transaction_id": self.next_transaction_ids[Q1_3_4_QUEUE],
             "conn_id": self.conn_id,
             "data": data_q1_3_4,
             "queries": [1, 3, 4],
@@ -155,10 +155,11 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q1_3_4_QUEUE, Message(msg_body))
+        self.next_transaction_ids[Q1_3_4_QUEUE] += 1
 
         # Query 2
         msg_body = {
-            "transaction_id": transaction_id,
+            "transaction_id": self.next_transaction_ids[Q2_QUEUE],
             "conn_id": self.conn_id,
             "data": data_q2,
             "queries": [2],
@@ -166,10 +167,11 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q2_QUEUE, Message(msg_body))
+        self.next_transaction_ids[Q2_QUEUE] += 1
 
         # Query 5
         msg_body = {
-            "transaction_id": transaction_id,
+            "transaction_id": self.next_transaction_ids[Q5_QUEUE],
             "conn_id": self.conn_id,
             "data": data_q5,
             "queries": [5],
@@ -177,7 +179,8 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q5_QUEUE, Message(msg_body))
-        self.next_transaction_id += 1
+        self.next_transaction_ids[Q5_QUEUE] += 1
+
 
     def __dispatch_reviews(self):
         output_queue_name = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
@@ -216,9 +219,8 @@ class ClientConnection:
 
     def __send_batch_reviews(self, batch: list, eof_reached: bool):
         queue_name = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
-        transaction_id = self.transaction_prefix + str(self.next_transaction_id)
         body = {
-            "transaction_id": transaction_id,
+            "transaction_id": self.next_transaction_ids[queue_name],
             "conn_id": self.conn_id,
             "data": batch,
         }
@@ -228,7 +230,7 @@ class ClientConnection:
 
         message = Message(body)
         self.messaging.send_to_queue(queue_name, message)
-        self.next_transaction_id += 1
+        self.next_transaction_ids[queue_name] += 1
 
     def __parse_decade(self, year: int) -> int:
         return year - (year % 10)
@@ -264,6 +266,8 @@ class ClientConnection:
 
 
 class Boundary:
+    CONTROLLER_TYPE = "boundary"
+
     def __init__(self, config: Configuration, messaging_module: type):
         self.__shutting_down = False
         self.__conn_id = 1

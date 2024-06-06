@@ -48,7 +48,7 @@ class SentimentReducer:
         return new_average
 
     def _init_messaging(self):
-        self.messaging = Goutong()
+        self.messaging = Goutong(sender_id=self.FILTER_TYPE)
 
         # Set up the queues
         self.messaging.set_callback(

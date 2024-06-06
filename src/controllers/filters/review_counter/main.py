@@ -55,7 +55,7 @@ class ReviewCounter:
         self._init_messaging()
 
     def _init_messaging(self):
-        self.messaging = Goutong()
+        self.messaging = Goutong(sender_id=self.FILTER_TYPE)
 
         # Set up the queues
         self.messaging.set_callback(
