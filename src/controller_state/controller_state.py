@@ -52,6 +52,8 @@ class ControllerState:
             "next_transaction": self.next_transaction,
             "transactions_received": self.transactions_received,
             "committed": self.committed,
+            "next_inbound_transactions_ids": self.next_inbound_transactions_ids,
+            "next_outbound_transaction_ids": self.next_outbound_transaction_ids,
         }
 
         for key in self.extra_fields:
@@ -86,7 +88,16 @@ class ControllerState:
         state_in_file = json.loads(file_lines[0])
 
         for key in state_in_file:
-            setattr(self, key, state_in_file[key])
+            # Default dict needs to be handled separately
+            if key == "next_inbound_transactions_ids":
+                for sender in state_in_file[key]:
+                    self.next_inbound_transactions_ids[sender] = state_in_file[key][sender]
+            # Default dict needs to be handled separately
+            elif key == "next_outbound_transaction_ids":
+                for queue in state_in_file[key]:
+                    self.next_outbound_transaction_ids[queue] = state_in_file[key][queue]
+            else:
+                setattr(self, key, state_in_file[key])
 
     def _is_file_valid(self, lines: list):
         return len(lines) == 2 and lines[-1] == self.READY_MARKER

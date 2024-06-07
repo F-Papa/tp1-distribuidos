@@ -171,7 +171,7 @@ services:
     entrypoint: python3 main.py
     environment:
       - FILTER_TYPE=sentiment_analyzer
-      - FILTER_COUNT=12
+      - FILTER_COUNT=1
       - LOGGING_LEVEL=INFO
     networks:
       - tp1_testing_net
@@ -195,205 +195,21 @@ services:
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
       - ./state/sentiment_analyzer1/:/state
 
-  sentiment_analyzer2:
+  reviews_joiner1:
     build:
       context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer2
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
+      dockerfile: ./src/controllers/reviews_joiner/Dockerfile
+    container_name: reviews_joiner1
+    image: reviews_joiner:latest
+    entrypoint: python3 reviews_joiner.py
     environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=2
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer2/:/state
-
-  sentiment_analyzer3:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer3
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=3
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer3/:/state
-
-  sentiment_analyzer4:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer4
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=4
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer4/:/state
-
-  sentiment_analyzer5:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer5
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=5
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer5/:/state
-
-  sentiment_analyzer6:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer6
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=6
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer6/:/state
-
-  sentiment_analyzer7:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer7
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=7
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer7/:/state
-
-  sentiment_analyzer8:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer8
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=8
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer8/:/state
-
-  sentiment_analyzer9:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer9
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=9
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer9/:/state
-
-  sentiment_analyzer10:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer10
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=10
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer10/:/state
-
-  sentiment_analyzer11:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer11
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=11
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer11/:/state
-
-  sentiment_analyzer12:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-    container_name: sentiment_analyzer12
-    image: sentiment_analyzer:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=12
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-      - ./state/sentiment_analyzer12/:/state
-
-  joiner:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/joiner/Dockerfile
-    container_name: joiner
-    image: joiner:latest
-    entrypoint: python3 main.py
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/joiner/config.ini:/config.ini
-      - ./src/controllers/filters/joiner/main.py:/main.py
+      - ./src/controllers/reviews_joiner/config.ini:/config.ini
+      - ./src/controllers/reviews_joiner/reviews_joiner.py:/reviews_joiner.py
+      - ./state/reviews_joiner1/:/state
 
   review_counter:
     build:

@@ -17,7 +17,7 @@ UPPER_Q3_4 = 1999
 LOWER_Q3_4 = 1990
 
 OUTPUT_Q1 = "title_filter_queue"
-OUTPUT_Q3_4_PREFIX = "books_queue_"
+OUTPUT_Q3_4_PREFIX = "reviews_joiner_1_books"
 
 
 class DateFilter:
@@ -57,7 +57,6 @@ class DateFilter:
                 self._messaging.set_callback(
                     self._input_queue, self.callback_filter, auto_ack=False
                 )
-                print("A")
                 self._messaging.listen()
 
         except ShuttingDown:
@@ -92,6 +91,7 @@ class DateFilter:
         return self._output_q1
 
     def output_queue_q3_4(self, conn_id: int):
+        return self._output_q3_4_prefix
         return self._output_q3_4_prefix + str(conn_id)
 
     def _columns_for_query1(self, book: dict) -> dict:
@@ -128,35 +128,42 @@ class DateFilter:
                 filtered_data.append(book)
         return filtered_data
 
-    def callback_filter(self, _: Goutong, msg: Message):
+    def _handle_invalid_transaction_id(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            self._messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            self._messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
+
+
+    def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        return transaction_id == expected_transaction_id
+
+
+
+    def callback_filter(self, _: Goutong, msg: Message):
+        sender = msg.get("sender")
         conn_id = msg.get("conn_id")
         output_q3_4 = self.output_queue_q3_4(conn_id)
         
         # Duplicate transaction
-        if transaction_id < expected_transaction_id:
-            self._messaging.ack_delivery(msg.delivery_id)
-            logging.info(
-                f"Received Duplicate Transaction {transaction_id} from {sender}: "
-                + msg.marshal()[:100]
-            )
-            print(
-                f"Received Duplicate Transaction {transaction_id} from {sender}: "
-                + msg.marshal()[:100]
-            )
-            return
-
-        # Some transactions were lost
-        if transaction_id > expected_transaction_id:
-            # Todo!
-            logging.info(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
-            print(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
+        if not self._is_transaction_id_valid(msg):
+            self._handle_invalid_transaction_id(msg)
             return
 
         # Send filtered data to Query 1

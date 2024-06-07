@@ -9,7 +9,7 @@ network-create:
 	docker network create tp1_testing_net
 
 rabbit-up:
-	docker run --rm --network tp1_testing_net --name rabbit -p 15672:15672 rabbitmq:3.13-management
+	docker run --rm --network tp1_testing_net --name rabbit -p 15672:15672 -v ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.config rabbitmq:3.13-management
 
 filters-build:
 	docker compose -f ./docker-compose.yml build

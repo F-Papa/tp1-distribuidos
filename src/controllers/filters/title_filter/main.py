@@ -84,35 +84,40 @@ class TitleFilter:
     def output_queue(self):
         return self._output_queue
 
-    def _callback_title_filter(self, _: Goutong, msg: Message):
+    def _handle_invalid_transaction_id(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            self._messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            self._messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
+
+
+    def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        return transaction_id == expected_transaction_id
+
+
+    def _callback_title_filter(self, _: Goutong, msg: Message):
+        sender = msg.get("sender")
         conn_id = msg.get("conn_id")
         queries = msg.get("queries")
 
-        # Duplicate transaction
-        if transaction_id < expected_transaction_id:
-            self._messaging.ack_delivery(msg.delivery_id)
-            logging.info(
-                f"Received Duplicate Transaction {transaction_id} from {sender}: "
-                + msg.marshal()[:100]
-            )
-            print(
-                f"Received Duplicate Transaction {transaction_id} from {sender}: "
-                + msg.marshal()[:100]
-            )
-            return
-
-        # Some transactions were lost
-        if transaction_id > expected_transaction_id:
-            # Todo!
-            logging.info(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
-            print(
-                f"Received Out of Order Transaction {transaction_id} from {sender}. Expected: {expected_transaction_id}"
-            )
+        if not self._is_transaction_id_valid(msg):
+            self._handle_invalid_transaction_id(msg)
             return
 
         # Send filtered data

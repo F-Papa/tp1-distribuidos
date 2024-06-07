@@ -92,5 +92,13 @@ class Goutong:
     def ack_delivery(self, delivery_id: int):
         self.channel.basic_ack(delivery_tag=delivery_id)
 
-    def nack_delivery(self, delivery_id: int):
-        self.channel.basic_nack(delivery_tag=delivery_id)
+    def requeue(self, message: Message):
+        queue_name = message.queue_name
+        self.channel.basic_publish(
+            exchange="", routing_key=queue_name, body=message.marshal()
+        )
+        logging.info(f"Requeued message {message.get('sender')}#{message.get('transaction_id')} to: {queue_name}")
+        self.ack_delivery(message.delivery_id)
+
+    # def nack_delivery(self, delivery_id: int):
+    #     self.channel.basic_nack(delivery_tag=delivery_id, requeue=False, multiple=True)
