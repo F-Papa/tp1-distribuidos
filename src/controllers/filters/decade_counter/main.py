@@ -4,6 +4,8 @@ import os
 from typing import Union
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
+from src.controller_state.controller_state import ControllerState
+
 import logging
 import signal
 
@@ -12,21 +14,137 @@ from src.exceptions.shutting_down import ShuttingDown
 
 INPUT_QUEUE = "decade_counter_queue"
 FILTER_TYPE = "decade_counter"
-CONTROL_GROUP = "CONTROL"
 
 OUTPUT_QUEUE_PREFIX = "results_"
 
-shutting_down = False
+class DecadeCounter:
+    CONTROLLER_NAME = "decade_counter"
 
+    def __init__(self, config, state: ControllerState, messaging: Goutong, output_queues: dict
+    ):
+        self._filter_number = config.get("FILTER_NUMBER")
+        self._shutting_down = False
+        self._state = state
+        self._messaging = messaging
+        self._input_queue = f"{INPUT_QUEUE}"
+        self._output_queues = output_queues
 
-# Graceful Shutdown
-def sigterm_handler(messaging: Goutong):
-    global shutting_down
-    logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-    shutting_down = True
-    #msg = Message({"ShutDown": True})
-    # messaging.broadcast_to_group(CONTROL_GROUP, msg)
+        # por cada conexion se guarda un dict: cuya clave es autor y valor un set de decadas
 
+    @classmethod
+    def default_state(
+        cls, controller_id: str, file_path: str, temp_file_path: str
+    ) -> ControllerState:
+        extra_fields = {
+            "saved_counts": defaultdict(lambda: defaultdict(lambda: set())),
+            "ongoing_connections": set(),
+        }
+
+        return ControllerState(
+            controller_id=controller_id,
+            file_path=file_path,
+            temp_file_path=temp_file_path,
+            extra_fields=extra_fields,
+        )
+    
+    # region: Command methods
+    def _handle_invalid_transaction_id(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            self._messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            self._messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
+
+    def _is_transaction_id_valid(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        return transaction_id == expected_transaction_id
+
+    def _get_10_decade_authors(self, conn_id: str):
+        saved_counts = self._state.get("saved_counts")
+        decades_by_author = saved_counts[conn_id]
+        ten_decade_authors = [author for author in decades_by_author\
+                               if len(decades_by_author[author]) >= 10]
+        return ten_decade_authors
+
+    def _send_results(self, conn_id: str):
+        ten_decade_authors = self._get_10_decade_authors(conn_id)
+        msg = Message({"conn_id": conn_id, "queries": [2], "data": ten_decade_authors})
+        
+        output_queue = OUTPUT_QUEUE_PREFIX + conn_id
+        self._messaging.send_to_queue(output_queue, msg)
+        self._state.outbound_transaction_committed(output_queue)
+        logging.debug(f"Sent Data to: {output_queue}")
+
+    def _send_eof(self, conn_id: str):
+        msg = Message({"conn_id": conn_id, "EOF": True, "queries": [2]})
+        output_queue = OUTPUT_QUEUE_PREFIX + conn_id
+        self._messaging.send_to_queue(output_queue, msg)
+        logging.debug(f"Sent EOF to: {output_queue}")
+
+    def _callback_filter(self, _: Goutong, msg: Message):
+        logging.info(f"1")
+        # Validate transaction_id
+        if not self._is_transaction_id_valid(msg):
+            logging.info(f"2")
+            self._handle_invalid_transaction_id(msg)
+            return
+        
+        conn_id = msg.get("conn_id")
+        conn_id_str = str(conn_id)
+        sender = msg.get("sender")
+
+        ongoing_connections = self._state.get("ongoing_connections")
+        saved_counts = self._state.get("saved_counts")
+        ongoing_connections.add(conn_id_str) #es un Set(), si ya exitse no la agrega
+
+        logging.info(f"4")
+        if msg.get("EOF"):  #calculate results, send results, send EOF
+            logging.info(f"5")
+            logging.info(f"EOF received from {conn_id_str}")
+            self._send_results(conn_id_str)
+            self._send_eof(conn_id_str)
+            self._state.get("ongoing_connections").remove(conn_id_str)
+            self._state.get("saved_counts").pop(conn_id_str)
+        else:   #add decades and authors to state
+            books = msg.get("data")
+            for book in books:
+                decade = book.get("decade")
+                for author in book.get("authors"):
+                    saved_counts[conn_id_str][author].add(decade)
+            logging.info(f"6")
+            logging.debug(f"Authors and Decs: {saved_counts[conn_id_str]}")
+
+        self._state.inbound_transaction_committed(sender)
+        #self._state.save_to_disk()
+        self._messaging.ack_delivery(msg.delivery_id)
+
+    def start(self):
+        logging.info("Starting Decade Counter")
+        try:
+            if not self._shutting_down:
+                self._messaging.set_callback(
+                    self._input_queue, self._callback_filter, auto_ack=False
+                )
+                self._messaging.listen()
+        except ShuttingDown:
+            pass
+        finally:
+            logging.info("Shutting Down.")
+            self._messaging.close()
 
 def config_logging(level: str):
 
@@ -43,141 +161,10 @@ def config_logging(level: str):
     pika_logger = logging.getLogger("pika")
     pika_logger.setLevel(logging.ERROR)
 
-
-class AuthorCache:
-    # Q2_FILE = "q2_authors.json"
-    FILE_PREFIX = "authors"
-    FILE_SUFFIX = ".json"
-    KEY_VALUE_SEPARATOR = "%%%"
-    N_PARTITIONS = 500
-
-    def __init__(self, cache_vacants: int) -> None:
-        self.cache: dict[str, set[int]] = {}
-        self.cache_vacants = cache_vacants
-        self.cached_entries = 0
-        self.entries_in_files = 0
-        # create files from scratch
-        for i in range(self.N_PARTITIONS):
-            file_name = f"{self.FILE_PREFIX}_{i}{self.FILE_SUFFIX}"
-            with open(file_name, "w") as f:
-                pass
-
-    def get_10_decade_authors(self) -> list[str]:
-        valid_author = lambda author: repr(author) != "''" and not author.isspace()
-
-        ten_decade_authors = list(
-            filter(
-                lambda author: (len(self.cache[author]) >= 10) and valid_author(author),
-                self.cache.keys(),
-            )
-        )
-
-        if self.entries_in_files > 0:
-            for i in range(self.N_PARTITIONS):
-                file_name = f"{self.FILE_PREFIX}_{i}{self.FILE_SUFFIX}"
-                with open(file_name, "r") as f:
-                    for line in f:
-
-                        author = line.split(self.KEY_VALUE_SEPARATOR)[0]
-                        decades = json.loads(line.split(self.KEY_VALUE_SEPARATOR)[1])
-                        if len(decades) >= 10 and valid_author(author):
-                            ten_decade_authors.append(author)
-
-        return ten_decade_authors
-
-    def n_elements_in_cache(self) -> int:
-        return self.cached_entries
-
-    def _write_oldest_to_disk(self):
-        if len(self.cache) == 0:
-            raise ValueError("Cache is empty")
-
-        first_author_in_cache: str = list(self.cache.keys())[0]
-        author_decades = list(self.cache.pop(first_author_in_cache))
-
-        partition = hash(first_author_in_cache) % self.N_PARTITIONS
-        file_name = f"{self.FILE_PREFIX}_{partition}{self.FILE_SUFFIX}"
-        entry = f"{first_author_in_cache}{self.KEY_VALUE_SEPARATOR}{json.dumps(author_decades)}\n"
-        with open(file_name, "a") as f:
-            f.write(entry)
-
-        self.entries_in_files += 1
-        self.cached_entries -= 1
-
-    def _pop_from_disk(self, author: str) -> tuple[str, Union[set[int], None]]:
-        temp_file_name = "temp.json"
-
-        partition = hash(author) % self.N_PARTITIONS
-        file_name = f"{self.FILE_PREFIX}_{partition}{self.FILE_SUFFIX}"
-        value_from_disk: set[int] | None = None
-        with open(file_name, "r") as original_file, open(
-            temp_file_name, "w"
-        ) as temp_file:
-            for line in original_file:
-                sep_index = line.find(self.KEY_VALUE_SEPARATOR)
-                line_author = line[:sep_index]
-                if line_author != author:
-                    temp_file.write(line)
-                else:
-                    aux = json.loads(line[sep_index + len(self.KEY_VALUE_SEPARATOR) :])
-                    value_from_disk = set()
-                    value_from_disk.update(aux)
-                    self.entries_in_files -= 1
-
-        os.replace(temp_file_name, file_name)
-
-        return (author, value_from_disk)
-
-    def add(self, author: str, decade: int):
-        dbg_string = "Adding (%s) | Cache Used: %d/%d | Entries in files: %d" % (
-            # author[0:10] + "...",
-            author,
-            self.n_elements_in_cache(),
-            self.cache_vacants,
-            self.entries_in_files,
-        )
-        logging.debug(dbg_string)
-
-        # Already cached, add the new decades and return
-        if author in self.cache.keys():
-            self.cache[author].add(decade)
-            return
-
-        decades_in_disk = None
-        # Could be in file
-        if self.entries_in_files > 0:
-            _, decades_in_disk = self._pop_from_disk(author)
-
-        # If it is in the disk, add the new decade to the existing ones, otherwise create a new set
-        author_decades = decades_in_disk if decades_in_disk is not None else set()
-        author_decades.add(decade)
-
-        # If the cache is full, write the oldest entry to disk
-        if self.n_elements_in_cache() >= self.cache_vacants:
-            logging.debug(f"Committing 1 entry to disk")
-            self._write_oldest_to_disk()
-
-        # Add the author to the cache, whether it was in the disk or a new one
-        self.cached_entries += 1
-        self.cache.update({author: author_decades})
-
-    def get(self, author: str) -> Union[set[int], None]:
-        if author in self.cache.keys():
-            return self.cache[author]
-
-        elif self.entries_in_files > 0:
-            _, decades = self._pop_from_disk(author)
-            if decades is not None:
-                self.cache.update({author: decades})
-            return decades
-        else:
-            return None
-
-
 def main():
     required = {
         "LOGGING_LEVEL": str,
-        "CACHE_VACANTS": int,
+        "FILTER_NUMBER": int,
     }
 
     filter_config = Configuration.from_file(required, "config.ini")
@@ -187,75 +174,25 @@ def main():
     config_logging(filter_config.get("LOGGING_LEVEL"))
     logging.info(filter_config)
 
-    author_caches = defaultdict(lambda: AuthorCache(filter_config.get("CACHE_VACANTS")))
+    controller_id = f"{DecadeCounter.CONTROLLER_NAME}_{filter_config.get('FILTER_NUMBER')}"
+    state_file_path = f"state/{controller_id}.json"
+    temp_file_path = f"state/{controller_id}.tmp"
+
+    state = DecadeCounter.default_state(controller_id, state_file_path, temp_file_path)
+
+    if os.path.exists(state_file_path):
+        logging.info("State file found. Loading state.")
+        state.update_from_file()
+        to_show = ""
+        for conn in state.get("saved_counts").keys():
+            to_show += f"{len(state.get('saved_counts')[conn])} books from conn {conn}\n"
+        logging.info(to_show)
+
+    output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
+
     messaging = Goutong(sender_id=FILTER_TYPE)
-
-    # Set up the queues
-    messaging.set_callback(INPUT_QUEUE, callback_filter, auto_ack=True, args=(filter_config, author_caches))
-
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
-
-    # Start listening
-    if not shutting_down:
-        try:
-            messaging.listen()
-        except ShuttingDown:
-            logging.debug("Shutdown Message Received via Control Broadcast")
-
-    messaging.close()
-    logging.info("Shutting Down.")
-
-
-def callback_control(messaging: Goutong, msg: Message):
-    global shutting_down
-    if msg.has_key("ShutDown"):
-        shutting_down = True
-        raise ShuttingDown
-
-
-def _send_EOF(messaging: Goutong, connection_id: int):
-    msg = Message({"conn_id": connection_id, "EOF": True, "queries": [2]})
-    output_queue = OUTPUT_QUEUE_PREFIX + str(connection_id)
-    messaging.send_to_queue(output_queue, msg)
-    logging.debug(f"Sent EOF to: {output_queue}")
-
-
-def callback_filter(
-    messaging: Goutong,
-    msg: Message,
-    config: Configuration,
-    decades_per_author: dict[int, AuthorCache],
-):
-    queries = msg.get("queries")
-    connection_id = msg.get("conn_id")
-
-    if msg.has_key("EOF"):
-        logging.debug("Received EOF")
-        # Forward EOF and Keep Consuming
-        _send_results_q2(messaging, decades_per_author[connection_id], connection_id)
-        _send_EOF(messaging, connection_id)
-        return
-
-    books = msg.get("data")
-    # logging.debug(f"Received {len(books)} books")
-    for book in books:
-        decade = book.get("decade")
-        # Query 2 flow
-        for author in book.get("authors"):
-            decades_per_author[connection_id].add(author, decade)
-
-    logging.debug(
-        f"Authors: {decades_per_author[connection_id].cached_entries + decades_per_author[connection_id].entries_in_files}"
-    )
-
-
-def _send_results_q2(messaging: Goutong, author_cache: AuthorCache, connection_id: int):
-    ten_decade_authors = author_cache.get_10_decade_authors()
-    msg = Message({"conn_id": connection_id, "queries": [2], "data": ten_decade_authors})
-    output_queue = OUTPUT_QUEUE_PREFIX + str(connection_id)
-    messaging.send_to_queue(output_queue, msg)
-    logging.debug(f"Sent Data to: {output_queue}")
-
+    decade_counter = DecadeCounter(filter_config, state, messaging, output_queues)
+    decade_counter.start()
 
 if __name__ == "__main__":
     main()
