@@ -28,7 +28,7 @@ class ReviewsJoiner:
     BOOKS_EOF_EXPECTED = 2
     RECEIVING_BOOKS = 0
     RECEIVING_REVIEWS = 1
-    CONTROLLER_NAME = "reviews_joiner"
+    CONTROLLER_NAME = "review_joiner"
 
     BOOK_COLUMNS_BY_QUERY = {
         (3, 4): ["title", "authors"],
@@ -82,7 +82,7 @@ class ReviewsJoiner:
         )
 
     def start(self):
-        logging.info("Starting Reviews Joiner")
+        logging.info("Starting Review Joiner")
         try:
             if not self._shutting_down:
                 self._messaging.set_callback(
@@ -118,11 +118,6 @@ class ReviewsJoiner:
         if entry["is_prefix"]:
             return entry["name"] + str(conn_id)
         return entry["name"]
-
-    def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-        self._shutting_down = True
-        raise ShuttingDown
 
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
@@ -252,6 +247,11 @@ class ReviewsJoiner:
     # endregion
 
     # region: Command methods
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")

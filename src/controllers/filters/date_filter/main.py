@@ -17,7 +17,7 @@ UPPER_Q3_4 = 1999
 LOWER_Q3_4 = 1990
 
 OUTPUT_Q1 = "title_filter_queue"
-OUTPUT_Q3_4_PREFIX = "reviews_joiner_1_books"
+OUTPUT_Q3_4_PREFIX = "review_joiner_1_books"
 
 
 class DateFilter:

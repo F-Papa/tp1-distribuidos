@@ -17,7 +17,7 @@ CATEGORY_Q1 = "Computers"
 CATEGORY_Q5 = "Fiction"
 
 OUTPUT_Q1_PREFIX = "results_"
-OUTPUT_Q5_PREFIX = "reviews_joiner_1_books"
+OUTPUT_Q5_PREFIX = "review_joiner_1_books"
 
 
 class CategoryFilter:
