@@ -58,7 +58,7 @@ class ControllerState:
 
         for key in self.extra_fields:
             to_save[key] = getattr(self, key)
-
+        #logging.debug(f"{to_save}")
         with open(self.temp_file_path, "w") as f:
             f.write(json.dumps(to_save) + "\n")
             f.write(self.READY_MARKER)

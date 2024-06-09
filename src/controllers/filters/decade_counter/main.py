@@ -8,6 +8,8 @@ from src.controller_state.controller_state import ControllerState
 
 import logging
 import signal
+import sys
+import random
 
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
@@ -17,6 +19,10 @@ FILTER_TYPE = "decade_counter"
 
 OUTPUT_QUEUE_PREFIX = "results_"
 
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
+
 class DecadeCounter:
     CONTROLLER_NAME = "decade_counter"
 
@@ -24,19 +30,21 @@ class DecadeCounter:
     ):
         self._filter_number = config.get("FILTER_NUMBER")
         self._shutting_down = False
-        self._state = state
         self._messaging = messaging
         self._input_queue = f"{INPUT_QUEUE}"
         self._output_queues = output_queues
+        
+        self._state = state
+        self._denormalize_state()
 
-        # por cada conexion se guarda un dict: cuya clave es autor y valor un set de decadas
 
     @classmethod
     def default_state(
         cls, controller_id: str, file_path: str, temp_file_path: str
     ) -> ControllerState:
         extra_fields = {
-            "saved_counts": defaultdict(lambda: defaultdict(lambda: set())),
+            # por cada conexion se guarda un dict: cuya clave es autor y valor un set de decadas
+            "saved_counts": defaultdict(lambda: defaultdict(set)),
             "ongoing_connections": set(),
         }
 
@@ -47,7 +55,51 @@ class DecadeCounter:
             extra_fields=extra_fields,
         )
     
-    # region: Command methods
+    # Devuelve las saved_counts pero con los Set() de decadas casteados a lista
+    def _normalize_counts(self, saved_counts):
+        normalized_counts = {
+            conn_id: {
+                author: list(decades)
+                for author, decades in authors_and_decades.items()
+            }
+            for conn_id, authors_and_decades in saved_counts.items()
+        }
+        return normalized_counts
+
+    # Devuelve las saved_counts pero con las list() de decadas casteadas a Set
+    def _denormalize_counts(self, saved_counts):
+        denormalized_counts = defaultdict(lambda: defaultdict(set))
+        for conn_id, authors_and_decades in saved_counts.items():
+            for author, decades in authors_and_decades.items():
+                denormalized_counts[conn_id][author] = set(decades)
+        return denormalized_counts
+
+    def _normalize_state(self):
+        """Normalize state to JSON friendly format used for persistance"""
+        saved_counts = self._state.get("saved_counts")
+        saved_counts = self._normalize_counts(saved_counts)
+        self._state.set("saved_counts", saved_counts)
+        #logging.debug(f"{saved_counts}")
+
+        ongoing_connections = self._state.get("ongoing_connections")
+        ongoing_connections = list(ongoing_connections)
+        self._state.set("ongoing_connections", ongoing_connections)
+
+    def _denormalize_state(self):
+        """Denormalize state to Sets() and defaultdict format used for program flow"""
+        saved_counts = self._state.get("saved_counts")
+        saved_counts = self._denormalize_counts(saved_counts)
+        self._state.set("saved_counts", saved_counts)
+
+        ongoing_connections = self._state.get("ongoing_connections")
+        ongoing_connections = set(ongoing_connections)
+        self._state.set("ongoing_connections", ongoing_connections)
+
+    def _save_state(self):
+        self._normalize_state()
+        self._state.save_to_disk()
+        self._denormalize_state()
+
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
@@ -96,40 +148,40 @@ class DecadeCounter:
         logging.debug(f"Sent EOF to: {output_queue}")
 
     def _callback_filter(self, _: Goutong, msg: Message):
-        logging.info(f"1")
         # Validate transaction_id
         if not self._is_transaction_id_valid(msg):
-            logging.info(f"2")
             self._handle_invalid_transaction_id(msg)
             return
         
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
         sender = msg.get("sender")
+        saved_counts = self._state.get("saved_counts")
 
         ongoing_connections = self._state.get("ongoing_connections")
-        saved_counts = self._state.get("saved_counts")
         ongoing_connections.add(conn_id_str) #es un Set(), si ya exitse no la agrega
 
-        logging.info(f"4")
         if msg.get("EOF"):  #calculate results, send results, send EOF
-            logging.info(f"5")
             logging.info(f"EOF received from {conn_id_str}")
             self._send_results(conn_id_str)
             self._send_eof(conn_id_str)
-            self._state.get("ongoing_connections").remove(conn_id_str)
-            self._state.get("saved_counts").pop(conn_id_str)
+
+            #update state
+            ongoing_connections.remove(conn_id_str)
+            self._state.set("ongoing_connections", ongoing_connections)
+            saved_counts.pop(conn_id_str)
+            self._state.set("saved_counts", saved_counts)
         else:   #add decades and authors to state
             books = msg.get("data")
             for book in books:
                 decade = book.get("decade")
                 for author in book.get("authors"):
                     saved_counts[conn_id_str][author].add(decade)
-            logging.info(f"6")
+            self._state.set("saved_counts", saved_counts)
             logging.debug(f"Authors and Decs: {saved_counts[conn_id_str]}")
 
         self._state.inbound_transaction_committed(sender)
-        #self._state.save_to_disk()
+        self._save_state()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def start(self):
@@ -145,6 +197,7 @@ class DecadeCounter:
         finally:
             logging.info("Shutting Down.")
             self._messaging.close()
+            self._save_state()
 
 def config_logging(level: str):
 
@@ -185,7 +238,7 @@ def main():
         state.update_from_file()
         to_show = ""
         for conn in state.get("saved_counts").keys():
-            to_show += f"{len(state.get('saved_counts')[conn])} books from conn {conn}\n"
+            to_show += f"{len(state.get('saved_counts')[conn])} authors with decades from conn {conn}\n"
         logging.info(to_show)
 
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
