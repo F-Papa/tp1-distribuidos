@@ -17,7 +17,7 @@ UPPER_Q3_4 = 1999
 LOWER_Q3_4 = 1990
 
 OUTPUT_Q1 = "title_filter_queue"
-OUTPUT_Q3_4_PREFIX = "review_joiner_1_books"
+OUTPUT_Q3_4_PREFIX = "review_joiner_books"
 
 
 class DateFilter:
@@ -42,6 +42,7 @@ class DateFilter:
         self._input_queue = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self.upper_q3_4 = upper_q3_4
         self.lower_q3_4 = lower_q3_4
         self.upper_q1 = upper_q1
@@ -167,70 +168,67 @@ class DateFilter:
             return
 
         # Send filtered data to Query 1
-        sent_q1 = False
         if filtered_books_q1 := self._filter_data_q1(msg.get("data")):
             filtered_books = [self._columns_for_query1(b) for b in filtered_books_q1]
-            transaction_id = self._state.next_outbound_transaction_id(self._output_q1)
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
 
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "queries": [1],
                 "data": filtered_books,
+                "forward_to": [self.output_queue_q1()],
             }
 
             if msg.get("EOF"):
                 msg_content["EOF"] = True
 
-            self._messaging.send_to_queue(self._output_q1, Message(msg_content))
-            sent_q1 = True
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
         elif msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(self._output_q1)
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "queries": [1],
                 "EOF": True,
+                "forward_to": [self.output_queue_q1()],
             }
-            self._messaging.send_to_queue(self._output_q1, Message(msg_content))
-            sent_q1 = True
-
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
     
         # Send filtered data to Query 3,4
-        sent_q3_4 = False
         if filtered_books_q3_4 := self._filter_data_q3_4(msg.get("data")):
             filtered_books = [
                 self._columns_for_query3_4(b) for b in filtered_books_q3_4
             ]
-            transaction_id = self._state.next_outbound_transaction_id(output_q3_4)
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "queries": [3, 4],
                 "data": filtered_books,
+                "forward_to": [output_q3_4],
             }
 
             if msg.get("EOF"):
                 msg_content["EOF"] = True
 
-            self._messaging.send_to_queue(output_q3_4, Message(msg_content))
-            sent_q3_4 = True
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
+
         elif msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(output_q3_4)
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "queries": [3, 4],
                 "EOF": True,
+                "forward_to": [output_q3_4],
             }
-            self._messaging.send_to_queue(output_q3_4, Message(msg_content))
-            sent_q3_4 = True
-
-        if sent_q1:
-            self._state.outbound_transaction_committed(self._output_q1)
-        if sent_q3_4:
-            self._state.outbound_transaction_committed(output_q3_4)
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
   
         self._state.inbound_transaction_committed(sender)
         self._messaging.ack_delivery(msg.delivery_id)

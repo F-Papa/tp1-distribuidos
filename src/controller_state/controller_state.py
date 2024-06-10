@@ -42,7 +42,7 @@ class ControllerState:
         """Returns the next transaction id for the given queue"""
         return self.next_outbound_transaction_ids[queue]
 
-    def next_inbound_transaction_id(self, sender: tuple) -> int:
+    def next_inbound_transaction_id(self, sender: str) -> int:
         """Returns the next expected transaction id from a given sender"""
         return self.next_inbound_transactions_ids[sender]
 

@@ -48,13 +48,14 @@ class ReviewsJoiner:
         self._messaging = messaging
         self._books_queue = f"{self.CONTROLLER_NAME}_{self._filter_number}_books"
         self._reviews_queue_prefix = (
-            f"{self.CONTROLLER_NAME}_{self._filter_number}_reviews_"
+            f"{self.CONTROLLER_NAME}_{self._filter_number}_reviews_conn_"
         )
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
         self.unacked_msgs = []
         self.unacked_msg_count = 0
         self.time_of_last_commit = time.time()
+        self._proxy_queue = f"{self.CONTROLLER_NAME}_proxy"
         # self._output_queue_q5 = output_queue_q5
         # self._output_queue_q3_4 = output_queue_q3_4
 
@@ -125,7 +126,8 @@ class ReviewsJoiner:
 
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
-        sender = msg.get("sender")
+        sender = f"{msg.get('sender')}@{msg.queue_name}"
+
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         return transaction_id == expected_transaction_id
@@ -142,7 +144,7 @@ class ReviewsJoiner:
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
         queries = tuple(msg.get("queries"))
-        sender = msg.get("sender")
+        sender = f"{msg.get('sender')}@{msg.queue_name}"
         queries_str = json.dumps(
             queries
         )  # Cannot save tuples as keys in json so we convert to string
@@ -167,15 +169,21 @@ class ReviewsJoiner:
             if ongoing_connections[conn_id_str]["EOFs"] == self.BOOKS_EOF_EXPECTED:
                 # All books received, start listening for reviews at the reviews queue for this conn_id
                 ongoing_connections[conn_id_str] = {"state": self.RECEIVING_REVIEWS}
+                for k in saved_books.keys():
+                    logging.info("saved_books Key: " + k)
+                    for k2 in saved_books[k].keys():
+                        logging.info("saved_books Key2: " + k2 + " " + str(len(saved_books[k][k2])))
+
                 self._set_callback_reviews(conn_id)
         self._state.set("ongoing_connections", ongoing_connections)
         # Add books to saved_books
-        for book in msg.get("data"):
-            to_save = {}
-            if extra_columns := self._extra_book_columns_to_save.get(queries):
-                for column in extra_columns:
-                    to_save[column] = book[column]
-            saved_books[conn_id_str][queries_str][book.get("title")] = to_save
+        if books := msg.get("data"):
+            for book in books:
+                to_save = {}
+                if extra_columns := self._extra_book_columns_to_save.get(queries):
+                    for column in extra_columns:
+                        to_save[column] = book[column]
+                saved_books[conn_id_str][queries_str][book.get("title")] = to_save
 
         self._state.set("saved_books", saved_books)
         self._state.inbound_transaction_committed(sender)
@@ -193,10 +201,12 @@ class ReviewsJoiner:
             self.unacked_msg_count > self.unacked_msg_limit
             or time_since_last_commit > self.unacked_time_limit_in_seconds
         ):
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            logging.info(
+                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
+            )
             self._state.save_to_disk()
             self.time_of_last_commit = now
-            
+
             for delivery_id in self.unacked_msgs:
                 self._messaging.ack_delivery(delivery_id)
 
@@ -207,42 +217,46 @@ class ReviewsJoiner:
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
         queries_tuple = tuple(json.loads(queries_str))
-        reviews = msg.get("data")
-        books_this_queries_and_conn = self._state.get("saved_books")[conn_id_str][
-            queries_str
-        ]
-        joined_data = self._books_and_reviews_left_join_by_title(
-            books_this_queries_and_conn, reviews
-        )
-        trimmed_data = self._columns_for_queries(joined_data, queries_tuple)
-
-        if not trimmed_data and not msg.get("EOF"):
-            return
         output_queue = self.output_queue_name(queries_tuple, conn_id)
-        transaction_id = self._state.next_outbound_transaction_id(output_queue)
+        
+        if reviews := msg.get("data"):
+            books_this_queries_and_conn = self._state.get("saved_books")[conn_id_str][
+                queries_str
+            ]
+            joined_data = self._books_and_reviews_left_join_by_title(
+                books_this_queries_and_conn, reviews
+            )
+            trimmed_data = self._columns_for_queries(joined_data, queries_tuple)
 
-        msg_content = {
-            "transaction_id": transaction_id,
-            "conn_id": conn_id,
-            "queries": [3, 4],
-        }
-        if trimmed_data:
-            msg_content["data"] = trimmed_data
-        self._messaging.send_to_queue(output_queue, Message(msg_content))
-        self._state.outbound_transaction_committed(output_queue)
+            if not trimmed_data and not msg.get("EOF"):
+                return
+            
+            if trimmed_data:
+                msg_content = {
+                    "transaction_id": self._state.next_outbound_transaction_id(
+                        self._proxy_queue
+                    ),
+                    "conn_id": conn_id,
+                    "queries": [3, 4],
+                    "data": trimmed_data,
+                    "forward_to": [output_queue],
+                }
+                self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+                self._state.outbound_transaction_committed(self._proxy_queue)
 
         if msg.get("EOF"):
             msg_content = {
                 "transaction_id": self._state.next_outbound_transaction_id(
-                    output_queue
+                    self._proxy_queue
                 ),
                 "EOF": True,
                 "conn_id": conn_id,
                 "queries": [3, 4],
                 "data": [],
+                "forward_to": [output_queue],
             }
-            self._messaging.send_to_queue(output_queue, Message(msg_content))
-            self._state.outbound_transaction_committed(output_queue)
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
     def callback_reviews(self, _: Goutong, msg: Message):
         # Validate transaction_id
@@ -250,11 +264,12 @@ class ReviewsJoiner:
             self._handle_invalid_transaction_id(msg)
             return
 
-        sender = msg.get("sender")
+        sender = f"{msg.get('sender')}@{msg.queue_name}"
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
 
         # Send data to output queue
+
         for queries_str in self._state.get("saved_books")[conn_id_str]:
             self._callback_reviews_aux(msg, queries_str)
 
@@ -265,7 +280,7 @@ class ReviewsJoiner:
             self._state.get("saved_books").pop(conn_id_str)
 
         self._state.inbound_transaction_committed(sender)
-        
+
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
@@ -274,20 +289,23 @@ class ReviewsJoiner:
 
         if self.unacked_msg_count == 0:
             return
-        
+
         if (
             self.unacked_msg_count > self.unacked_msg_limit
             or time_since_last_commit > self.unacked_time_limit_in_seconds
         ):
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            logging.info(
+                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
+            )
             self._state.save_to_disk()
             self.time_of_last_commit = now
-            
+
             for delivery_id in self.unacked_msgs:
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
             self.unacked_msgs.clear()
+
     # endregion
 
     # region: Command methods
@@ -298,7 +316,7 @@ class ReviewsJoiner:
 
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
-        sender = msg.get("sender")
+        sender = f"{msg.get('sender')}@{msg.queue_name}"
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:

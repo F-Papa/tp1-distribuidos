@@ -28,6 +28,7 @@ class SentimentAnalyzer:
         self.input_queue_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue = output_queue
         self._messaging = messaging
 
@@ -113,7 +114,7 @@ class SentimentAnalyzer:
         # Send Analyzed Reviews
         if filtered_books := self._analyze_reviews(msg.get("data")):
             transaction_id = self._state.next_outbound_transaction_id(
-                self.output_queue()
+                self._proxy_queue
             )
 
             msg_content = {
@@ -121,14 +122,15 @@ class SentimentAnalyzer:
                 "conn_id": conn_id,
                 "queries": queries,
                 "data": filtered_books,
+                "forward_to": [self.output_queue()],
             }
-            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
-            self._state.outbound_transaction_committed(self.output_queue())
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
         # Send End of File
         if msg.get("EOF"):
             transaction_id = self._state.next_outbound_transaction_id(
-                self.output_queue()
+                self._proxy_queue
             )
 
             msg_content = {
@@ -139,8 +141,8 @@ class SentimentAnalyzer:
                 "queries": [5],
             }
 
-            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
-            self._state.outbound_transaction_committed(self.output_queue())
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
         self._state.inbound_transaction_committed(sender)
         self._state.save_to_disk()

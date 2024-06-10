@@ -29,6 +29,7 @@ class TitleFilter:
         self.input_queue_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self.title_keyword = title_keyword
         self._output_queue = output_queue
         self._messaging = messaging
@@ -102,14 +103,12 @@ class TitleFilter:
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
-
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         return transaction_id == expected_transaction_id
-
 
     def _callback_title_filter(self, _: Goutong, msg: Message):
         sender = msg.get("sender")
@@ -123,24 +122,21 @@ class TitleFilter:
         # Send filtered data
         if filtered_books := self._filter_data(msg.get("data")):
             filtered_books = [self._columns_for_query1(b) for b in filtered_books]
-            transaction_id = self._state.next_outbound_transaction_id(
-                self.output_queue()
-            )
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
 
             msg_content = {
                 "transaction_id": transaction_id,
                 "conn_id": conn_id,
                 "queries": queries,
                 "data": filtered_books,
+                "forward_to": [self.output_queue()],
             }
-            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
-            self._state.outbound_transaction_committed(self.output_queue())
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
         # Send End of File
         if msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(
-                self.output_queue()
-            )
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
 
             msg_content = {
                 "transaction_id": transaction_id,
@@ -150,8 +146,8 @@ class TitleFilter:
                 "queries": [1],
             }
 
-            self._messaging.send_to_queue(self.output_queue(), Message(msg_content))
-            self._state.outbound_transaction_committed(self.output_queue())
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
 
         self._state.inbound_transaction_committed(sender)
         self._state.save_to_disk()

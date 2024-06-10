@@ -13,7 +13,7 @@ Q1_3_4_QUEUE = "date_filter_queue"
 Q2_QUEUE = "decade_counter_queue"
 Q5_QUEUE = "category_filter_queue"
 
-REVIEWS_QUEUE_PREFIX = "review_joiner_1_reviews_"
+REVIEWS_QUEUE_PREFIX = "review_joiner_reviews"
 RESULTS_QUEUE_PREFIX = "results_"
 
 BATCH_SIZE_LEN = 8
@@ -160,7 +160,7 @@ class ClientConnection:
         self.next_transaction_ids[Q5_QUEUE] += 1
 
     def __dispatch_reviews(self):
-        output_queue_name = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
+        output_queue_name = REVIEWS_QUEUE_PREFIX
         eof_reached = False
         items_received = []
 
@@ -200,7 +200,7 @@ class ClientConnection:
         self.__send_batch_reviews(items_received, True)
 
     def __send_batch_reviews(self, batch: list, eof_reached: bool):
-        queue_name = REVIEWS_QUEUE_PREFIX + str(self.conn_id)
+        queue_name = REVIEWS_QUEUE_PREFIX
         body = {
             "transaction_id": self.next_transaction_ids[queue_name],
             "conn_id": self.conn_id,

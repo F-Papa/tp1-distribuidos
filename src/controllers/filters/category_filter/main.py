@@ -17,7 +17,7 @@ CATEGORY_Q1 = "Computers"
 CATEGORY_Q5 = "Fiction"
 
 OUTPUT_Q1_PREFIX = "results_"
-OUTPUT_Q5_PREFIX = "review_joiner_1_books"
+OUTPUT_Q5_PREFIX = "review_joiner_books"
 
 
 class CategoryFilter:
@@ -39,6 +39,7 @@ class CategoryFilter:
         self._config = filter_config
         self._input_queue = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
         self._category_q1 = category_q1
+        self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue_q1_prefix = output_queue_q1_prefix
         self._category_q5 = category_q5
         self._output_queue_q5_prefix = output_queue_q5_prefix
@@ -147,11 +148,12 @@ class CategoryFilter:
         filtered_books = self._filter_by_category(msg.get("data"), self._category_q5)
         filtered_books = [self._columns_for_query5(b) for b in filtered_books]
         
-        transaction_id = self._state.next_outbound_transaction_id(output_queue_q5)
+        transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg_content = {
             "transaction_id": transaction_id,
             "conn_id": conn_id,
-            "queries": [5]
+            "queries": [5],
+            "forward_to": [output_queue_q5]
         }
 
         if filtered_books:
@@ -160,8 +162,8 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
-        self._messaging.send_to_queue(output_queue_q5, Message(msg_content))
-        self._state.outbound_transaction_committed(output_queue_q5)
+        self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+        self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
         self._messaging.ack_delivery(msg.delivery_id)      
 
@@ -170,14 +172,16 @@ class CategoryFilter:
         conn_id = msg.get("conn_id")
         output_queue_q1 = self.output_queue_q1(conn_id)
 
+
         filtered_books_q1 = self._filter_by_category(msg.get("data"), self._category_q1)
         filtered_books_q1 = [self._columns_for_query1(b) for b in filtered_books_q1]
         
-        transaction_id = self._state.next_outbound_transaction_id(output_queue_q1)
+        transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg_content = {
             "transaction_id": transaction_id,
             "conn_id": conn_id,
             "queries": [1],
+            "forward_to": [output_queue_q1]
         }
         if filtered_books_q1:
             msg_content["data"] = filtered_books_q1
@@ -185,8 +189,8 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
-        self._messaging.send_to_queue(output_queue_q1, Message(msg_content))
-        self._state.outbound_transaction_committed(output_queue_q1)
+        self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+        self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
         self._messaging.ack_delivery(msg.delivery_id)
 
