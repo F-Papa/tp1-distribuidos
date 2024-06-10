@@ -97,6 +97,9 @@ class ReviewCounter:
         now = time.time()
         time_since_last_commit = now - self.time_of_last_commit
 
+        if self.unacked_msg_count == 0:
+            return
+
         if (
             self.unacked_msg_count > self.unacked_msg_limit
             or time_since_last_commit > self.unacked_time_limit_in_seconds
