@@ -66,7 +66,7 @@ class Client:
         eof_count = 0
         num_of_results = {i+1: 0 for i in range(NUM_OF_QUERIES)}
 
-        while True:# eof_count < NUM_OF_QUERIES:
+        while eof_count < NUM_OF_QUERIES:
             response = b""
             while len(response) < BATCH_SIZE_LEN:
                 response += self._sock.recv(BATCH_SIZE_LEN)
