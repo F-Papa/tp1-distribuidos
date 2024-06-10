@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import os
+import time
 from typing import Union
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
@@ -33,7 +34,13 @@ class DecadeCounter:
         self._messaging = messaging
         self._input_queue = f"{INPUT_QUEUE}"
         self._output_queues = output_queues
-        
+
+        self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
+        self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
+        self.unacked_msgs = []
+        self.unacked_msg_count = 0
+        self.time_of_last_commit = time.time()
+
         self._state = state
         self._denormalize_state()
 
@@ -181,8 +188,29 @@ class DecadeCounter:
             logging.debug(f"Authors and Decs: {saved_counts[conn_id_str]}")
 
         self._state.inbound_transaction_committed(sender)
-        self._save_state()
-        self._messaging.ack_delivery(msg.delivery_id)
+        
+        self.unacked_msg_count
+        self.unacked_msgs.append(msg.delivery_id)
+
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+
+        if (
+            self.unacked_msg_count > self.unacked_msg_limit
+            or time_since_last_commit > self.unacked_time_limit_in_seconds
+        ):
+            
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            self._normalize_state()
+            self._state.save_to_disk()
+            self._denormalize_state()
+            self.time_of_last_commit = now
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
 
     def start(self):
         logging.info("Starting Decade Counter")
@@ -218,6 +246,8 @@ def main():
     required = {
         "LOGGING_LEVEL": str,
         "FILTER_NUMBER": int,
+        "UNACKED_MSG_LIMIT": int,
+        "UNACKED_TIME_LIMIT_IN_SECONDS": int,
     }
 
     filter_config = Configuration.from_file(required, "config.ini")

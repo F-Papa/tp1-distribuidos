@@ -50,7 +50,11 @@ class ReviewsJoiner:
         self._reviews_queue_prefix = (
             f"{self.CONTROLLER_NAME}_{self._filter_number}_reviews_"
         )
-
+        self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
+        self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
+        self.unacked_msgs = []
+        self.unacked_msg_count = 0
+        self.time_of_last_commit = time.time()
         # self._output_queue_q5 = output_queue_q5
         # self._output_queue_q3_4 = output_queue_q3_4
 
@@ -175,8 +179,26 @@ class ReviewsJoiner:
 
         self._state.set("saved_books", saved_books)
         self._state.inbound_transaction_committed(sender)
-        self._state.save_to_disk()
-        self._messaging.ack_delivery(msg.delivery_id)
+
+        self.unacked_msg_count
+        self.unacked_msgs.append(msg.delivery_id)
+
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+
+        if (
+            self.unacked_msg_count > self.unacked_msg_limit
+            or time_since_last_commit > self.unacked_time_limit_in_seconds
+        ):
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            self._state.save_to_disk()
+            self.time_of_last_commit = now
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
 
     def _callback_reviews_aux(self, msg: Message, queries_str: str):
         conn_id = msg.get("conn_id")
@@ -240,10 +262,26 @@ class ReviewsJoiner:
             self._state.get("saved_books").pop(conn_id_str)
 
         self._state.inbound_transaction_committed(sender)
-        self._state.save_to_disk()
+        
+        self.unacked_msg_count
+        self.unacked_msgs.append(msg.delivery_id)
 
-        self._messaging.ack_delivery(msg.delivery_id)
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
 
+        if (
+            self.unacked_msg_count > self.unacked_msg_limit
+            or time_since_last_commit > self.unacked_time_limit_in_seconds
+        ):
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            self._state.save_to_disk()
+            self.time_of_last_commit = now
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
     # endregion
 
     # region: Command methods
@@ -324,6 +362,8 @@ def main():
         "MESSAGING_HOST": str,
         "MESSAGING_PORT": int,
         "FILTER_NUMBER": int,
+        "UNACKED_MSG_LIMIT": int,
+        "UNACKED_TIME_LIMIT_IN_SECONDS": int,
     }
 
     config = Configuration.from_file(required, "config.ini")

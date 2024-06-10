@@ -1,3 +1,4 @@
+import time
 from typing import Any, Union
 from src.controller_state.controller_state import ControllerState
 from src.messaging.goutong import Goutong
@@ -30,6 +31,12 @@ class ReviewCounter:
         self._output_queues = output_queues
         self._shutting_down = False
         self._input_queue = f"{self.CONTROLLER_NAME}{self._filter_number}"
+
+        self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
+        self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
+        self.unacked_msgs = []
+        self.unacked_msg_count = 0
+        self.time_of_last_commit = time.time()
 
     @classmethod
     def default_state(
@@ -83,8 +90,26 @@ class ReviewCounter:
 
         self._state.set("saved_reviews", saved_reviews)
         self._state.inbound_transaction_committed(msg.get("sender"))
-        self._state.save_to_disk()
-        self._messaging.ack_delivery(msg.delivery_id)
+        
+        self.unacked_msg_count
+        self.unacked_msgs.append(msg.delivery_id)
+
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+
+        if (
+            self.unacked_msg_count > self.unacked_msg_limit
+            or time_since_last_commit > self.unacked_time_limit_in_seconds
+        ):
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            self._state.save_to_disk()
+            self.time_of_last_commit = now
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
     # endregion
 
     # region: Query methods
@@ -135,12 +160,10 @@ class ReviewCounter:
         q3_results = []
         q4_candidates = []
 
-        logging.info(f"Threshold: {self.threshold}, N Best: {self.n_best}")
         for title, review in saved_reviews[conn_id_str].items():
             sum = review["sum"]
             count = review["count"]
             authors = review["authors"]
-            logging.info(f"Title: {title[:25]}, Sum: {sum}, Count: {count}")
 
             if count >= self.threshold:
                 q3_results.append({"title": title, "authors": authors})
@@ -224,6 +247,8 @@ def main():
         "REVIEW_THRESHOLD": int,
         "N_BEST": int,
         "FILTER_NUMBER": int,
+        "UNACKED_MSG_LIMIT": int,
+        "UNACKED_TIME_LIMIT_IN_SECONDS": int,
     }
 
 
