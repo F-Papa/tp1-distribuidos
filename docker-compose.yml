@@ -150,6 +150,22 @@ services:
       - ./src/controllers/filters/category_filter/main.py:/main.py
       - ./state/category_filter1/:/state
 
+  review_counter_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/proxy/Dockerfile
+    container_name: review_counter_proxy
+    image: proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_TYPE=review_counter
+      - FILTER_COUNT=1
+      - LOGGING_LEVEL=INFO
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/proxy/main.py:/main.py
+
   decade_counter1:
     build:
       context: ./
@@ -165,6 +181,7 @@ services:
       - ./src/controllers/filters/decade_counter/config.ini:/config.ini
       - ./src/controllers/filters/decade_counter/main.py:/main.py
       - ./state/decade_counter1/:/state
+      
   sentiment_analyzer_proxy:
     build:
       context: ./
@@ -198,34 +215,37 @@ services:
       - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
       - ./state/sentiment_analyzer1/:/state
 
-  reviews_joiner1:
+  review_joiner1:
     build:
       context: ./
-      dockerfile: ./src/controllers/reviews_joiner/Dockerfile
-    container_name: reviews_joiner1
-    image: reviews_joiner:latest
-    entrypoint: python3 reviews_joiner.py
+      dockerfile: ./src/controllers/review_joiner/Dockerfile
+    container_name: review_joiner1
+    image: review_joiner:latest
+    entrypoint: python3 review_joiner.py
     environment:
       - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
-      - ./src/controllers/reviews_joiner/config.ini:/config.ini
-      - ./src/controllers/reviews_joiner/reviews_joiner.py:/reviews_joiner.py
-      - ./state/reviews_joiner1/:/state
+      - ./src/controllers/review_joiner/config.ini:/config.ini
+      - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
+      - ./state/review_joiner1/:/state
 
-  review_counter:
+  review_counter1:
     build:
       context: ./
       dockerfile: ./src/controllers/filters/review_counter/Dockerfile
-    container_name: review_counter
+    container_name: review_counter1
     image: review_counter:latest
-    entrypoint: python3 main.py
+    entrypoint: python3 review_counter.py
+    environment:
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
       - ./src/controllers/filters/review_counter/config.ini:/config.ini
-      - ./src/controllers/filters/review_counter/main.py:/main.py
+      - ./src/controllers/filters/review_counter/review_counter.py:/review_counter.py
+      - ./state/review_counter1/:/state
 
   sentiment_average_reducer:
     build:

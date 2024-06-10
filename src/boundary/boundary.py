@@ -13,7 +13,7 @@ Q1_3_4_QUEUE = "date_filter_queue"
 Q2_QUEUE = "decade_counter_queue"
 Q5_QUEUE = "category_filter_queue"
 
-REVIEWS_QUEUE_PREFIX = "reviews_joiner_1_reviews_"
+REVIEWS_QUEUE_PREFIX = "review_joiner_1_reviews_"
 RESULTS_QUEUE_PREFIX = "results_"
 
 BATCH_SIZE_LEN = 8
@@ -180,6 +180,9 @@ class ClientConnection:
 
             decoded = received.decode()
             received_data: dict = json.loads(decoded)
+
+            for item in received_data["data"]:
+                item["review/score"] = float(item["review/score"])
 
             items_received.extend(received_data["data"])
 
