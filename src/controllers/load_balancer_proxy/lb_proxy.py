@@ -29,18 +29,13 @@ class LoadBalancerProxy:
 
         self._input_queues_lb = config.get("INPUT_QUEUES").split()
         self._input_queue_proxy = config.get("FILTER_TYPE") + "_proxy"
-        self.broadcast_group_name = config.get("FILTER_TYPE") + "_broadcast"
+
+        self._key_to_hash = config.get("KEY_TO_HASH")
 
         self._filter_queues = []
         for i in range(1, config.get("FILTER_COUNT") + 1):
             queue_name = config.get("FILTER_TYPE") + str(i)
             self._filter_queues.append(queue_name)
-
-        # Add queues and broadcast group
-        if not self.shutting_down:
-            self._messaging.add_broadcast_group(
-                self.broadcast_group_name, self._filter_queues
-            )
 
     def start(self):
         try:
@@ -205,11 +200,26 @@ class LoadBalancerProxy:
         
         batches = defaultdict(list)
 
-        for element in data:
-            key_to_hash = "title" if "title" in element else element.keys()[0]
-            hashed_idx = hash(element[key_to_hash]) % len(self._filter_queues)
+        if self._key_to_hash != "conn_id":
+            for element in data:
+                value_to_hash = element[self._key_to_hash]
+                if isinstance(value_to_hash, list):
+                    for value in value_to_hash:
+                        if not value:
+                            continue
+                        element_copy = element.copy()
+                        element_copy[self._key_to_hash] = [value]
+                        hashed = hash(value) % len(self._filter_queues)
+                        queue = self._filter_queues[hashed]
+                        batches[queue].append(element_copy)
+                else:
+                    hashed_idx = hash(element[self._key_to_hash]) % len(self._filter_queues)
+                    queue = self._filter_queues[hashed_idx]
+                    batches[queue].append(element)
+        else:
+            hashed_idx = hash(conn_id) % len(self._filter_queues)
             queue = self._filter_queues[hashed_idx]
-            batches[queue].append(element)
+            batches[queue] = data
 
         for queue, batch in batches.items():
             transaction_id = self._state.next_outbound_transaction_id(queue)
@@ -221,6 +231,7 @@ class LoadBalancerProxy:
             }
 
             self._messaging.send_to_queue(queue, Message(msg_body))
+            logging.debug(f"MANDE a {queue}")
             self._state.outbound_transaction_committed(queue)
 
     def shutdown(self, messaging: Goutong):
@@ -250,6 +261,7 @@ def main():
         "LOGGING_LEVEL": str,
         "FILTER_TYPE": str,
         "INPUT_QUEUES": str,
+        "KEY_TO_HASH": str,
     }
     barrier_config = Configuration.from_env(required, "config.ini")
     barrier_config.validate()

@@ -29,6 +29,7 @@ services:
       - FILTER_COUNT=2
       - INPUT_QUEUES=title_filter_queue
       - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
     networks:
       - tp1_testing_net
     volumes:
@@ -80,6 +81,7 @@ services:
       - FILTER_TYPE=date_filter
       - FILTER_COUNT=2
       - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
     networks:
       - tp1_testing_net
     volumes:
@@ -131,6 +133,7 @@ services:
       - FILTER_TYPE=category_filter
       - FILTER_COUNT=1
       - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
     networks:
       - tp1_testing_net
     volumes:
@@ -165,6 +168,7 @@ services:
       - FILTER_TYPE=review_counter
       - FILTER_COUNT=1
       - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=conn_id
     networks:
       - tp1_testing_net
     volumes:
@@ -186,6 +190,56 @@ services:
       - ./src/controllers/filters/decade_counter/main.py:/main.py
       - ./state/decade_counter1/:/state
 
+  decade_counter2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter2
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
+      - ./state/decade_counter2/:/state
+
+  decade_counter3:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter3
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=3
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
+      - ./state/decade_counter3/:/state
+
+  decade_counter_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: decade_counter_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=decade_counter_queue
+      - FILTER_TYPE=decade_counter
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=authors
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+
   sentiment_analyzer_lb_proxy:
     build:
       context: ./
@@ -198,6 +252,7 @@ services:
       - FILTER_TYPE=sentiment_analyzer
       - FILTER_COUNT=6
       - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
     networks:
       - tp1_testing_net
     volumes:

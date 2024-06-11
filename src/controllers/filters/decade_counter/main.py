@@ -15,7 +15,7 @@ import random
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
-INPUT_QUEUE = "decade_counter_queue"
+INPUT_QUEUE_PREFIX = "decade_counter"
 FILTER_TYPE = "decade_counter"
 
 OUTPUT_QUEUE_PREFIX = "results_"
@@ -32,7 +32,8 @@ class DecadeCounter:
         self._filter_number = config.get("FILTER_NUMBER")
         self._shutting_down = False
         self._messaging = messaging
-        self._input_queue = f"{INPUT_QUEUE}"
+        self._input_queue = f"{INPUT_QUEUE_PREFIX}{self._filter_number}"
+        self._proxy_queue = f"{INPUT_QUEUE_PREFIX}_proxy"
         self._output_queues = output_queues
 
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
@@ -141,18 +142,20 @@ class DecadeCounter:
 
     def _send_results(self, conn_id: str):
         ten_decade_authors = self._get_10_decade_authors(conn_id)
-        msg = Message({"conn_id": conn_id, "queries": [2], "data": ten_decade_authors})
-        
         output_queue = OUTPUT_QUEUE_PREFIX + conn_id
-        self._messaging.send_to_queue(output_queue, msg)
-        self._state.outbound_transaction_committed(output_queue)
-        logging.debug(f"Sent Data to: {output_queue}")
+        transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
+        msg = Message({"conn_id": conn_id, "queries": [2], "data": ten_decade_authors, "forward_to": [output_queue], "transaction_id": transaction_id})
+        self._messaging.send_to_queue(self._proxy_queue, msg)
+        self._state.outbound_transaction_committed(self._proxy_queue)
+        logging.debug(f"Sent Data to: {self._proxy_queue}")
 
     def _send_eof(self, conn_id: str):
-        msg = Message({"conn_id": conn_id, "EOF": True, "queries": [2]})
         output_queue = OUTPUT_QUEUE_PREFIX + conn_id
-        self._messaging.send_to_queue(output_queue, msg)
-        logging.debug(f"Sent EOF to: {output_queue}")
+        transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
+        msg = Message({"conn_id": conn_id, "EOF": True, "queries": [2], "forward_to": [output_queue], "transaction_id": transaction_id})
+        self._messaging.send_to_queue(self._proxy_queue, msg)
+        self._state.outbound_transaction_committed(self._proxy_queue)
+        logging.debug(f"Sent EOF to: {self._proxy_queue}")
 
     def _callback_filter(self, _: Goutong, msg: Message):
         # Validate transaction_id
@@ -276,7 +279,7 @@ def main():
 
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
 
-    messaging = Goutong(sender_id=FILTER_TYPE)
+    messaging = Goutong(sender_id=controller_id)
     decade_counter = DecadeCounter(filter_config, state, messaging, output_queues)
     decade_counter.start()
 
