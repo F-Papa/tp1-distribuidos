@@ -30,6 +30,7 @@ services:
       - INPUT_QUEUES=title_filter_queue
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=title
+      - IS_PROXY=1
     networks:
       - tp1_testing_net
     volumes:
@@ -82,6 +83,7 @@ services:
       - FILTER_COUNT=2
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=title
+      - IS_PROXY=1
     networks:
       - tp1_testing_net
     volumes:
@@ -134,6 +136,7 @@ services:
       - FILTER_COUNT=1
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=title
+      - IS_PROXY=1
     networks:
       - tp1_testing_net
     volumes:
@@ -169,6 +172,7 @@ services:
       - FILTER_COUNT=1
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=conn_id
+      - IS_PROXY=0
     networks:
       - tp1_testing_net
     volumes:
@@ -235,6 +239,7 @@ services:
       - FILTER_COUNT=3
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=authors
+      - IS_PROXY=1
     networks:
       - tp1_testing_net
     volumes:
@@ -253,6 +258,7 @@ services:
       - FILTER_COUNT=6
       - LOGGING_LEVEL=INFO
       - KEY_TO_HASH=title
+      - IS_PROXY=1
     networks:
       - tp1_testing_net
     volumes:
@@ -439,18 +445,56 @@ services:
       - ./src/controllers/filters/review_counter/review_counter.py:/review_counter.py
       - ./state/review_counter1/:/state
 
-  sentiment_average_reducer:
+  sentiment_average_reducer1:
     build:
       context: ./
       dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
-    container_name: sentiment_average_reducer
+    container_name: sentiment_average_reducer1
     image: sentiment_average_reducer:latest
     entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=1
     networks:
       - tp1_testing_net
     volumes:
       - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
       - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
+      - ./state/review_averager1/:/state
+
+  sentiment_average_reducer2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
+    container_name: sentiment_average_reducer2
+    image: sentiment_average_reducer:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
+      - ./state/review_averager2/:/state
+
+  sentiment_averager_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: sentiment_averager_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=sentiment_averager_queue
+      - FILTER_TYPE=sentiment_averager
+      - FILTER_COUNT=2
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=conn_id
+      - IS_PROXY=0
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
 
 networks:
   tp1_testing_net:

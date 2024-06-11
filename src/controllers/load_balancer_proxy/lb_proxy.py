@@ -27,6 +27,8 @@ class LoadBalancerProxy:
         # Graceful Shutdown Handling
         self.shutting_down = False
 
+        self._is_proxy = config.get("IS_PROXY")
+
         self._input_queues_lb = config.get("INPUT_QUEUES").split()
         self._input_queue_proxy = config.get("FILTER_TYPE") + "_proxy"
 
@@ -46,9 +48,10 @@ class LoadBalancerProxy:
                         queue, self._msg_from_other_cluster, auto_ack=False
                     )
                 
-                self._messaging.set_callback(
-                    self._input_queue_proxy, self._msg_from_controllers, auto_ack=False
-                )
+                if self._is_proxy:
+                    self._messaging.set_callback(
+                        self._input_queue_proxy, self._msg_from_controllers, auto_ack=False
+                    )
 
                 self._messaging.listen()
 
@@ -181,17 +184,28 @@ class LoadBalancerProxy:
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _forward_end_of_file(self, conn_id: int, queries: list[int]):
-        for queue in self._filter_queues:
+        if self._key_to_hash != "conn_id":
+            for queue in self._filter_queues:
+                transaction_id = self._state.next_outbound_transaction_id(queue)
+                msg_body = {
+                    "transaction_id": transaction_id,
+                    "conn_id": conn_id,
+                    "queries": queries,
+                    "EOF": True,
+                }
+                self._messaging.send_to_queue(queue, Message(msg_body))
+                self._state.outbound_transaction_committed(queue)
+        else:
+            hashed_idx = hash(conn_id) % len(self._filter_queues)
+            queue = self._filter_queues[hashed_idx]
             transaction_id = self._state.next_outbound_transaction_id(queue)
             msg_body = {
-                "transaction_id": transaction_id,
-                "conn_id": conn_id,
-                "queries": queries,
-                "EOF": True,
-            }
+                    "transaction_id": transaction_id,
+                    "conn_id": conn_id,
+                    "queries": queries,
+                    "EOF": True,
+                }
             self._messaging.send_to_queue(queue, Message(msg_body))
-
-        for queue in self._filter_queues:
             self._state.outbound_transaction_committed(queue)
 
     def _dispatch_data(
@@ -231,7 +245,6 @@ class LoadBalancerProxy:
             }
 
             self._messaging.send_to_queue(queue, Message(msg_body))
-            logging.debug(f"MANDE a {queue}")
             self._state.outbound_transaction_committed(queue)
 
     def shutdown(self, messaging: Goutong):
@@ -262,11 +275,12 @@ def main():
         "FILTER_TYPE": str,
         "INPUT_QUEUES": str,
         "KEY_TO_HASH": str,
+        "IS_PROXY": bool,
     }
-    barrier_config = Configuration.from_env(required, "config.ini")
-    barrier_config.validate()
+    config = Configuration.from_env(required, "config.ini")
+    config.validate()
 
-    controller_id = f"{barrier_config.get('FILTER_TYPE')}_lb_proxy"
+    controller_id = f"{config.get('FILTER_TYPE')}_lb_proxy"
 
     state = LoadBalancerProxy.default_state(
         controller_id=controller_id,
@@ -278,11 +292,11 @@ def main():
         logging.info("Loading state from file...")
         state.update_from_file()
 
-    config_logging(barrier_config.get("LOGGING_LEVEL"))
-    logging.info(barrier_config)
+    config_logging(config.get("LOGGING_LEVEL"))
+    logging.info(config)
 
     messaging = Goutong(sender_id=controller_id)
-    load_balancer = LoadBalancerProxy(barrier_config, messaging, state)
+    load_balancer = LoadBalancerProxy(config, messaging, state)
     load_balancer.start()
 
 

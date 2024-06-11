@@ -12,7 +12,7 @@ class Configuration:
 
     def get(self, key) -> Any:
         value = self.properties.get(key)
-        if not value:
+        if value is None:
             raise ValueError(f"Invalid property: {key}")
         return value
 

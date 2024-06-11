@@ -1,133 +1,212 @@
-from typing import Any
+import time
+from typing import Any, Union
+from src.controller_state.controller_state import ControllerState
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
 import signal
+import json
+import os
 
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
-from collections import defaultdict, Counter
 
+class SentimentAverager:
 
-shutting_down = False
+    CONTROLLER_NAME = "sentiment_averager"
 
-
-class SentimentReducer:
-
-    INPUT_QUEUE = "sentiment_average_queue"
-    FILTER_TYPE = "sentiment_average_reducer"
-    CONTROL_GROUP = "CONTROL"
-
-    OUTPUT_QUEUE_PREFIX = "results_"
-
-    def __init__(self, items_per_batch: int):
-        self.shutting_down = False
-        self.items_per_batch = items_per_batch
-        self.averages_per_title = defaultdict(lambda: {"average": 0, "count": 0})
-        self.output_batch = []
-        self.output_batch_size = 0
-
-        self._init_messaging()
-
-    def update_average(self, title, average):
-        self.averages_per_title[title]["average"] = average
-
-    def calculate_new_average(self, title, sentiment):
-        old_count = self.averages_per_title[title]["count"]
-        old_total = self.averages_per_title[title]["average"] * old_count
-        new_count = old_count + 1
-        new_total = old_total + sentiment
-        new_average = new_total / new_count
-
-        self.averages_per_title[title]["count"] = new_count
-        if new_average > 1.0:
-            logging.debug(
-                f"sentiment: {sentiment} old_count: {old_count} old_average {self.averages_per_title[title]['average']} old_total {old_total} new_total {new_total} new_average {new_average}"
-            )
-        return new_average
-
-    def _init_messaging(self):
-        self.messaging = Goutong(sender_id=self.FILTER_TYPE)
-
-        # Set up the queues
-        self.messaging.set_callback(
-            self.INPUT_QUEUE, self.callback_filter, auto_ack=True
-        )
-
-    def listen(self):
-        try:
-            self.messaging.listen()
-        except ShuttingDown:
-            logging.debug("Stopped Listening")
-
-    def shutdown(self):
-        logging.info("Initiating Graceful Shutdown")
-        self.shutting_down = True
-        # msg = Message({"ShutDown": True})
-        # self.messaging.broadcast_to_group(self.CONTROL_GROUP, msg)
-        self.messaging.close()
-        raise ShuttingDown
-
-    def callback_control(self, messaging: Goutong, msg: Message):
-        if msg.has_key("ShutDown"):
-            self.shutting_down = True
-            raise ShuttingDown
-
-    def _send_EOF(self, conn_id: int):
-        msg = Message({"conn_id": conn_id, "EOF": True, "queries": [5]})
-        output_queue = self.OUTPUT_QUEUE_PREFIX + str(conn_id)
-        self.messaging.send_to_queue(output_queue, msg)
-        logging.debug(f"Sent EOF to: {output_queue}")
-
-    def _reset_state(self):
-        self.averages_per_title = defaultdict(lambda: {"average": 0, "count": 0})
-        self.output_batch = []
-        self.output_batch_size = 0
-
-    def send_top_90_quantile_sentiment_titles(self, conn_id: int):
-        sorted_titles_and_averages = sorted(
-            self.averages_per_title.items(), key=lambda x: x[1]["average"], reverse=True
-        )
-        total_titles = len(sorted_titles_and_averages)
-        top_ninety_quantile_count = total_titles // 10
-        titles_in_ninety_quantile = sorted_titles_and_averages[
-            :top_ninety_quantile_count
-        ]
-
-        logging.debug(f"DE {total_titles} DEVOLVI {top_ninety_quantile_count}")
-
-        data = list(map(lambda x: {"title": x[0]}, titles_in_ninety_quantile))
-        msg = Message({"conn_id": conn_id, "queries": [5], "data": data})
-        output_queue = self.OUTPUT_QUEUE_PREFIX + str(conn_id)
-        self.messaging.send_to_queue(output_queue, msg)
-        logging.debug(f"MANDE {msg.marshal()}")
-
-    def callback_filter(
+    def __init__(
         self,
+        config: Configuration,
         messaging: Goutong,
-        msg: Message,
+        state: ControllerState,
+        output_queues: dict,
     ):
-        conn_id = msg.get("conn_id")
+        self._filter_number = config.get("FILTER_NUMBER")
+        self.quantile = config.get("QUANTILE")
+        self._messaging = messaging
+        self._state = state
+        self._output_queues = output_queues
+        self._shutting_down = False
+        self._input_queue = f"{self.CONTROLLER_NAME}{self._filter_number}"
 
-        if msg.has_key("EOF"):
-            self.send_top_90_quantile_sentiment_titles(conn_id)
-            self._reset_state()
-            self._send_EOF(conn_id)
+        self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
+        self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
+        self.unacked_msgs = []
+        self.unacked_msg_count = 0
+        self.time_of_last_commit = time.time()
+
+    @classmethod
+    def default_state(
+        cls, controller_id: str, file_path: str, temp_file_path: str
+    ) -> ControllerState:
+        extra_fields = {
+            "saved_reviews": {},
+        }
+
+        return ControllerState(
+            controller_id=controller_id,
+            file_path=file_path,
+            temp_file_path=temp_file_path,
+            extra_fields=extra_fields,
+        )
+    
+
+    # region: callback methods
+    def reviews_callback(self, _: Goutong, msg: Message):
+        if not self._is_transaction_id_valid(msg):
+            self._handle_invalid_transaction_id(msg)
             return
 
+        conn_id = msg.get("conn_id")
+        conn_id_str = str(conn_id)
+
+        saved_reviews = self._state.get("saved_reviews")
         msg_reviews = msg.get("data")
-        for review in msg_reviews:
-            title = review["title"]
-            sentiment = review["sentiment"]
-            new_average = self.calculate_new_average(title, float(sentiment))
-            self.update_average(title, new_average)
+
+        # Initialize the review counts and saved reviews for this connection
+        if conn_id_str not in saved_reviews:
+            saved_reviews[conn_id_str] = {}
+
+        # Initialize the review counts for each title
+        if msg_reviews:
+            for review in msg_reviews:
+                if review["title"] not in saved_reviews[conn_id_str]:
+                    saved_reviews[conn_id_str][review["title"]] = {
+                        "sum": 0,
+                        "count": 0,
+                    }
+
+                saved_reviews[conn_id_str][review["title"]]["sum"] += review["sentiment"]
+                saved_reviews[conn_id_str][review["title"]]["count"] += 1
+        self._state.set("saved_reviews", saved_reviews)
+
+        if msg.get("EOF"):
+            self._send_results(conn_id)
+            del saved_reviews[conn_id_str]
+
+        self._state.set("saved_reviews", saved_reviews)
+        self._state.inbound_transaction_committed(msg.get("sender"))
+        
+        self.unacked_msg_count
+        self.unacked_msgs.append(msg.delivery_id)
+
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+
+        if self.unacked_msg_count == 0:
+            return
+
+        if (
+            self.unacked_msg_count > self.unacked_msg_limit
+            or time_since_last_commit > self.unacked_time_limit_in_seconds
+        ):
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            self._state.save_to_disk()
+            self.time_of_last_commit = now
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
+    # endregion
+
+    # region: Query methods
+    def input_queue(self) -> str:
+        return self._input_queue
+
+    def output_queue_name(self, queries: tuple, conn_id: int) -> str:
+        entry = self._output_queues.get(queries)
+        if entry is None:
+            raise ValueError(f"Output queue not found for queries {queries}")
+
+        if entry["is_prefix"]:
+            return entry["name"] + str(conn_id)
+        return entry["name"]
+
+    def _is_transaction_id_valid(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        return transaction_id == expected_transaction_id
+
+    # endregion
+
+    # region: Command methods
+    def start(self):
+        logging.info("Starting Review Counter")
+        try:
+            if not self._shutting_down:
+                self._messaging.set_callback(
+                    self.input_queue(), self.reviews_callback, auto_ack=False
+                )
+
+                self._messaging.listen()
+
+        except ShuttingDown:
+            pass
+        finally:
+            logging.info("Shutting Down.")
+            self._messaging.close()
 
 
-# Graceful Shutdown
-def sigterm_handler(counter: SentimentReducer):
-    logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-    counter.shutdown()
+    def _send_results(self, conn_id: int):
+        queries = (5,)
+        saved_reviews = self._state.get("saved_reviews")
+        conn_id_str = str(conn_id)
+
+        q5_candidates = []
+
+        for title, review in saved_reviews[conn_id_str].items():
+            sum = review["sum"]
+            count = review["count"]
+            q5_candidates.append({"title": title, "average": sum / count})
+
+        q5_candidates.sort(key=lambda x: x["average"], reverse=True)
+        top_quantile_count = int(len(q5_candidates) / (100 - self.quantile))
+        q5_results = list(map(lambda x: {x["title"]: x["average"]}, q5_candidates[:top_quantile_count]))
+
+        output_queue = self.output_queue_name(queries, conn_id)
+
+        q5_transaction_id = self._state.next_outbound_transaction_id(output_queue)
+        msg_q5_body = {
+            "queries": [5],
+            "conn_id": conn_id,
+            "transaction_id": q5_transaction_id,
+            "data": q5_results,
+            "EOF": True,
+        }
+
+        self._messaging.send_to_queue(output_queue, Message(msg_q5_body))
+        self._state.outbound_transaction_committed(output_queue)
+
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+
+    def _handle_invalid_transaction_id(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            self._messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            self._messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
+
+    # endregion
 
 
 def config_logging(level: str):
@@ -147,20 +226,42 @@ def config_logging(level: str):
 
 
 def main():
-    required = {"LOGGING_LEVEL": str, "ITEMS_PER_BATCH": int}
-    filter_config = Configuration.from_file(required, "config.ini")
-    filter_config.update_from_env()
-    filter_config.validate()
+    required = {
+        "LOGGING_LEVEL": str,
+        "MESSAGING_HOST": str,
+        "MESSAGING_PORT": int,
+        "QUANTILE": float,
+        "FILTER_NUMBER": int,
+        "UNACKED_MSG_LIMIT": int,
+        "UNACKED_TIME_LIMIT_IN_SECONDS": int,
+    }
 
-    config_logging(filter_config.get("LOGGING_LEVEL"))
-    logging.info(filter_config)
 
-    counter = SentimentReducer(items_per_batch=filter_config.get("ITEMS_PER_BATCH"))
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(counter))
-    counter.listen()
+    config = Configuration.from_file(required, "config.ini")
+    config.update_from_env()
+    config.validate()
 
-    logging.info("Shutting Down.")
+    config_logging(config.get("LOGGING_LEVEL"))
+    logging.info(config)
 
+    controller_id = f"{SentimentAverager.CONTROLLER_NAME}_{config.get('FILTER_NUMBER')}"
+    state_file_path = f"state/{controller_id}.json"
+    temp_file_path = f"state/{controller_id}.tmp"
+
+    state = SentimentAverager.default_state(
+        controller_id=SentimentAverager.CONTROLLER_NAME,
+        file_path=state_file_path,
+        temp_file_path=temp_file_path,
+    )
+
+    output_queues = {
+        (5,): {"name": "results_", "is_prefix": True},
+    }
+    messaging = Goutong(sender_id=controller_id)
+    counter = SentimentAverager(config, messaging, state, output_queues)
+
+    signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
+    counter.start()
 
 if __name__ == "__main__":
     main()

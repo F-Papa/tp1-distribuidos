@@ -68,9 +68,9 @@ class ClientConnection:
                 "transaction_id": msg.get("transaction_id"),
                 "conn_id": self.conn_id,
                 "EOF": msg.get("EOF"),
-                "data": str(msg.get("data"))[:50],
                 "queries": msg.get("queries"),
                 "sender": msg.get("sender"),
+                "data": str(msg.get("data"))[:20],
             }
             logging.info(f"EOF Received: {to_show}")
             # queries = msg.get("queries")

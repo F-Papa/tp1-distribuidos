@@ -9,7 +9,7 @@ from src.messaging.message import Message
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
-OUTPUT_QUEUE = "sentiment_average_queue"
+OUTPUT_QUEUE = "sentiment_averager_queue"
 
 
 class SentimentAnalyzer: 
