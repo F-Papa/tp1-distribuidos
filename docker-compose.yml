@@ -185,7 +185,7 @@ services:
       - ./src/controllers/filters/decade_counter/config.ini:/config.ini
       - ./src/controllers/filters/decade_counter/main.py:/main.py
       - ./state/decade_counter1/:/state
-      
+
   sentiment_analyzer_lb_proxy:
     build:
       context: ./
@@ -310,7 +310,7 @@ services:
       context: ./
       dockerfile: ./src/controllers/load_balancer_proxy_for_joiner/Dockerfile
     container_name: review_joiner_proxy
-    image: lb_proxy_for_joiner:latest
+    image: load_balancer_proxy_for_joiner:latest
     entrypoint: python3 main.py
     environment:
       - FILTER_COUNT=3
