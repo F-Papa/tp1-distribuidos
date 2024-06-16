@@ -4,7 +4,10 @@ It also works as a threading barrier, forwarding EOF messages to the next filter
 """
 
 from collections import defaultdict
+from enum import Enum
 import os
+import socket
+import threading
 from src.utils.config_loader import Configuration
 import logging
 import signal
@@ -14,8 +17,13 @@ from src.messaging.goutong import Goutong
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
+class ControlMessage(Enum):
+    HEALTHCHECK = 6
+    IM_ALIVE = 7
 
 class LoadBalancerProxy:
+    CONTROL_PORT = 12347
+    MSG_REDUNDANCY = 3
 
     def __init__(
         self, config: Configuration, messaging: Goutong, state: ControllerState
@@ -23,6 +31,8 @@ class LoadBalancerProxy:
         self.barrier_config = config
         self._messaging = messaging
         self._state = state
+
+        self.controller_name = config.get("FILTER_TYPE") + "_proxy"
 
         # Graceful Shutdown Handling
         self.shutting_down = False
@@ -39,7 +49,48 @@ class LoadBalancerProxy:
             queue_name = config.get("FILTER_TYPE") + str(i)
             self._filter_queues.append(queue_name)
 
+    # HEALTHCHECK HANDLING
+    def send_healthcheck_response(self, address, seq_num):
+        message = (
+            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        logging.info(f"Sending IM ALIVE to {address}")
+        logging.debug(f"IM ALIVE message: {message}")
+
+        for _ in range(self.MSG_REDUNDANCY):
+            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
+
+    def healthcheck_handler(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", self.CONTROL_PORT))
+        terminator_bytes = bytes("$", "utf-8")[0]
+
+        try:
+            while True:
+                data = b""
+                while len(data) == 0 or data[-1] != terminator_bytes:
+                    try:
+                        recieved, _ = sock.recvfrom(1024)
+                        data += recieved
+                    except socket.timeout:
+                        break
+
+                data = data.decode()
+                logging.debug(f"received healthcheck: {data}")
+                seq_num, controller_id, response_code = data[:-1].split(",")
+                response_code = int(response_code)
+                if response_code == ControlMessage.HEALTHCHECK.value:
+                    self.send_healthcheck_response(controller_id, seq_num)
+        except Exception as e:
+            logging.error(f"Exception at healthcheck_handler Thread: {e}")
+        finally:
+            sock.close()
+
     def start(self):
+        threading.Thread(target=self.healthcheck_handler, args=()).start()
+
         try:
             if not self.shutting_down:
                 # Set callbacks

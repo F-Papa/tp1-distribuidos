@@ -1,4 +1,7 @@
 from collections import defaultdict
+from enum import Enum
+import socket
+import threading
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
@@ -19,9 +22,14 @@ LOWER_Q3_4 = 1990
 OUTPUT_Q1 = "title_filter_queue"
 OUTPUT_Q3_4_PREFIX = "review_joiner_books"
 
+class ControlMessage(Enum):
+    HEALTHCHECK = 6
+    IM_ALIVE = 7
 
 class DateFilter:
     FILTER_TYPE = "date_filter"
+    CONTROL_PORT = 12347
+    MSG_REDUNDANCY = 3
 
     def __init__(
         self,
@@ -49,8 +57,51 @@ class DateFilter:
         self.lower_q1 = lower_q1
         self._output_q1 = output_q1
         self._output_q3_4_prefix = output_q3_4_prefix
+        self.controller_name = self.FILTER_TYPE + str(
+            filter_config.get("FILTER_NUMBER")
+        )
+
+    # HEALTHCHECK HANDLING
+    def send_healthcheck_response(self, address, seq_num):
+        message = (
+            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        logging.info(f"Sending IM ALIVE to {address}")
+        logging.debug(f"IM ALIVE message: {message}")
+
+        for _ in range(self.MSG_REDUNDANCY):
+            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
+
+    def healthcheck_handler(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", self.CONTROL_PORT))
+        terminator_bytes = bytes("$", "utf-8")[0]
+
+        try:
+            while True:
+                data = b""
+                while len(data) == 0 or data[-1] != terminator_bytes:
+                    try:
+                        recieved, _ = sock.recvfrom(1024)
+                        data += recieved
+                    except socket.timeout:
+                        break
+
+                data = data.decode()
+                logging.debug(f"received healthcheck: {data}")
+                seq_num, controller_id, response_code = data[:-1].split(",")
+                response_code = int(response_code)
+                if response_code == ControlMessage.HEALTHCHECK.value:
+                    self.send_healthcheck_response(controller_id, seq_num)
+        except Exception as e:
+            logging.error(f"Exception at healthcheck_handler Thread: {e}")
+        finally:
+            sock.close()
 
     def start(self):
+        threading.Thread(target=self.healthcheck_handler, args=()).start()
 
         # Main Flow
         try:

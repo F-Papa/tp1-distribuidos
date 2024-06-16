@@ -272,7 +272,10 @@ def main():
     logging.info(config)
 
     medic = Medic(
-        config=config, controllers_to_check={"title_filter1": "title_filter1"}  # "title_filter1": "title_filter1"},
+        config=config, controllers_to_check={"title_filter1": "title_filter1", "title_filter2": "title_filter2",
+                                             "title_filter_proxy": "title_filter_proxy", "date_filter1": "date_filter1",
+                                               "date_filter2": "date_filter2", "date_filter_proxy": "date_filter_proxy",
+                                               "category_filter_proxy": "category_filter_proxy", "category_filter1": "category_filter1"}
     )
     medic.start()
 
