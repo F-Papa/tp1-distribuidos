@@ -18,7 +18,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
-  
+
   medic2:
     build:
       context: ./
@@ -52,7 +52,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
-
 
   # boundary:
   #   build:
@@ -104,7 +103,6 @@ services:
       - ./src/controllers/filters/title_filter/config.ini:/config.ini
       - ./src/controllers/filters/title_filter/main.py:/main.py
       - ./state/title_filter1/:/state
-
   # title_filter2:
   #   build:
   #     context: ./
@@ -547,7 +545,7 @@ services:
   #     - tp1_testing_net
   #   volumes:
   #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-      
+
 
 networks:
   tp1_testing_net:
