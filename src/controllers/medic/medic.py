@@ -70,6 +70,7 @@ class Medic:
         self.healthcheck_sock.bind(("0.0.0.0", HEALTHCHECK_RESPONSE_PORT))
         self.healthcheck_syncer = threading.Condition()
         self.healthcheck_start = None
+        self.just_revived_controllers = set()
 
     def increase_seq_number(self):
         self.sequence_number += 1
@@ -114,23 +115,29 @@ class Medic:
         self.send_healthchecks()
         received_healthchecks = self.listen_healthcheck_responses()
 
-        logging.info(f"Received healthchecks:")
-        for k, v in received_healthchecks.items():
-            logging.info(f"{k}: {v}")
+        # logging.info(f"Received healthchecks:")
+        # for k, v in received_healthchecks.items():
+        #     logging.info(f"{k}: {v}")
         controllers_to_revive = []
         for controller_id in self.controllers_to_check:
+            # Skip if controller was just revived, give it some time
+            if controller_id in self.just_revived_controllers:
+                logging.info(f"Skipping {controller_id} as it was just revived")
+                continue
             if controller_id not in received_healthchecks:
                 controllers_to_revive.append(controller_id)
-        if len(controllers_to_revive) > 0:
-            logging.info(f"Controllers not responding: {controllers_to_revive}")
-        else:
-            logging.info("All controllers are healthy")
-        if len(controllers_to_revive) == 0:
-            return
+        self.just_revived_controllers.clear()
 
-        elif self._is_leader:
+        if len(controllers_to_revive) == 0:
+            logging.info("All controllers are healthy")
+            return
+        else:
+            logging.info(f"Controllers not responding: {controllers_to_revive}")
+
+        if self._is_leader:
             for controller_id in controllers_to_revive:
                 self.revive_controller(controller_id)
+                self.just_revived_controllers.add(controller_id)
         else:
             self.elect_leader()
             if self._is_leader:
@@ -292,6 +299,7 @@ class Medic:
         self.elect_leader()
         while not self._shutting_down:
             self.check_controllers()
+            time.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
 
         self.control_sock.close()
         control_handle.join()
