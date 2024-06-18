@@ -5,6 +5,7 @@ import sys
 
 MSG_REDUNDANCY = 3
 CONTROL_PORT = 12347
+RESPONSE_PORT = 12346
 
 
 def crash_maybe():
@@ -78,7 +79,7 @@ def healthcheck_handler(controller):
 def send_healthcheck_response(recv_address, recv_name, sender_id, seq_num):
     message = f"{seq_num},{sender_id},{ControlMessage.IM_ALIVE.value}$"
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
+    # logging.info(f"Sending healthcheck response to {recv_name} at {recv_address}")
     for _ in range(MSG_REDUNDANCY):
         crash_maybe()
-        sock.sendto(message.encode(), (recv_address, CONTROL_PORT))
+        sock.sendto(message.encode(), (recv_address, RESPONSE_PORT))
