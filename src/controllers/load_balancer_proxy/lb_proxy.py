@@ -8,6 +8,7 @@ from enum import Enum
 import os
 import socket
 import threading
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.utils.config_loader import Configuration
 import logging
 import signal
@@ -17,9 +18,19 @@ from src.messaging.goutong import Goutong
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
+
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
+
+
 class ControlMessage(Enum):
     HEALTHCHECK = 6
     IM_ALIVE = 7
+
 
 class LoadBalancerProxy:
     CONTROL_PORT = 12347
@@ -32,10 +43,10 @@ class LoadBalancerProxy:
         self._messaging = messaging
         self._state = state
 
-        self.controller_name = config.get("FILTER_TYPE") + "_proxy"
+        self._controller_id = config.get("FILTER_TYPE") + "_proxy"
 
         # Graceful Shutdown Handling
-        self.shutting_down = False
+        self._shutting_down = False
 
         self._is_proxy = config.get("IS_PROXY")
 
@@ -49,59 +60,31 @@ class LoadBalancerProxy:
             queue_name = config.get("FILTER_TYPE") + str(i)
             self._filter_queues.append(queue_name)
 
-    # HEALTHCHECK HANDLING
-    def send_healthcheck_response(self, address, seq_num):
-        message = (
-            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
-        )
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logging.info(f"Sending IM ALIVE to {address}")
-        logging.debug(f"IM ALIVE message: {message}")
+    def controller_id(self):
+        return self._controller_id
 
-        for _ in range(self.MSG_REDUNDANCY):
-            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
-
-    def healthcheck_handler(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", self.CONTROL_PORT))
-        terminator_bytes = bytes("$", "utf-8")[0]
-
-        try:
-            while True:
-                data = b""
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    try:
-                        recieved, _ = sock.recvfrom(1024)
-                        data += recieved
-                    except socket.timeout:
-                        break
-
-                data = data.decode()
-                logging.debug(f"received healthcheck: {data}")
-                seq_num, controller_id, response_code = data[:-1].split(",")
-                response_code = int(response_code)
-                if response_code == ControlMessage.HEALTHCHECK.value:
-                    self.send_healthcheck_response(controller_id, seq_num)
-        except Exception as e:
-            logging.error(f"Exception at healthcheck_handler Thread: {e}")
-        finally:
-            sock.close()
+    def is_shutting_down(self):
+        return self._shutting_down
 
     def start(self):
-        threading.Thread(target=self.healthcheck_handler, args=()).start()
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
 
         try:
-            if not self.shutting_down:
+            if not self._shutting_down:
                 # Set callbacks
                 for queue in self._input_queues_lb:
                     self._messaging.set_callback(
                         queue, self._msg_from_other_cluster, auto_ack=False
                     )
-                
+
                 if self._is_proxy:
                     self._messaging.set_callback(
-                        self._input_queue_proxy, self._msg_from_controllers, auto_ack=False
+                        self._input_queue_proxy,
+                        self._msg_from_controllers,
+                        auto_ack=False,
                     )
 
                 self._messaging.listen()
@@ -124,20 +107,18 @@ class LoadBalancerProxy:
         }
 
         return ControllerState(
-            
             controller_id=controller_id,
             file_path=file_path,
             temp_file_path=temp_file_path,
             extra_fields=extra_fields,
         )
-    
 
     def _msg_from_controllers(self, _: Goutong, msg: Message):
         # Duplicate transaction
         if not self._is_transaction_id_valid(msg):
             self._handle_invalid_transaction_id(msg)
             return
-        
+
         conn_id = msg.get("conn_id")
         sender = msg.get("sender")
         queries = msg.get("queries")
@@ -146,10 +127,9 @@ class LoadBalancerProxy:
         queries_str = str(queries)
         eof_received = self._state.get("eof_received")
 
-
         if conn_id_str not in self._state.get("eof_received"):
             eof_received[conn_id_str] = {}
-        
+
         if queries_str not in eof_received[conn_id_str]:
             eof_received[conn_id_str][queries_str] = {}
 
@@ -162,9 +142,10 @@ class LoadBalancerProxy:
                     "queries": queries,
                     "data": data,
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(queue, Message(msg_body))
                 self._state.outbound_transaction_committed(queue)
-        
+
         if msg.get("EOF"):
             eof_received[conn_id_str][queries_str][sender] = True
 
@@ -177,12 +158,15 @@ class LoadBalancerProxy:
                         "queries": queries,
                         "EOF": True,
                     }
+                    crash_maybe()
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
             self._state.set("eof_received", eof_received)
-        
+
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _is_transaction_id_valid(self, msg: Message):
@@ -191,7 +175,7 @@ class LoadBalancerProxy:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         return transaction_id == expected_transaction_id
-    
+
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
@@ -210,8 +194,6 @@ class LoadBalancerProxy:
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
-
-
     def _msg_from_other_cluster(self, _: Goutong, msg: Message):
         queries = msg.get("queries")
         conn_id = msg.get("conn_id")
@@ -224,14 +206,14 @@ class LoadBalancerProxy:
 
         # Forward data to one of the filters
         if data := msg.get("data"):
-            self._dispatch_data(
-                data=data, conn_id=conn_id, queries=queries
-            )
+            self._dispatch_data(data=data, conn_id=conn_id, queries=queries)
         if msg.get("EOF"):
             self._forward_end_of_file(conn_id=conn_id, queries=queries)
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _forward_end_of_file(self, conn_id: int, queries: list[int]):
@@ -244,6 +226,7 @@ class LoadBalancerProxy:
                     "queries": queries,
                     "EOF": True,
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(queue, Message(msg_body))
                 self._state.outbound_transaction_committed(queue)
         else:
@@ -251,18 +234,17 @@ class LoadBalancerProxy:
             queue = self._filter_queues[hashed_idx]
             transaction_id = self._state.next_outbound_transaction_id(queue)
             msg_body = {
-                    "transaction_id": transaction_id,
-                    "conn_id": conn_id,
-                    "queries": queries,
-                    "EOF": True,
-                }
+                "transaction_id": transaction_id,
+                "conn_id": conn_id,
+                "queries": queries,
+                "EOF": True,
+            }
+            crash_maybe()
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def _dispatch_data(
-        self, data: list, conn_id: int, queries: list[int]
-    ):
-        
+    def _dispatch_data(self, data: list, conn_id: int, queries: list[int]):
+
         batches = defaultdict(list)
 
         if self._key_to_hash != "conn_id":
@@ -278,7 +260,9 @@ class LoadBalancerProxy:
                         queue = self._filter_queues[hashed]
                         batches[queue].append(element_copy)
                 else:
-                    hashed_idx = hash(element[self._key_to_hash]) % len(self._filter_queues)
+                    hashed_idx = hash(element[self._key_to_hash]) % len(
+                        self._filter_queues
+                    )
                     queue = self._filter_queues[hashed_idx]
                     batches[queue].append(element)
         else:
@@ -294,13 +278,13 @@ class LoadBalancerProxy:
                 "queries": queries,
                 "data": batch,
             }
-
+            crash_maybe()
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
+    def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-        self.shutting_down = True
+        self._shutting_down = True
 
 
 def config_logging(level: str):
@@ -348,6 +332,7 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     load_balancer = LoadBalancerProxy(config, messaging, state)
+    signal.signal(signal.SIGTERM, lambda *_: load_balancer.shutdown())
     load_balancer.start()
 
 

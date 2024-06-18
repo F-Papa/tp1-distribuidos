@@ -1,3 +1,5 @@
+import threading
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.messaging.goutong import Goutong
 from src.utils.config_loader import Configuration
 import logging
@@ -12,7 +14,15 @@ from src.controller_state.controller_state import ControllerState
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
 
-class SentimentAnalyzer: 
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
+
+
+class SentimentAnalyzer:
     FILTER_TYPE = "sentiment_analyzer"
 
     def __init__(
@@ -25,9 +35,8 @@ class SentimentAnalyzer:
         self._shutting_down = False
         self._state = state
         self._config = filter_config
-        self.input_queue_name = self.FILTER_TYPE + str(
-            filter_config.get("FILTER_NUMBER")
-        )
+        self._controller_id = f"{self.FILTER_TYPE}{filter_config.get('FILTER_NUMBER')}"
+        self.input_queue_name = self._controller_id
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue = output_queue
         self._messaging = messaging
@@ -42,9 +51,14 @@ class SentimentAnalyzer:
             temp_file_path=temp_file_path,
             extra_fields={},
         )
-    
+
     def start(self):
         # Main Flow
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
+
         try:
             if not self._shutting_down:
                 self._messaging.set_callback(
@@ -60,12 +74,12 @@ class SentimentAnalyzer:
             logging.info("Shutting Down.")
             self._messaging.close()
             self._state.save_to_disk()
-    
+
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
         raise ShuttingDown
-    
+
     def input_queue(self):
         return self.input_queue_name
 
@@ -90,14 +104,12 @@ class SentimentAnalyzer:
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
-
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         return transaction_id == expected_transaction_id
-
 
     def _callback_sentiment_analyzer(self, _: Goutong, msg: Message):
         sender = msg.get("sender")
@@ -113,9 +125,7 @@ class SentimentAnalyzer:
 
         # Send Analyzed Reviews
         if filtered_books := self._analyze_reviews(msg.get("data")):
-            transaction_id = self._state.next_outbound_transaction_id(
-                self._proxy_queue
-            )
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
 
             msg_content = {
                 "transaction_id": transaction_id,
@@ -124,14 +134,13 @@ class SentimentAnalyzer:
                 "data": filtered_books,
                 "forward_to": [self.output_queue()],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
         # Send End of File
         if msg.get("EOF"):
-            transaction_id = self._state.next_outbound_transaction_id(
-                self._proxy_queue
-            )
+            transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
 
             msg_content = {
                 "transaction_id": transaction_id,
@@ -140,13 +149,21 @@ class SentimentAnalyzer:
                 "forward_to": [self.output_queue()],
                 "queries": [5],
             }
-
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+
+    def controller_id(self):
+        return self._controller_id
+
+    def is_shutting_down(self):
+        return self._shutting_down
 
     def _analyze_reviews(self, reviews: list):
         analyzed_reviews = []
@@ -165,6 +182,7 @@ class SentimentAnalyzer:
         blob = TextBlob(text)
         sentiment = blob.sentiment.polarity  # type: ignore
         return sentiment
+
 
 def config_logging(level: str):
 
@@ -197,7 +215,9 @@ def main():
     logging.info(filter_config)
 
     # Load State
-    controller_id = f"{SentimentAnalyzer.FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
+    controller_id = (
+        f"{SentimentAnalyzer.FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
+    )
 
     state = SentimentAnalyzer.default_state(
         controller_id=controller_id,
@@ -220,6 +240,7 @@ def main():
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sentiment_analyzer.shutdown())
     sentiment_analyzer.start()
+
 
 if __name__ == "__main__":
     main()

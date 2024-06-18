@@ -1,12 +1,15 @@
 import json
 import logging
 import os
+import signal
 import sys
+import threading
 import time
 
 import pika
 import pika.exceptions
 from src.controller_state.controller_state import ControllerState
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
@@ -43,6 +46,7 @@ class ReviewsJoiner:
         self, config, state: ControllerState, messaging: Goutong, output_queues: dict
     ):
         self._filter_number = config.get("FILTER_NUMBER")
+        self._controller_id = f"{self.CONTROLLER_NAME}{self._filter_number}"
         self._shutting_down = False
         self._state = state
         self._messaging = messaging
@@ -88,6 +92,10 @@ class ReviewsJoiner:
 
     def start(self):
         logging.info("Starting Review Joiner")
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
         try:
             if not self._shutting_down:
                 self._messaging.set_callback(
@@ -109,6 +117,12 @@ class ReviewsJoiner:
             self._messaging.close()
 
     # region: Query methods
+    def controller_id(self):
+        return self._controller_id
+
+    def is_shutting_down(self):
+        return self._shutting_down
+
     def books_queue(self):
         return self._books_queue
 
@@ -172,7 +186,12 @@ class ReviewsJoiner:
                 for k in saved_books.keys():
                     logging.info("saved_books Key: " + k)
                     for k2 in saved_books[k].keys():
-                        logging.info("saved_books Key2: " + k2 + " " + str(len(saved_books[k][k2])))
+                        logging.info(
+                            "saved_books Key2: "
+                            + k2
+                            + " "
+                            + str(len(saved_books[k][k2]))
+                        )
 
                 self._set_callback_reviews(conn_id)
         self._state.set("ongoing_connections", ongoing_connections)
@@ -204,10 +223,12 @@ class ReviewsJoiner:
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
             )
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now
 
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -218,7 +239,7 @@ class ReviewsJoiner:
         conn_id_str = str(conn_id)
         queries_tuple = tuple(json.loads(queries_str))
         output_queue = self.output_queue_name(queries_tuple, conn_id)
-        
+
         if reviews := msg.get("data"):
             books_this_queries_and_conn = self._state.get("saved_books")[conn_id_str][
                 queries_str
@@ -230,7 +251,7 @@ class ReviewsJoiner:
 
             if not trimmed_data and not msg.get("EOF"):
                 return
-            
+
             if trimmed_data:
                 msg_content = {
                     "transaction_id": self._state.next_outbound_transaction_id(
@@ -241,6 +262,7 @@ class ReviewsJoiner:
                     "data": trimmed_data,
                     "forward_to": [output_queue],
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
                 self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -255,6 +277,7 @@ class ReviewsJoiner:
                 "data": [],
                 "forward_to": [output_queue],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -275,6 +298,7 @@ class ReviewsJoiner:
 
         if msg.get("EOF"):
             logging.info(f"End of reviews received from {msg.get('conn_id')}")
+            crash_maybe()
             self._messaging.stop_consuming(self.reviews_queue(conn_id))
             self._state.get("ongoing_connections").pop(conn_id_str)
             self._state.get("saved_books").pop(conn_id_str)
@@ -297,10 +321,12 @@ class ReviewsJoiner:
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
             )
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now
 
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -420,6 +446,7 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     joiner = ReviewsJoiner(config, state, messaging, output_queues)
+    signal.signal(signal.SIGTERM, lambda sig, frame: joiner.shutdown())
     joiner.start()
 
 

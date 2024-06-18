@@ -86,7 +86,6 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
   title_filter1:
     build:
       context: ./
@@ -137,7 +136,6 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
   date_filter1:
     build:
       context: ./
@@ -154,7 +152,6 @@ services:
       - ./src/controllers/filters/date_filter/config.ini:/config.ini
       - ./src/controllers/filters/date_filter/main.py:/main.py
       - ./state/date_filter1/:/state
-
   date_filter2:
     build:
       context: ./
@@ -171,7 +168,6 @@ services:
       - ./src/controllers/filters/date_filter/config.ini:/config.ini
       - ./src/controllers/filters/date_filter/main.py:/main.py
       - ./state/date_filter2/:/state
-
   category_filter_lb_proxy:
     build:
       context: ./
@@ -190,7 +186,6 @@ services:
       - tp1_testing_net
     volumes:
       - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
   category_filter1:
     build:
       context: ./
@@ -207,343 +202,323 @@ services:
       - ./src/controllers/filters/category_filter/config.ini:/config.ini
       - ./src/controllers/filters/category_filter/main.py:/main.py
       - ./state/category_filter1/:/state
-  # review_counter_lb_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-  #   container_name: review_counter_proxy
-  #   image: lb_proxy:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - INPUT_QUEUES=review_counter_queue
-  #     - FILTER_TYPE=review_counter
-  #     - FILTER_COUNT=1
-  #     - LOGGING_LEVEL=INFO
-  #     - KEY_TO_HASH=conn_id
-  #     - IS_PROXY=0
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
-  # decade_counter1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
-  #   container_name: decade_counter1
-  #   image: decade_counter:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/decade_counter/config.ini:/config.ini
-  #     - ./src/controllers/filters/decade_counter/main.py:/main.py
-  #     - ./state/decade_counter1/:/state
-
-  # decade_counter2:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
-  #   container_name: decade_counter2
-  #   image: decade_counter:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_NUMBER=2
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/decade_counter/config.ini:/config.ini
-  #     - ./src/controllers/filters/decade_counter/main.py:/main.py
-  #     - ./state/decade_counter2/:/state
-
-  # decade_counter3:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
-  #   container_name: decade_counter3
-  #   image: decade_counter:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_NUMBER=3
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/decade_counter/config.ini:/config.ini
-  #     - ./src/controllers/filters/decade_counter/main.py:/main.py
-  #     - ./state/decade_counter3/:/state
-
-  # decade_counter_lb_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-  #   container_name: decade_counter_proxy
-  #   image: lb_proxy:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - INPUT_QUEUES=decade_counter_queue
-  #     - FILTER_TYPE=decade_counter
-  #     - FILTER_COUNT=3
-  #     - LOGGING_LEVEL=INFO
-  #     - KEY_TO_HASH=authors
-  #     - IS_PROXY=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
-  # sentiment_analyzer_lb_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-  #   container_name: sentiment_analyzer_proxy
-  #   image: lb_proxy:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - INPUT_QUEUES=sentiment_analyzer_queue
-  #     - FILTER_TYPE=sentiment_analyzer
-  #     - FILTER_COUNT=6
-  #     - LOGGING_LEVEL=INFO
-  #     - KEY_TO_HASH=title
-  #     - IS_PROXY=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
-  # sentiment_analyzer1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer1
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer1/:/state
-
-  # sentiment_analyzer2:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer2
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=2
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer2/:/state
-
-  # sentiment_analyzer3:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer3
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=3
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer3/:/state
-
-  # sentiment_analyzer4:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer4
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=4
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer4/:/state
-
-  # sentiment_analyzer5:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer5
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=5
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer5/:/state
-
-  # sentiment_analyzer6:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
-  #   container_name: sentiment_analyzer6
-  #   image: sentiment_analyzer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=6
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
-  #     - ./state/sentiment_analyzer6/:/state
-
-  # review_joiner_lb_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy_for_joiner/Dockerfile
-  #   container_name: review_joiner_proxy
-  #   image: load_balancer_proxy_for_joiner:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_COUNT=3
-  #     - LOGGING_LEVEL=INFO
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy_for_joiner/lb_proxy_for_joiner.py:/main.py
-
-  # review_joiner1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/review_joiner/Dockerfile
-  #   container_name: review_joiner1
-  #   image: review_joiner:latest
-  #   entrypoint: python3 review_joiner.py
-  #   environment:
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/review_joiner/config.ini:/config.ini
-  #     - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
-  #     - ./state/review_joiner1/:/state
-
-  # review_joiner2:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/review_joiner/Dockerfile
-  #   container_name: review_joiner2
-  #   image: review_joiner:latest
-  #   entrypoint: python3 review_joiner.py
-  #   environment:
-  #     - FILTER_NUMBER=2
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/review_joiner/config.ini:/config.ini
-  #     - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
-  #     - ./state/review_joiner2/:/state
-
-  # review_joiner3:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/review_joiner/Dockerfile
-  #   container_name: review_joiner3
-  #   image: review_joiner:latest
-  #   entrypoint: python3 review_joiner.py
-  #   environment:
-  #     - FILTER_NUMBER=3
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/review_joiner/config.ini:/config.ini
-  #     - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
-  #     - ./state/review_joiner3/:/state
-
-  # review_counter1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/review_counter/Dockerfile
-  #   container_name: review_counter1
-  #   image: review_counter:latest
-  #   entrypoint: python3 review_counter.py
-  #   environment:
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/review_counter/config.ini:/config.ini
-  #     - ./src/controllers/filters/review_counter/review_counter.py:/review_counter.py
-  #     - ./state/review_counter1/:/state
-
-  # sentiment_average_reducer1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
-  #   container_name: sentiment_average_reducer1
-  #   image: sentiment_average_reducer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
-  #     - ./state/review_averager1/:/state
-
-  # sentiment_average_reducer2:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
-  #   container_name: sentiment_average_reducer2
-  #   image: sentiment_average_reducer:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_NUMBER=2
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
-  #     - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
-  #     - ./state/review_averager2/:/state
-
-  # sentiment_averager_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-  #   container_name: sentiment_averager_proxy
-  #   image: lb_proxy:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - INPUT_QUEUES=sentiment_averager_queue
-  #     - FILTER_TYPE=sentiment_averager
-  #     - FILTER_COUNT=2
-  #     - LOGGING_LEVEL=INFO
-  #     - KEY_TO_HASH=conn_id
-  #     - IS_PROXY=0
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
-
+  review_counter_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: review_counter_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=review_counter_queue
+      - FILTER_TYPE=review_counter
+      - FILTER_COUNT=1
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=conn_id
+      - IS_PROXY=0
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  decade_counter1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter1
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
+      - ./state/decade_counter1/:/state
+  decade_counter2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter2
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
+      - ./state/decade_counter2/:/state
+  decade_counter3:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/decade_counter/Dockerfile
+    container_name: decade_counter3
+    image: decade_counter:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=3
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/decade_counter/config.ini:/config.ini
+      - ./src/controllers/filters/decade_counter/main.py:/main.py
+      - ./state/decade_counter3/:/state
+  decade_counter_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: decade_counter_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=decade_counter_queue
+      - FILTER_TYPE=decade_counter
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=authors
+      - IS_PROXY=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  sentiment_analyzer_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: sentiment_analyzer_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=sentiment_analyzer_queue
+      - FILTER_TYPE=sentiment_analyzer
+      - FILTER_COUNT=6
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
+      - IS_PROXY=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  sentiment_analyzer1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer1
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer1/:/state
+  sentiment_analyzer2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer2
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer2/:/state
+  sentiment_analyzer3:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer3
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=3
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer3/:/state
+  sentiment_analyzer4:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer4
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=4
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer4/:/state
+  sentiment_analyzer5:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer5
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=5
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer5/:/state
+  sentiment_analyzer6:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_analyzer/Dockerfile
+    container_name: sentiment_analyzer6
+    image: sentiment_analyzer:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=6
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_analyzer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_analyzer/main.py:/main.py
+      - ./state/sentiment_analyzer6/:/state
+  review_joiner_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy_for_joiner/Dockerfile
+    container_name: review_joiner_proxy
+    image: load_balancer_proxy_for_joiner:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_COUNT=3
+      - LOGGING_LEVEL=INFO
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy_for_joiner/lb_proxy_for_joiner.py:/main.py
+  review_joiner1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/review_joiner/Dockerfile
+    container_name: review_joiner1
+    image: review_joiner:latest
+    entrypoint: python3 review_joiner.py
+    environment:
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/review_joiner/config.ini:/config.ini
+      - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
+      - ./state/review_joiner1/:/state
+  review_joiner2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/review_joiner/Dockerfile
+    container_name: review_joiner2
+    image: review_joiner:latest
+    entrypoint: python3 review_joiner.py
+    environment:
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/review_joiner/config.ini:/config.ini
+      - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
+      - ./state/review_joiner2/:/state
+  review_joiner3:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/review_joiner/Dockerfile
+    container_name: review_joiner3
+    image: review_joiner:latest
+    entrypoint: python3 review_joiner.py
+    environment:
+      - FILTER_NUMBER=3
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/review_joiner/config.ini:/config.ini
+      - ./src/controllers/review_joiner/review_joiner.py:/review_joiner.py
+      - ./state/review_joiner3/:/state
+  review_counter1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/review_counter/Dockerfile
+    container_name: review_counter1
+    image: review_counter:latest
+    entrypoint: python3 review_counter.py
+    environment:
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/review_counter/config.ini:/config.ini
+      - ./src/controllers/filters/review_counter/review_counter.py:/review_counter.py
+      - ./state/review_counter1/:/state
+  sentiment_average_reducer1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
+    container_name: sentiment_average_reducer1
+    image: sentiment_average_reducer:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
+      - ./state/review_averager1/:/state
+  sentiment_average_reducer2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/sentiment_average_reducer/Dockerfile
+    container_name: sentiment_average_reducer2
+    image: sentiment_average_reducer:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/sentiment_average_reducer/config.ini:/config.ini
+      - ./src/controllers/filters/sentiment_average_reducer/main.py:/main.py
+      - ./state/review_averager2/:/state
+  sentiment_averager_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: sentiment_averager_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - INPUT_QUEUES=sentiment_averager_queue
+      - FILTER_TYPE=sentiment_averager
+      - FILTER_COUNT=2
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=conn_id
+      - IS_PROXY=0
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
 
 networks:
   tp1_testing_net:

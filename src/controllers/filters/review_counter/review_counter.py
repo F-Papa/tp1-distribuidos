@@ -1,6 +1,8 @@
+import threading
 import time
 from typing import Any, Union
 from src.controller_state.controller_state import ControllerState
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
@@ -10,6 +12,14 @@ import os
 
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
+
+
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
 
 
 class ReviewCounter:
@@ -30,8 +40,8 @@ class ReviewCounter:
         self._state = state
         self._output_queues = output_queues
         self._shutting_down = False
-        self._input_queue = f"{self.CONTROLLER_NAME}{self._filter_number}"
-
+        self._controller_id = f"{self.CONTROLLER_NAME}{self._filter_number}"
+        self._input_queue = self._controller_id
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
         self.unacked_msgs = []
@@ -52,7 +62,6 @@ class ReviewCounter:
             temp_file_path=temp_file_path,
             extra_fields=extra_fields,
         )
-    
 
     # region: callback methods
     def reviews_callback(self, _: Goutong, msg: Message):
@@ -80,17 +89,20 @@ class ReviewCounter:
                         "authors": review["authors"],
                     }
 
-                saved_reviews[conn_id_str][review["title"]]["sum"] += review["review/score"]
+                saved_reviews[conn_id_str][review["title"]]["sum"] += review[
+                    "review/score"
+                ]
                 saved_reviews[conn_id_str][review["title"]]["count"] += 1
         self._state.set("saved_reviews", saved_reviews)
 
         if msg.get("EOF"):
+            crash_maybe()
             self._send_results(conn_id)
             del saved_reviews[conn_id_str]
 
         self._state.set("saved_reviews", saved_reviews)
         self._state.inbound_transaction_committed(msg.get("sender"))
-        
+
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
@@ -104,18 +116,30 @@ class ReviewCounter:
             self.unacked_msg_count > self.unacked_msg_limit
             or time_since_last_commit > self.unacked_time_limit_in_seconds
         ):
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            logging.info(
+                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
+            )
+
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now
-            
+
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
             self.unacked_msgs.clear()
+
     # endregion
 
     # region: Query methods
+    def controller_id(self):
+        return self._controller_id
+
+    def is_shutting_down(self):
+        return self._shutting_down
+
     def input_queue(self) -> str:
         return self._input_queue
 
@@ -140,6 +164,11 @@ class ReviewCounter:
     # region: Command methods
     def start(self):
         logging.info("Starting Review Counter")
+
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
         try:
             if not self._shutting_down:
                 self._messaging.set_callback(
@@ -153,7 +182,6 @@ class ReviewCounter:
         finally:
             logging.info("Shutting Down.")
             self._messaging.close()
-
 
     def _send_results(self, conn_id: int):
         queries = (3, 4)
@@ -173,7 +201,9 @@ class ReviewCounter:
                 q4_candidates.append({"title": title, "average": sum / count})
 
         q4_candidates.sort(key=lambda x: x["average"], reverse=True)
-        q4_results = list(map(lambda x: {x["title"]: x["average"]}, q4_candidates[:self.n_best]))
+        q4_results = list(
+            map(lambda x: {x["title"]: x["average"]}, q4_candidates[: self.n_best])
+        )
 
         output_queue = self.output_queue_name(queries, conn_id)
         q3_transaction_id = self._state.next_outbound_transaction_id(output_queue)
@@ -254,7 +284,6 @@ def main():
         "UNACKED_TIME_LIMIT_IN_SECONDS": int,
     }
 
-
     config = Configuration.from_file(required, "config.ini")
     config.update_from_env()
     config.validate()
@@ -280,6 +309,7 @@ def main():
 
     signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
     counter.start()
+
 
 if __name__ == "__main__":
     main()

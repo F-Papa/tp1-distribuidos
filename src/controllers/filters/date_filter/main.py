@@ -2,6 +2,7 @@ from collections import defaultdict
 from enum import Enum
 import socket
 import threading
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
@@ -22,9 +23,19 @@ LOWER_Q3_4 = 1990
 OUTPUT_Q1 = "title_filter_queue"
 OUTPUT_Q3_4_PREFIX = "review_joiner_books"
 
+
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
+
+
 class ControlMessage(Enum):
     HEALTHCHECK = 6
     IM_ALIVE = 7
+
 
 class DateFilter:
     FILTER_TYPE = "date_filter"
@@ -47,9 +58,8 @@ class DateFilter:
         self.filter_config = filter_config
         self._state = state
         self._messaging = messaging
-        self._input_queue = self.FILTER_TYPE + str(
-            filter_config.get("FILTER_NUMBER")
-        )
+        self._controller_id = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+        self._input_queue = self._controller_id
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self.upper_q3_4 = upper_q3_4
         self.lower_q3_4 = lower_q3_4
@@ -61,47 +71,11 @@ class DateFilter:
             filter_config.get("FILTER_NUMBER")
         )
 
-    # HEALTHCHECK HANDLING
-    def send_healthcheck_response(self, address, seq_num):
-        message = (
-            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
-        )
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logging.info(f"Sending IM ALIVE to {address}")
-        logging.debug(f"IM ALIVE message: {message}")
-
-        for _ in range(self.MSG_REDUNDANCY):
-            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
-
-    def healthcheck_handler(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", self.CONTROL_PORT))
-        terminator_bytes = bytes("$", "utf-8")[0]
-
-        try:
-            while True:
-                data = b""
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    try:
-                        recieved, _ = sock.recvfrom(1024)
-                        data += recieved
-                    except socket.timeout:
-                        break
-
-                data = data.decode()
-                logging.debug(f"received healthcheck: {data}")
-                seq_num, controller_id, response_code = data[:-1].split(",")
-                response_code = int(response_code)
-                if response_code == ControlMessage.HEALTHCHECK.value:
-                    self.send_healthcheck_response(controller_id, seq_num)
-        except Exception as e:
-            logging.error(f"Exception at healthcheck_handler Thread: {e}")
-        finally:
-            sock.close()
-
     def start(self):
-        threading.Thread(target=self.healthcheck_handler, args=()).start()
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
 
         # Main Flow
         try:
@@ -123,7 +97,7 @@ class DateFilter:
     def default_state(
         cls, controller_id: str, file_path: str, temp_file_path: str
     ) -> ControllerState:
-        
+
         return ControllerState(
             controller_id=controller_id,
             file_path=file_path,
@@ -198,7 +172,6 @@ class DateFilter:
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
-
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
@@ -206,13 +179,17 @@ class DateFilter:
 
         return transaction_id == expected_transaction_id
 
+    def controller_id(self):
+        return self._controller_id
 
+    def is_shutting_down(self):
+        return self._shutting_down
 
     def callback_filter(self, _: Goutong, msg: Message):
         sender = msg.get("sender")
         conn_id = msg.get("conn_id")
         output_q3_4 = self.output_queue_q3_4(conn_id)
-        
+
         # Duplicate transaction
         if not self._is_transaction_id_valid(msg):
             self._handle_invalid_transaction_id(msg)
@@ -234,6 +211,7 @@ class DateFilter:
             if msg.get("EOF"):
                 msg_content["EOF"] = True
 
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -246,9 +224,10 @@ class DateFilter:
                 "EOF": True,
                 "forward_to": [self.output_queue_q1()],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
-    
+
         # Send filtered data to Query 3,4
         if filtered_books_q3_4 := self._filter_data_q3_4(msg.get("data")):
             filtered_books = [
@@ -266,6 +245,7 @@ class DateFilter:
             if msg.get("EOF"):
                 msg_content["EOF"] = True
 
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -278,11 +258,16 @@ class DateFilter:
                 "EOF": True,
                 "forward_to": [output_q3_4],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
-  
+
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
+        self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+
 
 def config_logging(level: str):
 

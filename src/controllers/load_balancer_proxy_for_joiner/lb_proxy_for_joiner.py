@@ -5,6 +5,8 @@ It also works as a threading barrier, forwarding EOF messages to the next filter
 
 from collections import defaultdict
 import os
+import threading
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.utils.config_loader import Configuration
 import logging
 import signal
@@ -19,6 +21,14 @@ INPUT_QUEUE_REVIEWS = "review_joiner_reviews"
 FILTER_TYPE = "review_joiner"
 
 
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
+
+
 class LoadBalancerProxyForJoiner:
 
     def __init__(
@@ -29,10 +39,11 @@ class LoadBalancerProxyForJoiner:
         self._state = state
 
         # Graceful Shutdown Handling
-        self.shutting_down = False
+        self._shutting_down = False
         self._input_queue_books = INPUT_QUEUE_BOOKS
         self._input_queue_reviews = INPUT_QUEUE_REVIEWS
         self._input_queue_proxy = FILTER_TYPE + "_proxy"
+        self._controller_id = FILTER_TYPE + "_proxy"
 
         self._filter_queues = []
         for i in range(1, config.get("FILTER_COUNT") + 1):
@@ -45,17 +56,15 @@ class LoadBalancerProxyForJoiner:
         logging.info("Filter Queues: " + str(self._filter_queues))
 
     def start(self):
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
         try:
-            if not self.shutting_down:
+            if not self._shutting_down:
                 # Set callbacks
                 self._messaging.set_callback(
                     self._input_queue_books,
-                    self._msg_from_other_cluster,
-                    auto_ack=False,
-                )
-
-                self._messaging.set_callback(
-                    self._input_queue_reviews,
                     self._msg_from_other_cluster,
                     auto_ack=False,
                 )
@@ -71,6 +80,12 @@ class LoadBalancerProxyForJoiner:
 
         self._messaging.close()
         logging.info("Shutting Down.")
+
+    def controller_id(self):
+        return self._controller_id
+
+    def is_shutting_down(self):
+        return self._shutting_down
 
     def filter_queues(self) -> list[str]:
         return self._filter_queues
@@ -136,6 +151,7 @@ class LoadBalancerProxyForJoiner:
                     "queries": queries,
                     "data": data,
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(queue, Message(msg_body))
                 self._state.outbound_transaction_committed(queue)
 
@@ -151,12 +167,15 @@ class LoadBalancerProxyForJoiner:
                         "queries": queries,
                         "EOF": True,
                     }
+                    crash_maybe()
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
             self._state.set("eof_received", eof_received)
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _is_transaction_id_valid(self, msg: Message):
@@ -247,9 +266,9 @@ class LoadBalancerProxyForJoiner:
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
+    def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-        self.shutting_down = True
+        self._shutting_down = True
 
 
 def config_logging(level: str):
@@ -293,6 +312,7 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     load_balancer = LoadBalancerProxyForJoiner(barrier_config, messaging, state)
+    signal.signal(signal.SIGTERM, lambda *_: load_balancer.shutdown())
     load_balancer.start()
 
 

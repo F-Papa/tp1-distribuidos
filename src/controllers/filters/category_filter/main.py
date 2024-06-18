@@ -2,6 +2,7 @@ from collections import defaultdict
 from enum import Enum
 import socket
 import threading
+from src.controllers.common.healthcheck import healthcheck_handler
 from src.messaging.goutong import Goutong
 from src.utils.config_loader import Configuration
 import logging
@@ -22,9 +23,19 @@ CATEGORY_Q5 = "Fiction"
 OUTPUT_Q1_PREFIX = "results_"
 OUTPUT_Q5_PREFIX = "review_joiner_books"
 
+
+def crash_maybe():
+    import random
+
+    if random.random() < 0.0001:
+        logging.error("Crashing...")
+        os._exit(1)
+
+
 class ControlMessage(Enum):
     HEALTHCHECK = 6
     IM_ALIVE = 7
+
 
 class CategoryFilter:
     FILTER_TYPE = "category_filter"
@@ -45,7 +56,8 @@ class CategoryFilter:
         self._state = state
 
         self._config = filter_config
-        self._input_queue = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+        self._controller_id = self.FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
+        self._input_queue = self._controller_id
         self._category_q1 = category_q1
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue_q1_prefix = output_queue_q1_prefix
@@ -68,62 +80,31 @@ class CategoryFilter:
             extra_fields={},
         )
 
-    # HEALTHCHECK HANDLING
-    def send_healthcheck_response(self, address, seq_num):
-        message = (
-            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
-        )
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logging.info(f"Sending IM ALIVE to {address}")
-        logging.debug(f"IM ALIVE message: {message}")
+    def controller_id(self):
+        return self._controller_id
 
-        for _ in range(self.MSG_REDUNDANCY):
-            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
-
-    def healthcheck_handler(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", self.CONTROL_PORT))
-        terminator_bytes = bytes("$", "utf-8")[0]
-
-        try:
-            while True:
-                data = b""
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    try:
-                        recieved, _ = sock.recvfrom(1024)
-                        data += recieved
-                    except socket.timeout:
-                        break
-
-                data = data.decode()
-                logging.debug(f"received healthcheck: {data}")
-                seq_num, controller_id, response_code = data[:-1].split(",")
-                response_code = int(response_code)
-                if response_code == ControlMessage.HEALTHCHECK.value:
-                    self.send_healthcheck_response(controller_id, seq_num)
-        except Exception as e:
-            logging.error(f"Exception at healthcheck_handler Thread: {e}")
-        finally:
-            sock.close()
+    def is_shutting_down(self):
+        return self._shutting_down
 
     def start(self):
-        threading.Thread(target=self.healthcheck_handler, args=()).start()
+        threading.Thread(
+            target=healthcheck_handler,
+            args=(self,),
+        ).start()
 
         # Main Flow
-        try:
-            while not self._shutting_down:
-                self._messaging.set_callback(
-                    self._input_queue, self.callback_filter, auto_ack=False
-                )
+        if not self._shutting_down:
+            self._messaging.set_callback(
+                self._input_queue, self.callback_filter, auto_ack=False
+            )
+            try:
                 self._messaging.listen()
-        except ShuttingDown:
-            pass
+            except ShuttingDown:
+                logging.info("Shutting Down.")
+                pass
 
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._state.save_to_disk()
+        self._messaging.close()
+        self._state.save_to_disk()
 
     def input_queue(self):
         return self._input_queue
@@ -133,7 +114,6 @@ class CategoryFilter:
 
     def output_queue_q5(self, conn_id: int):
         return self._output_queue_q5_prefix
-        return self._output_queue_q5_prefix + str(conn_id)
 
     def filter_data(self, data: list, category: str):
         filtered_data = []
@@ -150,7 +130,6 @@ class CategoryFilter:
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
         raise ShuttingDown
-
 
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
@@ -170,15 +149,12 @@ class CategoryFilter:
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
-
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         return transaction_id == expected_transaction_id
-
-
 
     def callback_filter(self, _: Goutong, msg: Message):
         if not self._is_transaction_id_valid(msg):
@@ -199,13 +175,13 @@ class CategoryFilter:
         output_queue_q5 = self.output_queue_q5(conn_id)
         filtered_books = self._filter_by_category(msg.get("data"), self._category_q5)
         filtered_books = [self._columns_for_query5(b) for b in filtered_books]
-        
+
         transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg_content = {
             "transaction_id": transaction_id,
             "conn_id": conn_id,
             "queries": [5],
-            "forward_to": [output_queue_q5]
+            "forward_to": [output_queue_q5],
         }
 
         if filtered_books:
@@ -214,26 +190,28 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
-        self._messaging.ack_delivery(msg.delivery_id)      
-
+        crash_maybe()
+        self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)
 
     def callback_aux_q1(self, msg: Message):
         conn_id = msg.get("conn_id")
         output_queue_q1 = self.output_queue_q1(conn_id)
 
-
         filtered_books_q1 = self._filter_by_category(msg.get("data"), self._category_q1)
         filtered_books_q1 = [self._columns_for_query1(b) for b in filtered_books_q1]
-        
+
         transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg_content = {
             "transaction_id": transaction_id,
             "conn_id": conn_id,
             "queries": [1],
-            "forward_to": [output_queue_q1]
+            "forward_to": [output_queue_q1],
         }
         if filtered_books_q1:
             msg_content["data"] = filtered_books_q1
@@ -241,10 +219,14 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+        crash_maybe()
+        self._state.save_to_disk()
 
     def _filter_by_category(self, data: list, category: str) -> list:
         filtered_data = []
