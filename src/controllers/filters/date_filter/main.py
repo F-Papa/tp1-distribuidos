@@ -105,6 +105,9 @@ class DateFilter:
             extra_fields={},
         )
 
+    def ack_unacknowledged_messages(self):
+        pass
+
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True

@@ -232,31 +232,33 @@ class DecadeCounter:
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
-        now = time.time()
-        time_since_last_commit = now - self.time_of_last_commit
+        if self.unacked_msg_count > self.unacked_msg_limit:
+            self.commit_to_disk_and_ack_messages()
 
+    def commit_to_disk_and_ack_messages(self):
+        logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+
+        crash_maybe()
+        self._save_state()
+        self.time_of_last_commit = time.time()
+
+        for delivery_id in self.unacked_msgs:
+            crash_maybe()
+            self._messaging.ack_delivery(delivery_id)
+
+        self.unacked_msg_count = 0
+        self.unacked_msgs.clear()
+
+    def ack_unacknowledged_messages(self):
         if self.unacked_msg_count == 0:
             return
-
-        if (
-            self.unacked_msg_count > self.unacked_msg_limit
-            or time_since_last_commit > self.unacked_time_limit_in_seconds
-        ):
-
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+        if time_since_last_commit > self.unacked_time_limit_in_seconds:
             logging.info(
-                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
+                f"The time limit has been reached  ({self.unacked_time_limit_in_seconds} < {time_since_last_commit}). Committing to disk."
             )
-
-            crash_maybe()
-            self._save_state()
-            self.time_of_last_commit = now
-
-            for delivery_id in self.unacked_msgs:
-                crash_maybe()
-                self._messaging.ack_delivery(delivery_id)
-
-            self.unacked_msg_count = 0
-            self.unacked_msgs.clear()
+            self.commit_to_disk_and_ack_messages()
 
     def start(self):
         logging.info("Starting Decade Counter")

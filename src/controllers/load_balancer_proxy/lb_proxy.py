@@ -169,6 +169,9 @@ class LoadBalancerProxy:
         crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
+    def ack_unacknowledged_messages(self):
+        pass
+
     def _is_transaction_id_valid(self, msg: Message):
         transaction_id = msg.get("transaction_id")
         sender = msg.get("sender")

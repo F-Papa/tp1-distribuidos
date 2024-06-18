@@ -75,6 +75,9 @@ class SentimentAnalyzer:
             self._messaging.close()
             self._state.save_to_disk()
 
+    def ack_unacknowledged_messages(self):
+        pass
+
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True

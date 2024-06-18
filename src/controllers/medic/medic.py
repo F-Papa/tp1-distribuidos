@@ -24,7 +24,7 @@ class Message(Enum):
 
 CONTROL_PORT = 12347
 SOCK_TIMEOUT_SECONDS = 2
-VOTING_DURATION_SECONDS = 4
+VOTING_DURATION_SECONDS = 6
 HEALTH_CHECK_INTERVAL_SECONDS = 15
 MSG_REDUNDANCY = 3
 
@@ -32,7 +32,7 @@ MSG_REDUNDANCY = 3
 def crash_maybe():
     import random
 
-    if random.random() < 0.0001:
+    if random.random() < 0.001:
         logging.error("Crashing...")
         os._exit(1)
 
@@ -77,13 +77,20 @@ class Medic:
     def send_healthchecks(self):
         for _, address in self.controllers_to_check.items():
             message = f"{self.sequence_number},{self.controller_id},{Message.HEALTHCHECK.value}$"
-            for _ in range(MSG_REDUNDANCY):
-                crash_maybe()
+            try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
-                try:
+                for _ in range(MSG_REDUNDANCY):
+                    crash_maybe()
                     sock.sendto(message.encode(), (address, CONTROL_PORT))
-                except Exception as e:
-                    logging.error(f"EXCEPTION: {e}")
+            except socket.gaierror:
+                pass
+            except Exception as e:
+                logging.error(
+                    f"EXCEPTION at sendto sending HEALTHCHECK: ({type(e)}) {e}"
+                )
+                break
+            finally:
+                sock.close()
 
         self.increase_seq_number()
 
@@ -115,13 +122,11 @@ class Medic:
     def handle_healthcheck_responses(self):
         for alias in self.controllers_to_check.keys():
             crash_maybe()
-            if (
+            if not (
                 alias in self.IM_ALIVE_received
                 and time.time() - self.IM_ALIVE_received[alias]
                 < HEALTH_CHECK_INTERVAL_SECONDS
             ):
-                logging.info(f"Controller {alias} is alive")
-            else:
                 logging.info(f"Controller {alias} is dead")
                 if self.is_leader():
                     self.revive_controller(alias)
@@ -138,11 +143,17 @@ class Medic:
             f"{self.sequence_number},{self.controller_id},{Message.IM_ALIVE.value}$"
         )
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logging.info(f"Sending IM ALIVE to: {address} ({controller_id})")
 
-        for _ in range(MSG_REDUNDANCY):
-            # logging.info(f"MADNANDO {message}")
-            sock.sendto(message.encode(), (address, CONTROL_PORT))
+        try:
+            for _ in range(MSG_REDUNDANCY):
+                # logging.info(f"MADNANDO {message}")
+                sock.sendto(message.encode(), (address, CONTROL_PORT))
+        except socket.gaierror:
+            pass
+        except Exception as e:
+            logging.error(f"EXCEPTION at sendto sending IM_ALIVE: ({type(e)}) {e}")
+        finally:
+            sock.close()
 
     def elect_leader(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -152,12 +163,14 @@ class Medic:
             election_msg = (
                 f"{self.sequence_number},{self.controller_id},{Message.ELECTION.value}$"
             )
-            for _ in range(MSG_REDUNDANCY):
-                crash_maybe()
-                try:
+            try:
+                for _ in range(MSG_REDUNDANCY):
+                    crash_maybe()
                     sock.sendto(election_msg.encode(), (f"medic{i+1}", CONTROL_PORT))
-                except Exception as e:
-                    logging.error(f"Exception at sendto: {e}")
+            except socket.gaierror:
+                pass
+            except Exception as e:
+                logging.error(f"Exception at sendto sending ELECTION: ({type(e)}) {e}")
 
         time.sleep(VOTING_DURATION_SECONDS)
 
@@ -174,31 +187,46 @@ class Medic:
                             sock.sendto(
                                 coordinator_msg.encode(), (f"medic{i+1}", CONTROL_PORT)
                             )
+                    except socket.gaierror:
+                        continue
                     except Exception as e:
-                        logging.error(f"Exception at sendto: {e}")
+                        logging.error(
+                            f"Exception at sendto sending COORDINATOR: ({type(e)}) {e}"
+                        )
 
             self.increase_seq_number()
         else:
             self.OKS_received.clear()
 
+        sock.close()
+
     def listen_thread(self):
         logging.info("Listening thread started")
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.settimeout(SOCK_TIMEOUT_SECONDS)
+
         sock.bind(("0.0.0.0", CONTROL_PORT))
         terminator_bytes = bytes("$", "utf-8")[0]
 
+        window_start = time.time()
         while not self._shutting_down:
             data = b""
             while len(data) == 0 or data[-1] != terminator_bytes:
                 try:
                     crash_maybe()
+                    if time.time() >= window_start:
+                        sock.settimeout(
+                            SOCK_TIMEOUT_SECONDS - (time.time() - window_start)
+                        )
+                    else:
+                        sock.settimeout(SOCK_TIMEOUT_SECONDS)
+
                     recieved, address = sock.recvfrom(1024)
                     data += recieved
                 except socket.timeout:
                     with self.healthcheck_syncer:
                         self.healthcheck_syncer.notify()
+                        window_start = window_start + HEALTH_CHECK_INTERVAL_SECONDS
                         break
 
             if not data:
@@ -212,14 +240,18 @@ class Medic:
                 ok_msg = (
                     f"{self.sequence_number},{self.controller_id},{Message.OK.value}$"
                 )
-                for _ in range(MSG_REDUNDANCY):
-                    try:
+                try:
+                    for _ in range(MSG_REDUNDANCY):
                         crash_maybe()
                         sock.sendto(ok_msg.encode(), (controller_id, CONTROL_PORT))
-                    except Exception as e:
-                        logging.error(f"Exception at sendto: {e}")
+                except socket.gaierror:
+                    pass
+                except Exception as e:
+                    logging.error(f"Exception at sendto sending OK: ({type(e)}) {e}")
             elif response_code == Message.COORDINATOR.value:
-                self.set_other_leader(controller_id, address[0])
+                # Dont set leader if already set
+                if self._is_leader or self._leader != controller_id:
+                    self.set_other_leader(controller_id, address[0])
             elif response_code == Message.HEALTHCHECK.value:
                 self.send_healthcheck_response(
                     address=address[0], controller_id=controller_id
@@ -236,6 +268,8 @@ class Medic:
                     with self.healthcheck_syncer:
                         self.IM_ALIVE_SYNCER_DICT.clear()
                         self.healthcheck_syncer.notify()
+                        window_start = window_start + HEALTH_CHECK_INTERVAL_SECONDS
+        sock.close()
 
     def start(self):
         threading.Thread(target=self.listen_thread, args=()).start()
@@ -309,8 +343,8 @@ def main():
             "review_joiner2": "review_joiner2",
             "review_joiner3": "review_joiner3",
             "sentiment_averager_proxy": "sentiment_averager_proxy",
-            "sentiment_average_reducer1": "sentiment_average_reducer1",
-            "sentiment_average_reducer2": "sentiment_average_reducer2",
+            "sentiment_averager1": "sentiment_averager1",
+            "sentiment_averager2": "sentiment_averager2",
         },
     )
 

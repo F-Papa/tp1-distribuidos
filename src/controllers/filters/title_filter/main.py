@@ -72,6 +72,9 @@ class TitleFilter:
             self._state.save_to_disk()
 
     # MAIN FUNCTIONALITY
+    def ack_unacknowledged_messages(self):
+        pass
+
     @classmethod
     def default_state(
         cls, controller_id: str, file_path: str, temp_file_path: str

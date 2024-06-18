@@ -210,29 +210,8 @@ class ReviewsJoiner:
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
-        now = time.time()
-        time_since_last_commit = now - self.time_of_last_commit
-
-        if self.unacked_msg_count == 0:
-            return
-
-        if (
-            self.unacked_msg_count > self.unacked_msg_limit
-            or time_since_last_commit > self.unacked_time_limit_in_seconds
-        ):
-            logging.info(
-                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
-            )
-            crash_maybe()
-            self._state.save_to_disk()
-            self.time_of_last_commit = now
-
-            for delivery_id in self.unacked_msgs:
-                crash_maybe()
-                self._messaging.ack_delivery(delivery_id)
-
-            self.unacked_msg_count = 0
-            self.unacked_msgs.clear()
+        if self.unacked_msg_count > self.unacked_msg_limit:
+            self.commit_to_disk_and_ack_messages()
 
     def _callback_reviews_aux(self, msg: Message, queries_str: str):
         conn_id = msg.get("conn_id")
@@ -308,33 +287,37 @@ class ReviewsJoiner:
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
-        now = time.time()
-        time_since_last_commit = now - self.time_of_last_commit
-
-        if self.unacked_msg_count == 0:
-            return
-
-        if (
-            self.unacked_msg_count > self.unacked_msg_limit
-            or time_since_last_commit > self.unacked_time_limit_in_seconds
-        ):
-            logging.info(
-                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}"
-            )
-            crash_maybe()
-            self._state.save_to_disk()
-            self.time_of_last_commit = now
-
-            for delivery_id in self.unacked_msgs:
-                crash_maybe()
-                self._messaging.ack_delivery(delivery_id)
-
-            self.unacked_msg_count = 0
-            self.unacked_msgs.clear()
+        if self.unacked_msg_count > self.unacked_msg_limit:
+            self.commit_to_disk_and_ack_messages()
 
     # endregion
 
     # region: Command methods
+    def commit_to_disk_and_ack_messages(self):
+        logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+
+        crash_maybe()
+        self._state.save_to_disk()
+        self.time_of_last_commit = time.time()
+
+        for delivery_id in self.unacked_msgs:
+            crash_maybe()
+            self._messaging.ack_delivery(delivery_id)
+
+        self.unacked_msg_count = 0
+        self.unacked_msgs.clear()
+
+    def ack_unacknowledged_messages(self):
+        if self.unacked_msg_count == 0:
+            return
+        now = time.time()
+        time_since_last_commit = now - self.time_of_last_commit
+        if time_since_last_commit > self.unacked_time_limit_in_seconds:
+            logging.info(
+                f"The time limit has been reached  ({self.unacked_time_limit_in_seconds} < {time_since_last_commit}). Committing to disk."
+            )
+            self.commit_to_disk_and_ack_messages()
+
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True

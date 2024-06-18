@@ -80,6 +80,9 @@ class CategoryFilter:
             extra_fields={},
         )
 
+    def ack_unacknowledged_messages(self):
+        pass
+
     def controller_id(self):
         return self._controller_id
 

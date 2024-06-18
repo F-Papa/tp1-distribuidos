@@ -53,7 +53,10 @@ class LoadBalancerProxyForJoiner:
                 {"books": books_queue, "reviews": reviews_queue_prefix}
             )
 
-        logging.info("Filter Queues: " + str(self._filter_queues))
+        # logging.info("Filter Queues: " + str(self._filter_queues))
+
+    def ack_unacknowledged_messages(self):
+        pass
 
     def start(self):
         threading.Thread(
