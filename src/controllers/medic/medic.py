@@ -19,18 +19,19 @@ class Message(Enum):
     IM_ALIVE = 7
 
 
-CONTROL_PORT = 12347
-HEALTHCHECK_RESPONSE_PORT = 12346
-SOCK_TIMEOUT_SECONDS = 2
-VOTING_DURATION_SECONDS = 6
-HEALTH_CHECK_INTERVAL_SECONDS = 20
 MSG_REDUNDANCY = 3
+BYTES_SIZE = 2
+
+PORT = 12347
+
+VOTING_DURATION_SECONDS = 6
+HEALTH_CHECK_INTERVAL_SECONDS = 30
 
 
 def crash_maybe():
     import random
 
-    if random.random() < 0.00001:
+    if random.random() < 0.01:
         logging.error("Crashing...")
         os._exit(1)
 
@@ -41,268 +42,241 @@ class Medic:
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
+        self._control_socket.close()
 
-    def __init__(self, controllers_to_check: dict, config: Configuration):
+    def __init__(self, system_controllers: dict, config: Configuration):
+        self._resolved_controllers = {}
+        self._control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._control_socket.bind(("0.0.0.0", PORT))
+        self._system_controllers = system_controllers
+        self._other_medics = {}
+        self._bigger_medics = {}
         self._shutting_down = False
-        self.number_of_medics = config.get("NUMBER_OF_MEDICS")
-        self.medic_number = config.get("MEDIC_NUMBER")
-        self.other_medics = {}
-        for i in range(self.number_of_medics):
-            if i + 1 == self.medic_number:
-                continue
-            self.other_medics.update({f"medic{i+1}": f"medic{i+1}"})
-
-        self.other_controllers = controllers_to_check.copy()
-        self.controllers_to_check = {}
-
-        self.sequence_number = 1
-        self.controller_id = f"{self.CONTROLLER_TYPE}{self.medic_number}"
+        self._number_of_medics = config.get("NUMBER_OF_MEDICS")
+        self._medic_number = config.get("MEDIC_NUMBER")
         self._is_leader = False
         self._leader = None
-        self.docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock")
-        self.OKS_received = []
-        self.lock = threading.Lock()
-        self.control_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.control_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.control_sock.bind(("0.0.0.0", CONTROL_PORT))
-        self.healthcheck_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.healthcheck_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.healthcheck_sock.bind(("0.0.0.0", HEALTHCHECK_RESPONSE_PORT))
-        self.healthcheck_syncer = threading.Condition()
-        self.healthcheck_start = None
-        self.just_revived_controllers = set()
+        self._seq_num = 1
+        self._id = self.CONTROLLER_TYPE + str(config.get("MEDIC_NUMBER"))
+        self._ok_received = False
+        self._leader_lock = threading.Lock()
+        self._im_alive_lock = threading.Lock()
+        self._im_alive_received = set()
+        self._just_revived = set()
+        self._own_heartbeat = time.time()
 
-    def increase_seq_number(self):
-        self.sequence_number += 1
+        for i in range(1, self._number_of_medics + 1):
+            if i > self._medic_number:
+                self._bigger_medics[f"medic{i}"] = f"medic{i}"
+            if i != self._medic_number:
+                self._other_medics[f"medic{i}"] = f"medic{i}"
 
-    def is_leader(self):
-        return self._is_leader
+        self._docker_client = docker.from_env()
+        self._ongoing_election = False
 
-    def send_healthchecks(self):
-        self.healthcheck_start = time.time()
-        for alias, address in self.controllers_to_check.items():
-            message = f"{self.sequence_number},{self.controller_id},{Message.HEALTHCHECK.value}$"
-            try:
-                for _ in range(MSG_REDUNDANCY):
-                    crash_maybe()
-                    self.healthcheck_sock.sendto(
-                        message.encode(), (address, CONTROL_PORT)
+    def hostname(self, controller_id: str) -> str:
+        if controller_id in self._resolved_controllers:
+            return self._resolved_controllers[controller_id]
+        else:
+            return controller_id
+
+    def send_message(
+        self, message: Message, recv_id: str, recv_port: int, sock: socket.socket
+    ):
+        message_str = f"{self._seq_num},{self._id},{message.value}"
+
+        length = len(message_str) + BYTES_SIZE
+        encoded_msg = length.to_bytes(BYTES_SIZE, byteorder="big")
+        encoded_msg += message_str.encode()
+
+        for _ in range(MSG_REDUNDANCY):
+            bytes_sent = 0
+            while bytes_sent < len(message_str):
+                try:
+                    bytes_sent += sock.sendto(
+                        encoded_msg[bytes_sent:], (self.hostname(recv_id), recv_port)
                     )
-                    # logging.info(f"Sent healthcheck to {alias}, {address}")
-            except socket.gaierror:
-                pass
-            except Exception as e:
-                logging.error(
-                    f"EXCEPTION at sendto sending HEALTHCHECK: ({type(e)}) {e}"
+                except socket.gaierror:
+                    break
+
+    def receive_message(self, sock: socket.socket) -> tuple[str, Message]:
+        """Controller_id, message_code"""
+        data = bytes()
+
+        while len(data) < BYTES_SIZE:
+            received, address = sock.recvfrom(BYTES_SIZE - len(data))
+            data += received
+
+        size_to_read = int.from_bytes(data, "big")
+        data = bytes()
+
+        while len(data) < size_to_read:
+            crash_maybe()
+            received, address = sock.recvfrom(size_to_read - len(data))
+            data += received
+
+        seq_num, controller_id, response_code = data[BYTES_SIZE:].decode().split(",")
+        if controller_id not in self._resolved_controllers:
+            self._resolved_controllers[controller_id] = address[0]
+
+        seq_num = int(seq_num)
+        response_code = int(response_code)
+
+        return controller_id, Message(response_code)
+
+    def handle_messages(self):
+        while not self._shutting_down:
+            sender_id, message_code = self.receive_message(self._control_socket)
+            crash_maybe()
+
+            if self._own_heartbeat + 2 * HEALTH_CHECK_INTERVAL_SECONDS < time.time():
+                logging.error("💥   No heartbeat received in time")
+                os._exit(1)
+
+            if message_code == Message.ELECTION:
+                if self._is_leader:
+                    self.send_message(
+                        Message.COORDINATOR, sender_id, PORT, self._control_socket
+                    )
+                else:
+                    self.send_message(Message.OK, sender_id, PORT, self._control_socket)
+
+            elif message_code == Message.OK:
+                with self._leader_lock:
+                    self._ok_received = True
+
+            elif message_code == Message.COORDINATOR:
+                logging.info(f"📣   LEADER: {sender_id} ({self.hostname(sender_id)})")
+                with self._leader_lock:
+                    self._is_leader = False
+                    self._leader = sender_id
+
+            elif message_code == Message.HEALTHCHECK:
+                self.send_message(
+                    Message.IM_ALIVE, sender_id, PORT, self._control_socket
                 )
-                break
-        self.increase_seq_number()
 
-    def set_other_leader(self, controller_id, address):
-        self._leader = controller_id
-        self._is_leader = False
-        self.controllers_to_check = {controller_id: address}
-        logging.info(f"Leader: {controller_id} at {address}")
+            elif message_code == Message.IM_ALIVE:
+                with self._im_alive_lock:
+                    self._im_alive_received.add(sender_id)
 
-    def set_self_leader(self):
-        self._is_leader = True
-        self._leader = None
-        self.controllers_to_check = self.other_controllers.copy()
-        self.controllers_to_check.update(self.other_medics)
-        logging.info(f"Leader: {self.controller_id} at localhost")
+    def election(self):
+        logging.info("🗳️   Starting election")
+        for medic_id in self._bigger_medics:
+            crash_maybe()
+            self.send_message(Message.ELECTION, medic_id, PORT, self._control_socket)
 
-    def check_controllers(self):
-        self.send_healthchecks()
-        received_healthchecks = self.listen_healthcheck_responses()
+        time.sleep(VOTING_DURATION_SECONDS)
+        crash_maybe()
 
-        # logging.info(f"Received healthchecks:")
-        # for k, v in received_healthchecks.items():
-        #     logging.info(f"{k}: {v}")
-        controllers_to_revive = []
-        for controller_id in self.controllers_to_check:
-            # Skip if controller was just revived, give it some time
-            if controller_id in self.just_revived_controllers:
-                logging.info(f"Skipping {controller_id} as it was just revived")
-                continue
-            if controller_id not in received_healthchecks:
-                controllers_to_revive.append(controller_id)
-        self.just_revived_controllers.clear()
+        with self._leader_lock:
+            if not self._ok_received:
+                self._is_leader = True
+                self._leader = self._id
+                self.announce_leader()
+            self._ok_received = False
 
-        if len(controllers_to_revive) == 0:
-            logging.info("All controllers are healthy")
-            return
-        else:
-            logging.info(f"Controllers not responding: {controllers_to_revive}")
+        time.sleep(2)
 
-        if self._is_leader:
-            for controller_id in controllers_to_revive:
-                self.revive_controller(controller_id)
-                self.just_revived_controllers.add(controller_id)
-        else:
-            self.elect_leader()
-            if self._is_leader:
-                for controller_id in controllers_to_revive:
-                    self.revive_controller(controller_id)
+    def announce_leader(self):
+        logging.info(f"📣   LEADER: {self._id} (localhost)")
+        for medic_id in self._other_medics:
+            crash_maybe()
+            self.send_message(
+                Message.COORDINATOR,
+                medic_id,
+                PORT,
+                self._control_socket,
+            )
 
     def revive_controller(self, controller_id):
-        logging.info(f"Reving controller: {controller_id}")
-        container = self.docker_client.containers.get(controller_id)
+        logging.info(f"🔄   Reving controller: {controller_id}")
+        container = self._docker_client.containers.get(controller_id)
         try:
             container.kill()
         except:
             pass
         container.start()
+        self._just_revived.add(controller_id)
 
-    def send_healthcheck_response(self, address, controller_id, seq_num):
-        message = f"{seq_num},{self.controller_id},{Message.IM_ALIVE.value}$"
-        # logging.info(f"Sending healthcheck response to {controller_id} at {address}")
-        try:
-            for _ in range(MSG_REDUNDANCY):
-                self.control_sock.sendto(
-                    message.encode(), (address, HEALTHCHECK_RESPONSE_PORT)
-                )
-        except socket.gaierror:
-            pass
-        except Exception as e:
-            logging.error(f"EXCEPTION at sendto sending IM_ALIVE: ({type(e)}) {e}")
+    def check_on_other_controllers(self):
+        to_check = list(self._other_medics.keys())
 
-    def elect_leader(self):
-        logging.info("Starting election")
+        with self._leader_lock:
+            self._im_alive_received.clear()
 
-        for i in range(self.medic_number, self.number_of_medics):
-
-            election_msg = (
-                f"{self.sequence_number},{self.controller_id},{Message.ELECTION.value}$"
+        for medic_id in to_check:
+            crash_maybe()
+            self.send_message(
+                Message.HEALTHCHECK, medic_id, PORT, self._control_socket  # type: ignore
             )
-            try:
-                for _ in range(MSG_REDUNDANCY):
-                    crash_maybe()
-                    self.control_sock.sendto(
-                        election_msg.encode(),
-                        (f"medic{i+1}", CONTROL_PORT),
-                    )
-            except socket.gaierror:
-                continue
-            except Exception as e:
-                logging.error(f"Exception at sendto sending ELECTION: ({type(e)}) {e}")
 
-        time.sleep(VOTING_DURATION_SECONDS)
+        time.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
 
-        if len(self.OKS_received) == 0:
-            self.set_self_leader()
-            for _ in range(self.number_of_medics):
-                coordinator_msg = f"{self.sequence_number},{self.controller_id},{Message.COORDINATOR.value}$"
-                for i in range(0, self.medic_number):
-                    crash_maybe()
-                    if i + 1 == self.medic_number:
-                        continue
-                    try:
-                        for _ in range(MSG_REDUNDANCY):
-                            self.control_sock.sendto(
-                                coordinator_msg.encode(), (f"medic{i+1}", CONTROL_PORT)
-                            )
-                    except socket.gaierror:
-                        continue
-                    except Exception as e:
-                        logging.error(
-                            f"Exception at sendto sending COORDINATOR: ({type(e)}) {e}"
-                        )
+        with self._im_alive_lock:
+            if len(self._im_alive_received) == len(to_check):
+                logging.info("✅   All controllers are alive")
 
-            self.increase_seq_number()
-        else:
-            self.OKS_received.clear()
-
-    def control_listen_thread(self):
-        logging.info("Control Listening thread started")
-        terminator_bytes = bytes("$", "utf-8")[0]
-        while not self._shutting_down:
-            data = b""
-            while len(data) == 0 or data[-1] != terminator_bytes:
+            for controller_id in to_check:
                 crash_maybe()
-                recieved, address = self.control_sock.recvfrom(1024)
-                data += recieved
+                if controller_id not in self._im_alive_received:
+                    if controller_id in self._just_revived:
+                        self._just_revived.remove(controller_id)
+                        continue
+                    self.revive_controller(controller_id)
 
-            if not data:
-                continue
-            data = data.decode()
-            seq_num, controller_id, response_code = data[:-1].split(",")
+    def check_on_leader(self):
+        leader = self._leader
 
-            response_code = int(response_code)
-            if response_code == Message.OK.value:
-                self.OKS_received.append(controller_id)
-            elif response_code == Message.HEALTHCHECK.value:
-                self.send_healthcheck_response(
-                    address=address[0], controller_id=controller_id, seq_num=seq_num
-                )
-            elif response_code == Message.ELECTION.value:
-                ok_msg = (
-                    f"{self.sequence_number},{self.controller_id},{Message.OK.value}$"
-                )
-                try:
-                    for _ in range(MSG_REDUNDANCY):
-                        crash_maybe()
-                        self.control_sock.sendto(
-                            ok_msg.encode(), (controller_id, CONTROL_PORT)
-                        )
-                except socket.gaierror:
-                    pass
-                except Exception as e:
-                    logging.error(f"Exception at sendto sending OK: ({type(e)}) {e}")
-            elif response_code == Message.COORDINATOR.value:
-                # Dont set leader if already set
-                if self._is_leader or self._leader != controller_id:
-                    self.set_other_leader(controller_id, address[0])
+        with self._im_alive_lock:
+            self._im_alive_received.clear()
 
-    def listen_healthcheck_responses(self) -> dict:
+        self.send_message(
+            Message.HEALTHCHECK, leader, PORT, self._control_socket  # type: ignore
+        )
 
-        terminator_bytes = bytes("$", "utf-8")[0]
-        healthcheck_round_start = time.time()
-        new_timeout = HEALTH_CHECK_INTERVAL_SECONDS
+        crash_maybe()
+        time.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
 
-        received_healthchecks = defaultdict(lambda: 0)
-
-        while not self._shutting_down:
-            new_timeout = max(
-                HEALTH_CHECK_INTERVAL_SECONDS - (time.time() - healthcheck_round_start),
-                1,
-            )
-            self.healthcheck_sock.settimeout(new_timeout)
-
-            data = b""
-            try:
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    crash_maybe()
-                    recieved, address = self.healthcheck_sock.recvfrom(1024)
-                    data += recieved
-            except socket.timeout:
-                break
-
-            if not data:
-                continue
-
-            data = data.decode()
-            seq_num, controller_id, response_code = data[:-1].split(",")
-            seq_num = int(seq_num)
-
-            response_code = int(response_code)
-            if response_code == Message.IM_ALIVE.value:
-                received_healthchecks[controller_id] += 1
+        with self._im_alive_lock:
+            if len(self._im_alive_received) == 0:
+                logging.info(f"❌   Leader ({leader}) is dead")
+                logging.info("Heartbeat 💓")
+                self._own_heartbeat = time.time()
+                self.election()
+                if self._is_leader:
+                    self.announce_leader()
+                    self.revive_controller(leader)
             else:
-                logging.error(f"Unexpected message received: {data}")
-
-        return received_healthchecks
+                logging.info(f"✅   Leader ({leader}) is alive")
 
     def start(self):
-        control_handle = threading.Thread(target=self.control_listen_thread, args=())
-        control_handle.start()
-        time.sleep(5)
-        self.elect_leader()
-        while not self._shutting_down:
-            self.check_controllers()
-            time.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
+        handle_msg_thread = threading.Thread(target=self.handle_messages, args=())
+        handle_msg_thread.start()
 
-        self.control_sock.close()
-        control_handle.join()
+        time.sleep(5)
+
+        while not self._shutting_down and not self._leader and not self._is_leader:
+            self.election()
+            logging.info("Heartbeat 💓")
+            self._own_heartbeat = time.time()
+
+        if self._is_leader:
+            logging.info("🚀   Starting leader loop")
+            while not self._shutting_down:
+                self.check_on_other_controllers()
+                logging.info("Heartbeat 💓")
+                self._own_heartbeat = time.time()
+        else:
+            logging.info("🩺   Starting follower loop")
+            if self._leader is None:
+                logging.error("💥   No leader to check on")
+            while not self._shutting_down:
+                self.check_on_leader()
+                logging.info("Heartbeat 💓")
+                self._own_heartbeat = time.time()
+
+        handle_msg_thread.join()
 
 
 def config_logging(level: str):
@@ -334,7 +308,7 @@ def main():
 
     medic = Medic(
         config=config,
-        controllers_to_check={
+        system_controllers={
             "title_filter_proxy": "title_filter_proxy",
             "title_filter1": "title_filter1",
             # "title_filter2": "title_filter2",
