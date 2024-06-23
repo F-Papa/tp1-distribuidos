@@ -1,4 +1,5 @@
 from collections import defaultdict
+import errno
 import random
 import signal
 import socket
@@ -25,10 +26,44 @@ class Message(Enum):
     ACCEPTED = 6
     HEALTHCHECK = 7
     IM_ALIVE = 8
+    HELLO = 9
+
+
+def decode_int(bytes: bytes) -> int:
+    return int.from_bytes(bytes, "big")
+
+
+def is_type(data: bytes, msg_type: Message) -> bool:
+    return decode_int(data[:CONNECTION_MSG_LENGTH]) == msg_type.value
+
+
+def connect_msg(medic_number: int) -> bytes:
+    return (
+        b""
+        + Message.CONNECT.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
+        + medic_number.to_bytes(CONNECTION_MSG_LENGTH, "big")
+    )
+
+def connected_msg() -> bytes:
+    return Message.CONNECTED.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
+
+
+def election_msg() -> bytes:
+    return Message.ELECTION.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
+
+
+def ok_msg() -> bytes:
+    return Message.OK.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
+
+
+def coord_msg() -> bytes:
+    return Message.COORDINATOR.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
 
 
 CONNECTION_PORT = 12345
 CONNECTION_MSG_LENGTH = 1
+CONNECTION_RETRIES = 5
+RETRY_INTERVAL = 2
 
 CONNECTION_TIMEOUT = 4
 SETUP_TIMEOUT = 15
@@ -43,6 +78,7 @@ VOTING_COOLDOWN = 6
 MSG_REDUNDANCY = 1
 
 
+
 class Medic:
     CONTROLLER_TYPE = "medic"
 
@@ -51,12 +87,13 @@ class Medic:
         self._number_of_medics = config.get("NUMBER_OF_MEDICS")
         self._medic_number = config.get("MEDIC_NUMBER")
         self._other_medics = {}
-        self._bigger_medics = {}
+        self._greater_medics = {}
+        self._first_election_done = False
         self._smaller_medics = {}
 
         for i in range(1, self._number_of_medics + 1):
             if i > self._medic_number:
-                self._bigger_medics[f"medic{i}"] = f"medic{i}"
+                self._greater_medics[f"medic{i}"] = f"medic{i}"
             if i != self._medic_number:
                 self._other_medics[f"medic{i}"] = f"medic{i}"
             if i < self._medic_number:
@@ -65,177 +102,258 @@ class Medic:
         self.controllers_to_check = controllers_to_check.copy()
         self.controllers_to_check.update(self._other_medics)
 
-        self._seq_num = 0
         self._id = f"{self.CONTROLLER_TYPE}{self._medic_number}"
         self._is_leader = False
         self._leader = None
         self.docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock")
         self._connections_lock = threading.Lock()
         self._connections = {}
+        self._threads = {}
 
-        # TODO
-        self.alive_flags = [True, False]
+        self._ok_received = set()
+        self._ok_received_lock = threading.Lock()
 
-    def accept_conn_from_smaller_medics(self, election_condvar: threading.Condition):
+        self._voting = False
+        self._voting_condvar = threading.Condition()
+
+    def shutdown(self):
+        for _, conn in self._connections.items():
+            conn.shutdown(socket.SHUT_RDWR)
+            conn.close()
+
+    def accept_conn_from_smaller_medics(self, elections_barrier: threading.Barrier):
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for medic in self._smaller_medics:
+            msg = b"" + Message.HELLO.value.to_bytes(CONNECTION_MSG_LENGTH, "big") + self._medic_number.to_bytes(CONNECTION_MSG_LENGTH, "big") 
+            logging.info(f"Sent Hello to {medic}")
+            udp_sock.sendto(msg, (medic, CONNECTION_PORT))
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("0.0.0.0", CONNECTION_PORT))
-        # sock.settimeout(
-        #     CONNECTION_TIMEOUT * (self._number_of_medics - self._medic_number) * 2
-        # )
-        sock.listen(self._number_of_medics * 5)
-
-        connections_accepted = 0
-        sock.settimeout(SETUP_TIMEOUT)
+        sock.listen(self._medic_number - 1)
 
         while True:
-            if connections_accepted >= self._medic_number - 1:
-                with election_condvar:
-                    election_condvar.notify()
-                logging.info("Notified")
+            conn, _ = sock.accept()
+            received = self.recv_bytes(conn, CONNECTION_MSG_LENGTH * 2)
+            medic_number = decode_int(received[CONNECTION_MSG_LENGTH:])
+            medic_id = f"medic{medic_number}"
+
+            if is_type(received, Message.CONNECT):
+                with self._voting_condvar:
+                    if old_conn := self._connections.get(medic_id):
+                        old_conn.shutdown(socket.SHUT_RDWR)
+                        old_conn.close()
+                    self._voting_condvar.notify_all()
+
+                if old_thread := self._threads.get(medic_id):
+                    logging.info("Joining old thread")
+                    old_thread.join()
+
+                thread = threading.Thread(
+                    target=self.handle_connection_lower_id, args=(medic_id, conn, elections_barrier)
+                )
+
+                thread.start()
+                self._threads[medic_id] = thread
+
+    def handle_connection_lower_id(self, medic_id: str, sock: socket.socket, elections_barriers: list[threading.Barrier]):
+        logging.info("Handling connection with " + medic_id)
+        with self._connections_lock:
+            self._connections[medic_id] = sock
+
+        self.send_bytes(sock, connected_msg())
+        logging.info(f"Connected to {medic_id}")
+        sock.settimeout(TIMEOUT)
+        
+        # ---------------------------------------------
+        while True:
             try:
-                conn, addr = sock.accept()
-            except socket.timeout:
-                sock.settimeout(None)
-                logging.info("Notified due to timeout")
-                with election_condvar:
-                    election_condvar.notify()
-                continue
+                received = self.recv_bytes(sock, CONNECTION_MSG_LENGTH)
+                if len(received) == 0:
+                    return
+            except OSError as e:
+                if e.errno == errno.EBADF or e.errno == errno.EBADFD:
+                    return
+            
+            if is_type(received, Message.ELECTION):
+                self._voting = True
+                self.send_bytes(sock, ok_msg())
 
-            received = conn.recv(CONNECTION_MSG_LENGTH * 2)
-            if (
-                int.from_bytes(received[:CONNECTION_MSG_LENGTH], "big")
-                != Message.CONNECT.value
-            ):
-                logging.error(f"Unknown message from {addr}: ", received)
-                continue
+            elections_barriers[0].wait() # Wait for all OKs to be received or Timed out
 
-            medic_number = int.from_bytes(received[CONNECTION_MSG_LENGTH:], "big")
+            elections_barriers[1].wait() # Wait for decision on leadership
+            
+            if self._is_leader:
+                msg = coord_msg()
+                logging.info("Sending Coordinator")
+                self.send_bytes(sock, msg)
+            
+            elections_barriers[2].wait() # Wait for all COORDINATORS to be sent.
 
-            msg = Message.CONNECTED.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
-            logging.info(f"Sending Connected to medic {medic_number}")
-            self.send_bytes(conn, msg)
+            with self._voting_condvar:
+                self._voting_condvar.wait()
 
-            connections_accepted += 1
+    def macuca(self, elections_barriers):
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.bind(("0.0.0.0", CONNECTION_PORT))
+
+        while True:
+            received = udp_sock.recv(1024)
+            if decode_int(received[:CONNECTION_MSG_LENGTH]) == Message.HELLO.value:
+                medic_num = decode_int(received[CONNECTION_MSG_LENGTH:])
+                medic_id = f"medic{medic_num}"
+
+                if not self._first_election_done:
+                    logging.info("Ignoring HELLO")
+                    continue
+                if conn := self._connections.get(medic_id):
+                    logging.info(f"Received HELLO from {medic_id}")
+                    conn.shutdown(socket.SHUT_RDWR)
+                    conn.close()
+                    with self._voting_condvar:
+                        self._voting_condvar.notify_all()
+                    self._threads[medic_id].join()
+                    thread = threading.Thread(target=self.handle_connection_greater_id, args=(medic_id, elections_barriers,))
+                    thread.start()
+                    self._threads[medic_id] = thread
+
+
+    def connect_to_greater_medics(self, elections_barriers: list[threading.Barrier]):
+        for medic in self._greater_medics:
+            thread = threading.Thread(
+                target=self.handle_connection_greater_id, args=(medic, elections_barriers)
+            )
+            thread.start()
+            self._threads[medic] = thread
+
+    def handle_connection_greater_id(self, medic_id: str, elections_barriers: list[threading.Barrier]):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # try:
+        self.handle_connection_greater_id_aux(medic_id, sock, elections_barriers)
+        # except OSError as e:
+            # logging.error(f"Error handling connection {medic_id}: {e}")
+        sock.close()
+
+    def handle_connection_greater_id_aux(self, connected_id: str, sock: socket.socket, elections_barriers: list[threading.Barrier]):
+        # Connect to medic via TCP and retry if failed
+        #self.try_to_connect_to_medic(connected_id, sock)
+        for i in range(CONNECTION_RETRIES):
+            try:
+                sock.connect((connected_id, CONNECTION_PORT))
+                break
+            except Exception as e:
+                if i + 1 == CONNECTION_RETRIES:
+                    logging.error(f"Exception conneting to {connected_id}: {e}")
+                    # logging.info("Waiting 0") 
+                    elections_barriers[0].wait() # Wait for all OKs to be received or Timed out
+                    # logging.info("Waiting 1") 
+                    elections_barriers[1].wait() # Wait for decision on leadership
+                    # logging.info("Waiting 2") 
+                    elections_barriers[2].wait() # Wait for all COORDINATORS to be sent.
+                    return
+                else:
+                    time.sleep(RETRY_INTERVAL)
+
+        # Send CONNECT
+        self.send_bytes(sock, connect_msg(self._medic_number))
+        
+        received = self.recv_bytes(sock, CONNECTION_MSG_LENGTH)
+        if is_type(received, Message.CONNECTED):
+            logging.info(f"Connected to {connected_id}")
             with self._connections_lock:
-                self._connections[f"medic{medic_number}"] = conn
-
-    def connect_to_geater_medics(self):
-        for medic in self._bigger_medics:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # sock.settimeout(CONNECTION_TIMEOUT)
+                self._connections[connected_id] = sock
+        
+        # Connection established ---------------------------------------------------------------
+        while True:
+            self._voting = True
             try:
-                start = time.time()
-                sock.connect((medic, CONNECTION_PORT))
-            except socket.gaierror:
-                logging.info(f"Resolution failed after: {time.time() -  start}")
-                continue
-            msg_code = Message.CONNECT.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
-            medic_number = self._medic_number.to_bytes(CONNECTION_MSG_LENGTH, "big")
-            msg = b"" + msg_code + medic_number
+                self.send_bytes(sock, election_msg())
+            except OSError as e:
+                if e.errno == errno.EBADF or e.errno == errno.EBADFD:
+                    return
+                else:
+                    raise e
+                
+            sock.settimeout(TIMEOUT)
+            try:    
+                received = self.recv_bytes(sock, CONNECTION_MSG_LENGTH)
+            except socket.timeout:
+                logging.info("TIMEOUT WAIT1")
+            
+            if is_type(received, Message.OK):
+                with self._ok_received_lock:
+                    self._ok_received.add(connected_id)
+            
+            # logging.info("Waiting 0") # Wait for all OKs to be received or Timed out
+            elections_barriers[0].wait()   # ALL THREADS SYNC TO WAIT FOR ALL OKs
 
-            logging.info(f"Sending Connect to {medic}")
-            self.send_bytes(sock, msg)
+            # logging.info("Waiting 1") 
+            elections_barriers[1].wait() # Wait for decision on leadership
 
-            received = self.recv_bytes(sock, CONNECTION_MSG_LENGTH)
+            if not self._is_leader:
+                with self._ok_received_lock:
+                    logging.info(f"{self.greatest_id(list(self._ok_received))} == {connected_id}?")
+                    if connected_id == self.greatest_id(list(self._ok_received)):
+                        received = self.recv_bytes(sock, CONNECTION_MSG_LENGTH)
+                        if is_type(received, Message.COORDINATOR):
+                            logging.info(f"RECEIVED COORDINATOR FROM {connected_id}")
+                            self._leader = connected_id
+                            self._voting = False
+                # logging.info("Waiting 2") 
 
-            if int.from_bytes(received, "big") == Message.CONNECTED.value:
-                with self._connections_lock:
-                    self._connections[medic] = sock
-            else:
-                logging.error(f"Unknown response from {medic}: {received}")
+            elections_barriers[2].wait() # Wait for coordinator to be sent if not leader
+            
+            with self._voting_condvar:
+                self._voting_condvar.wait()
 
     def start(self):
-        election_condvar = threading.Condition()
+        elections_barriers = []
+        for i in range(3):
+            elections_barriers.append(
+                threading.Barrier(self._number_of_medics)
+            )
+        
+
         listen_thread = threading.Thread(
-            target=self.accept_conn_from_smaller_medics, args=(election_condvar,)
+            target=self.accept_conn_from_smaller_medics, args=(elections_barriers,)
         )
         listen_thread.start()
-
-        time.sleep(2)
-
-        self.connect_to_geater_medics()
+        self.connect_to_greater_medics(elections_barriers)
+        
+        threading.Thread(target=self.macuca, args=(elections_barriers,)).start()
 
         while True:
-            with election_condvar:
-                election_condvar.wait()
-            self.start_election()
+            elections_barriers[0].wait() # Wait for all OKs to be received or Timed out
+            with self._ok_received_lock:
+                if not self._ok_received:
+                    logging.info(f"IM NOW THE LEADER")
+                    self._is_leader = True
+                    self._leader = self._id
+                    self._voting = False
+            
+            elections_barriers[1].wait() # Wait for decision on leadership        
+            elections_barriers[2].wait() # Wait for coordinator to be sent if leader
+            
+            logging.info("Election finished")
+            self._first_election_done = True
+            with self._voting_condvar:
+                self._voting_condvar.wait()
 
-        listen_thread.join()
+        map(lambda thread: thread.join(), self._threads.values())
 
-    def start_election(self):
-        oks_received = []
-
-        # Send ELECTION Messages
-        logging.info("MACAROONES")
-        for medic in self._bigger_medics:
-            msg = Message.ELECTION.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
-            with self._connections_lock:
-                if conn := self._connections.get(medic):
-                    logging.info(f"Sending Election to {medic}")
-                    self.send_bytes(conn, msg)
-                else:
-                    continue
-
-        logging.info("PISTACHOS")
-        # Receive ELECTION and send OK Messages 
-        for medic in self._smaller_medics:
-            with self._connections_lock:
-                if conn := self._connections.get(medic):
-                    conn.settimeout(RESOLUTION_APROX_TIMEOUT*2*(self._number_of_medics-1)) # If all resolutions_fail for new node
-                    try:
-                        received = self.recv_bytes(conn, CONNECTION_MSG_LENGTH)
-                    except socket.timeout:
-                        logging.error(f"Timed out waitig for {medic}'s ELECTION")
-                        continue
-
-                    if int.from_bytes(received, "big") == Message.ELECTION.value:
-                        logging.info(f"Sending Ok to {medic}")
-                        ok_msg = Message.OK.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
-                        self.send_bytes(conn, ok_msg)
-                    else:
-                        logging.info(f"Received frula: {received}")
-
-        # Receive OK Messages
-        logging.info("SALMOMNELLA")
-        for medic in self._bigger_medics:
-            with self._connections_lock:
-                if conn := self._connections.get(medic):
-                    conn.settimeout(TIMEOUT)
-                    try:
-                        received = self.recv_bytes(conn, CONNECTION_MSG_LENGTH)
-                    except socket.timeout:
-                        logging.error(f"Timed out waiting for {medic}'s OK")
-                        continue
-                    if int.from_bytes(received, "big") == Message.OK.value:
-                        oks_received.append(medic)
-
-        #Send COORDINATOR Messages
-        if oks_received:
-            greatest_medic = self.greatest_id(oks_received)
-
-            with self._connections_lock:
-                conn = self._connections.get(greatest_medic)
-
-            if conn:
-                conn.settimeout(TIMEOUT)
-                try:
-                    received = self.recv_bytes(conn, CONNECTION_MSG_LENGTH)
-                except socket.timeout:
-                    logging.error(f"Timed out waiting for {greatest_medic}'s COORDINATOR")
-                    return
-
-                if int.from_bytes(received, "big") == Message.COORDINATOR.value:
-                    logging.info(f"Received COORDINATOR: {greatest_medic}")
-                    # UPDATEAR COORDI
+        # Acá tenes a todos los threads joineados y las conexiones exitosas guardadas.
         
-        #Receive COORDINATOR Messages
-        else:
-            for medic in self._other_medics:
-                msg = Message.COORDINATOR.value.to_bytes(CONNECTION_MSG_LENGTH, "big")
-                with self._connections_lock:
-                    if conn := self._connections.get(medic):
-                        logging.info(f"Sending Coordinator to {medic}")
-                        self.send_bytes(conn, msg)
+
+    def recv_bytes(self, sock: socket.socket, size: int):
+        received = b""
+        while len(received) < size:
+            received += sock.recv(size - len(received))
+        return received
+
+    def send_bytes(self, sock: socket.socket, data: bytes):
+        bytes_sent = 0
+        while bytes_sent < len(data):
+            bytes_sent += sock.send(data[bytes_sent:])
 
     def greatest_id(self, medic_ids: list[str]) -> str:
         if not medic_ids:
@@ -249,17 +367,6 @@ class Medic:
 
         max_key = max(number_to_id.keys())
         return number_to_id[max_key]
-
-    def recv_bytes(self, sock: socket.socket, size: int):
-        received = b""
-        while len(received) < size:
-            received += sock.recv(size - len(received))
-        return received
-
-    def send_bytes(self, sock: socket.socket, data: bytes):
-        bytes_sent = 0
-        while bytes_sent < len(data):
-            bytes_sent += sock.send(data[bytes_sent:])
 
 
 def config_logging(level: str):
@@ -290,7 +397,7 @@ def main():
     logging.info(config)
 
     medic = Medic(config=config, controllers_to_check={})
-
+    signal.signal(signal.SIGTERM, lambda *_: medic.shutdown())
     # "title_filter1": "title_filter1", "title_filter2": "title_filter2",
     #                                              "title_filter_proxy": "title_filter_proxy", "date_filter1": "date_filter1",
     #                                                "date_filter2": "date_filter2", "date_filter_proxy": "date_filter_proxy",
