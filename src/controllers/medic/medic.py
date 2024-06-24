@@ -6,7 +6,7 @@ import signal
 import socket
 import time
 import logging
-from typing import Optional
+from typing import Iterable, Optional
 import docker
 from enum import Enum
 import os
@@ -17,6 +17,27 @@ from src.utils.config_loader import Configuration
 
 HEALTHCHECK_REQUEST_CODE = 1
 HEALTHCHECK_RESPONSE_CODE = 2
+
+CONNECTION_PORT = 12345
+INT_ENCODING_LENGTH = 1
+CONNECTION_RETRIES = 5
+RETRY_INTERVAL = 2
+
+CONNECTION_TIMEOUT = 5
+SETUP_TIMEOUT = 15
+TIMEOUT = 4
+OK_TIMEOUT = 4
+COORDINATOR_TIMEOUT = 30
+ELECTION_TIMEOUT = 4
+RESOLUTION_APROX_TIMEOUT = 4
+
+VOTING_DURATION = 8
+LEADER_ANNOUNCEMENT_DURATION = 8
+HEALTHCHECK_INTERVAL_SECONDS = 5
+HEALTHCHECK_TIMEOUT = 25
+VOTING_COOLDOWN = 6
+
+MSG_REDUNDANCY = 1
 
 
 class Message(Enum):
@@ -47,10 +68,19 @@ def connect_msg(medic_number: int) -> bytes:
         + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
     )
 
+
 def hello_msg(medic_number: int) -> bytes:
     return (
         b""
         + Message.HELLO.value.to_bytes(INT_ENCODING_LENGTH, "big")
+        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
+    )
+
+
+def im_alive_msg(medic_number: int) -> bytes:
+    return (
+        b""
+        + Message.IM_ALIVE.value.to_bytes(INT_ENCODING_LENGTH, "big")
         + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
     )
 
@@ -63,33 +93,20 @@ def election_msg() -> bytes:
     return Message.ELECTION.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
 
+def healthcheck_msg(medic_number: int) -> bytes:
+    return (
+        b""
+        + Message.HEALTHCHECK.value.to_bytes(INT_ENCODING_LENGTH, "big")
+        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
+    )
+
+
 def ok_msg() -> bytes:
     return Message.OK.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
 
 def coord_msg() -> bytes:
     return Message.COORDINATOR.value.to_bytes(INT_ENCODING_LENGTH, "big")
-
-
-CONNECTION_PORT = 12345
-INT_ENCODING_LENGTH = 1
-CONNECTION_RETRIES = 5
-RETRY_INTERVAL = 2
-
-CONNECTION_TIMEOUT = 5
-SETUP_TIMEOUT = 15
-TIMEOUT = 4
-OK_TIMEOUT = 4
-COORDINATOR_TIMEOUT = 30
-ELECTION_TIMEOUT = 4
-RESOLUTION_APROX_TIMEOUT = 4
-
-VOTING_DURATION = 8
-LEADER_ANNOUNCEMENT_DURATION = 8
-HEALTH_CHECK_INTERVAL_SECONDS = 15
-VOTING_COOLDOWN = 6
-
-MSG_REDUNDANCY = 1
 
 
 class Medic:
@@ -127,6 +144,7 @@ class Medic:
         self._ok_received = set()
         self._ok_received_lock = threading.Lock()
         self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._last_im_alive_timestamp = dict()
 
     def shutdown(self):
         for _, conn in self._connections.items():
@@ -174,71 +192,94 @@ class Medic:
                 f"at accept_connection: Received unexpected message from {addr}: {received}"
             )
 
-
     def loop(self):
-        while True:
-            sel = selectors.DefaultSelector()
+        sel = selectors.DefaultSelector()
+        with self._connections_lock:
+            for stored_id in self._other_medics:
+                if conn := self._connections.get(stored_id):
+                    sel.register(conn, selectors.EVENT_READ)
+
+        sel.register(self._udp_sock, selectors.EVENT_READ)
+        sel.register(self._listen_socket, selectors.EVENT_READ)
+
+        events = sel.select()
+
+        for key, _ in events:
+            sock: socket.socket = key.fileobj  # type: ignore
+
+            if sock == self._listen_socket:
+                self.accept_connection(sock)
+                # Election?
+                return
+
+            if sock == self._udp_sock:
+                received, addr = sock.recvfrom(2 * INT_ENCODING_LENGTH)
+                if is_type(received, Message.HELLO):
+                    number = decode_int(received[INT_ENCODING_LENGTH:])
+                    id = f"medic{number}"
+                    logging.info(f"📣   HELLO from {id}")
+                    self.connect_to_other(id)
+                    logging.info(f"📶  Connected to {id}")
+                elif is_type(received, Message.HEALTHCHECK):
+                    number = decode_int(received[INT_ENCODING_LENGTH:])
+                    id = f"medic{number}"
+
+                    if id != self._leader:
+                        logging.error(
+                            f"Received healthcheck from {id}, leader is {self._leader}."
+                        )
+                        return
+
+                    sock.sendto(
+                        im_alive_msg(self._medic_number),
+                        (self._leader, CONNECTION_PORT),
+                    )
+
+                    self._last_im_alive_timestamp[self._leader] = time.time()
+                    logging.info(f"Received Healthcheck from leader {self._leader}")
+
+                elif is_type(received, Message.IM_ALIVE):
+                    number = decode_int(received[INT_ENCODING_LENGTH:])
+                    id = f"medic{number}"
+                    self._last_im_alive_timestamp[id] = time.time()
+                    logging.info(f"Received IM ALIVE from {id}")
+                else:
+                    logging.error(f"Unkown UDP message received: {received}")
+                return
+
+            id = None
             with self._connections_lock:
                 for stored_id in self._other_medics:
                     if conn := self._connections.get(stored_id):
-                        sel.register(conn, selectors.EVENT_READ)
-            
-            
-            sel.register(self._udp_sock, selectors.EVENT_READ)
-            sel.register(self._listen_socket, selectors.EVENT_READ)
-        
-            events = sel.select()
-
-            for key, _ in events:
-                sock: socket.socket = key.fileobj # type: ignore
-
-                if sock == self._listen_socket:
-                    self.accept_connection(sock)
-                    # Election?
-                    return
-                
-                if sock == self._udp_sock:
-                    received = sock.recv(2*INT_ENCODING_LENGTH)
-                    if is_type(received, Message.HELLO):
-                        number = decode_int(received[INT_ENCODING_LENGTH:])
-                        id = f"medic{number}"
-                        logging.info(f"📣   HELLO from {id}")
-                        self.connect_to_other(id)
-                        logging.info(f"📶  Connected to {id}")
-                    else:
-                        logging.error(f"Unkown UDP message received: {received}")
-                    return
-                
-                id = None
-                with self._connections_lock:
-                    for stored_id in self._other_medics:
-                        if conn := self._connections.get(stored_id):
-                            if sock == conn:
-                                id = stored_id
-                                break
-                received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
-                if is_type(received, Message.COORDINATOR):
-                    logging.info(f"⭐   COORDINATOR: {id}")
+                        if sock == conn:
+                            id = stored_id
+                            break
+            received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+            if is_type(received, Message.COORDINATOR):
+                logging.info(f"⭐   COORDINATOR: {id}")
+                self._is_leader = False
+                self._leader = id
+            elif is_type(received, Message.ELECTION):
+                self.send_bytes(sock, ok_msg())
+                self.send_election()
+                self.answer_to_elections(initiator=id)
+                leader, oks_received = self.listen_for_oks()
+                if leader:
+                    self._leader = leader
                     self._is_leader = False
-                    self._leader = id
-                elif is_type(received, Message.ELECTION):
-                    self.send_bytes(sock, ok_msg())
-                    self.send_election()
-                    self.answer_to_elections(initiator=id)
-                    leader, oks_received = self.listen_for_oks()
-                    if leader:
-                        self._leader = leader
-                        self._is_leader = False
-                        logging.info(f"⭐   Coordinator: {self._leader}")
-                    elif oks_received:
-                        self._leader = self.listen_for_coordinator()
-                        self._is_leader = False
-                        logging.info(f"⭐   Coordinator: {self._leader}")
-                    else:
-                        self._leader = self._id
-                        self._is_leader = True
-                        self.send_coordinator()
-                        logging.info(f"🌟   Coordinator: {self._leader}")
+                    logging.info(f"⭐   Coordinator: {self._leader}")
+                elif oks_received:
+                    self._leader = self.listen_for_coordinator()
+                    self._is_leader = False
+                    logging.info(f"⭐   Coordinator: {self._leader}")
+                else:
+                    self._leader = self._id
+                    self._is_leader = True
+                    self.send_coordinator()
+                    logging.info(f"🌟   Coordinator: {self._leader}")
+                    threading.Thread(
+                        target=self.check_on_controllers, args=(self._smaller_medics,)
+                    ).start()
 
     def send_hello(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -280,6 +321,7 @@ class Medic:
         self.send_election()
         self.answer_to_elections(initiator=None)
         leader, oks_received = self.listen_for_oks()
+
         if leader:
             self._leader = leader
             self._is_leader = False
@@ -293,6 +335,9 @@ class Medic:
             self._is_leader = True
             self.send_coordinator()
             logging.info(f"🌟   Coordinator: {self._leader}")
+            threading.Thread(
+                target=self.check_on_controllers, args=(self._smaller_medics,)
+            ).start()
 
         self._udp_sock.bind(("0.0.0.0", CONNECTION_PORT))
         while True:
@@ -331,16 +376,16 @@ class Medic:
 
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
-                
+
                 id = None
                 with self._connections_lock:
                     for conn_id in self._connections:
                         if sock == self._connections[conn_id]:
                             id = conn_id
                             break
-                
+
                 received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
-                
+
                 if id is None:
                     logging.info("Received message from unknown sender")
                     continue
@@ -353,7 +398,9 @@ class Medic:
                     with self._connections_lock:
                         for id in self._connections:
                             if self._connections[id] == sock:
-                                logging.error(f"at answer_to_elections: Received null from {id}")
+                                logging.error(
+                                    f"at answer_to_elections: Received null from {id}"
+                                )
                                 sel.unregister(sock)
                                 del self._connections[id]
                                 break
@@ -361,7 +408,7 @@ class Medic:
                     logging.error(
                         f"at answer_to_elections: Unexpected message received from {id}: {received}"
                     )
-                    
+
         logging.info(
             f"{elections_received}/{len(self._smaller_medics)} Elections received"
         )
@@ -386,7 +433,9 @@ class Medic:
             if is_type(received, Message.COORDINATOR):
                 with self._connections_lock:
                     for id in self._connections:
-                        if self._connections[id] == sock:# and id in self._greater_medics:
+                        if (
+                            self._connections[id] == sock
+                        ):  # and id in self._greater_medics:
                             logging.info(f"Received coordinator from {id}")
                             return id
             else:
@@ -394,7 +443,7 @@ class Medic:
                     f"at listen_for_coordinator: Unexpected message received from {id}: {received}"
                 )
                 return None
-    
+
     def send_coordinator(self):
         with self._connections_lock:
             for id in self._smaller_medics:
@@ -412,9 +461,9 @@ class Medic:
 
         oks_received = set()
         leader = None
-        
+
         while len(oks_received) < len(self._greater_medics):
-            events = sel.select(timeout=OK_TIMEOUT*4)
+            events = sel.select(timeout=OK_TIMEOUT * 4)
             if not events:
                 break
 
@@ -425,22 +474,28 @@ class Medic:
                 if is_type(received, Message.OK):
                     with self._connections_lock:
                         for id in self._connections:
-                            if self._connections[id] == sock: # and id in self._greater_medics:
+                            if (
+                                self._connections[id] == sock
+                            ):  # and id in self._greater_medics:
                                 oks_received.add(id)
                                 break
                 elif is_type(received, Message.COORDINATOR):
                     for id in self._connections:
-                            if self._connections[id] == sock: # and id in self._greater_medics:
-                                leader = id
-                                break
+                        if (
+                            self._connections[id] == sock
+                        ):  # and id in self._greater_medics:
+                            leader = id
+                            break
                 elif len(received) == 0:
                     with self._connections_lock:
                         for id in self._connections:
                             if self._connections[id] == sock:
-                                logging.error(f"at answer_to_elections: Received null from {id}")
+                                logging.error(
+                                    f"at answer_to_elections: Received null from {id}"
+                                )
                                 sel.unregister(sock)
                                 del self._connections[id]
-                                break   
+                                break
                 else:
                     logging.error(
                         f"at listen_for_oks: Unexpected message received from {id}: {received}"
@@ -478,6 +533,51 @@ class Medic:
         max_key = max(number_to_id.keys())
         return number_to_id[max_key]
 
+    def revive_controller(self, controller_id: str):
+        logging.info(f"REVIVIENDO CONTROLADOR: {controller_id}")
+        container = self.docker_client.containers.get(controller_id)
+        try:  # KILL IF NOT DEAD
+            container.kill()
+        except:
+            pass
+        container.start()  # REVIVE
+
+    def check_on_controllers(self, controller_ids: Iterable[str]):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        last_check = time.time()
+        dead_controllers = set()
+
+        while True:
+            if (time.time() - last_check) >= (HEALTHCHECK_TIMEOUT // 2):
+                for id in controller_ids:
+                    if not self._last_im_alive_timestamp.get(id):
+                        dead_controllers.add(id)
+                        continue
+                    elif (
+                        time.time() - self._last_im_alive_timestamp[id]
+                    ) >= HEALTHCHECK_TIMEOUT:
+                        dead_controllers.add(id)
+
+                logging.info(f"Dead Controllers: {len(dead_controllers)}")
+
+                for id in dead_controllers:
+                    self.revive_controller(id)
+                    self._last_im_alive_timestamp[id] = time.time()
+
+                dead_controllers.clear()
+
+            for id in controller_ids:
+                try:
+                    sock.sendto(
+                        healthcheck_msg(self._medic_number), (id, CONNECTION_PORT)
+                    )
+                except socket.gaierror:
+                    continue
+
+            time.sleep(HEALTHCHECK_INTERVAL_SECONDS)
+
+
 def config_logging(level: str):
 
     level = getattr(logging, level)
@@ -488,6 +588,7 @@ def config_logging(level: str):
         format="%(asctime)s %(levelname)-8s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
 
 def main():
 
