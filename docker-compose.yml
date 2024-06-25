@@ -11,7 +11,7 @@ services:
     entrypoint: python3 medic.py
     environment:
       - MEDIC_NUMBER=1
-      - NUMBER_OF_MEDICS=3
+      - NUMBER_OF_MEDICS=5
     networks:
       - tp1_testing_net
     volumes:
@@ -28,7 +28,7 @@ services:
     entrypoint: python3 medic.py
     environment:
       - MEDIC_NUMBER=2
-      - NUMBER_OF_MEDICS=3
+      - NUMBER_OF_MEDICS=5
     networks:
       - tp1_testing_net
     volumes:
@@ -45,7 +45,7 @@ services:
     entrypoint: python3 medic.py
     environment:
       - MEDIC_NUMBER=3
-      - NUMBER_OF_MEDICS=3
+      - NUMBER_OF_MEDICS=5
     networks:
       - tp1_testing_net
     volumes:
@@ -53,160 +53,211 @@ services:
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
 
-  boundary:
+  medic4:
     build:
       context: ./
-      dockerfile: ./src/boundary/Dockerfile
-    container_name: boundary
-    image: boundary:latest
-    entrypoint: python3 boundary.py
+      dockerfile: ./src/controllers/medic/Dockerfile
+    container_name: medic4
+    image: medic:latest
+    entrypoint: python3 medic.py
+    environment:
+      - MEDIC_NUMBER=4
+      - NUMBER_OF_MEDICS=5
     networks:
       - tp1_testing_net
-    ports:
-      - "8080:8080"
     volumes:
-      - ./src/boundary/config.ini:/config.ini
-      - ./src/boundary/boundary.py:/boundary.py
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./src/controllers/medic/config.ini:/config.ini
+      - ./src/controllers/medic/medic.py:/medic.py
 
-  title_filter_lb_proxy:
+  medic5:
     build:
       context: ./
-      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-    container_name: title_filter_proxy
-    image: lb_proxy:latest
-    entrypoint: python3 main.py
+      dockerfile: ./src/controllers/medic/Dockerfile
+    container_name: medic5
+    image: medic:latest
+    entrypoint: python3 medic.py
     environment:
-      - FILTER_TYPE=title_filter
-      - FILTER_COUNT=2
-      - INPUT_QUEUES=title_filter_queue
-      - LOGGING_LEVEL=INFO
-      - KEY_TO_HASH=title
-      - IS_PROXY=1
+      - MEDIC_NUMBER=5
+      - NUMBER_OF_MEDICS=5
     networks:
       - tp1_testing_net
     volumes:
-      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./src/controllers/medic/config.ini:/config.ini
+      - ./src/controllers/medic/medic.py:/medic.py
 
-  title_filter1:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
-    container_name: title_filter1
-    image: title_filter:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/title_filter/config.ini:/config.ini
-      - ./src/controllers/filters/title_filter/main.py:/main.py
-      - ./state/title_filter1/:/state
-  title_filter2:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
-    container_name: title_filter2
-    image: title_filter:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=2
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/title_filter/config.ini:/config.ini
-      - ./src/controllers/filters/title_filter/main.py:/main.py
-      - ./state/title_filter2/:/state
-  date_filter_lb_proxy:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-    container_name: date_filter_proxy
-    image: lb_proxy:latest
-    entrypoint: python3 main.py
-    environment:
-      - INPUT_QUEUES=date_filter_queue
-      - FILTER_TYPE=date_filter
-      - FILTER_COUNT=2
-      - LOGGING_LEVEL=INFO
-      - KEY_TO_HASH=title
-      - IS_PROXY=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  # medic6:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/medic/Dockerfile
+  #   container_name: medic6
+  #   image: medic:latest
+  #   entrypoint: python3 medic.py
+  #   environment:
+  #     - MEDIC_NUMBER=6
+  #     - NUMBER_OF_MEDICS=5
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - ./src/controllers/medic/config.ini:/config.ini
+  #     - ./src/controllers/medic/medic.py:/medic.py
 
-  date_filter1:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/date_filter/Dockerfile
-    container_name: date_filter1
-    image: date_filter:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/date_filter/config.ini:/config.ini
-      - ./src/controllers/filters/date_filter/main.py:/main.py
-      - ./state/date_filter1/:/state
+  # boundary:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/boundary/Dockerfile
+  #   container_name: boundary
+  #   image: boundary:latest
+  #   entrypoint: python3 boundary.py
+  #   networks:
+  #     - tp1_testing_net
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./src/boundary/config.ini:/config.ini
+  #     - ./src/boundary/boundary.py:/boundary.py
 
-  date_filter2:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/date_filter/Dockerfile
-    container_name: date_filter2
-    image: date_filter:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=2
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/date_filter/config.ini:/config.ini
-      - ./src/controllers/filters/date_filter/main.py:/main.py
-      - ./state/date_filter2/:/state
+  # title_filter_lb_proxy:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+  #   container_name: title_filter_proxy
+  #   image: lb_proxy:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - FILTER_TYPE=title_filter
+  #     - FILTER_COUNT=2
+  #     - INPUT_QUEUES=title_filter_queue
+  #     - LOGGING_LEVEL=INFO
+  #     - KEY_TO_HASH=title
+  #     - IS_PROXY=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
 
-  category_filter_lb_proxy:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-    container_name: category_filter_proxy
-    image: lb_proxy:latest
-    entrypoint: python3 main.py
-    environment:
-      - INPUT_QUEUES=category_filter_queue
-      - FILTER_TYPE=category_filter
-      - FILTER_COUNT=1
-      - LOGGING_LEVEL=INFO
-      - KEY_TO_HASH=title
-      - IS_PROXY=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  # title_filter1:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/filters/title_filter/Dockerfile
+  #   container_name: title_filter1
+  #   image: title_filter:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - ITEMS_PER_BATCH=700
+  #     - FILTER_NUMBER=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/filters/title_filter/config.ini:/config.ini
+  #     - ./src/controllers/filters/title_filter/main.py:/main.py
+  #     - ./state/title_filter1/:/state
+  # title_filter2:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/filters/title_filter/Dockerfile
+  #   container_name: title_filter2
+  #   image: title_filter:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - ITEMS_PER_BATCH=700
+  #     - FILTER_NUMBER=2
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/filters/title_filter/config.ini:/config.ini
+  #     - ./src/controllers/filters/title_filter/main.py:/main.py
+  #     - ./state/title_filter2/:/state
+  # date_filter_lb_proxy:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+  #   container_name: date_filter_proxy
+  #   image: lb_proxy:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - INPUT_QUEUES=date_filter_queue
+  #     - FILTER_TYPE=date_filter
+  #     - FILTER_COUNT=2
+  #     - LOGGING_LEVEL=INFO
+  #     - KEY_TO_HASH=title
+  #     - IS_PROXY=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
 
-  category_filter1:
-    build:
-      context: ./
-      dockerfile: ./src/controllers/filters/category_filter/Dockerfile
-    container_name: category_filter1
-    image: category_filter:latest
-    entrypoint: python3 main.py
-    environment:
-      - ITEMS_PER_BATCH=700
-      - FILTER_NUMBER=1
-    networks:
-      - tp1_testing_net
-    volumes:
-      - ./src/controllers/filters/category_filter/config.ini:/config.ini
-      - ./src/controllers/filters/category_filter/main.py:/main.py
-      - ./state/category_filter1/:/state
+  # date_filter1:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/filters/date_filter/Dockerfile
+  #   container_name: date_filter1
+  #   image: date_filter:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - ITEMS_PER_BATCH=700
+  #     - FILTER_NUMBER=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/filters/date_filter/config.ini:/config.ini
+  #     - ./src/controllers/filters/date_filter/main.py:/main.py
+  #     - ./state/date_filter1/:/state
+
+  # date_filter2:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/filters/date_filter/Dockerfile
+  #   container_name: date_filter2
+  #   image: date_filter:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - ITEMS_PER_BATCH=700
+  #     - FILTER_NUMBER=2
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/filters/date_filter/config.ini:/config.ini
+  #     - ./src/controllers/filters/date_filter/main.py:/main.py
+  #     - ./state/date_filter2/:/state
+
+  # category_filter_lb_proxy:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+  #   container_name: category_filter_proxy
+  #   image: lb_proxy:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - INPUT_QUEUES=category_filter_queue
+  #     - FILTER_TYPE=category_filter
+  #     - FILTER_COUNT=1
+  #     - LOGGING_LEVEL=INFO
+  #     - KEY_TO_HASH=title
+  #     - IS_PROXY=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+
+  # category_filter1:
+  #   build:
+  #     context: ./
+  #     dockerfile: ./src/controllers/filters/category_filter/Dockerfile
+  #   container_name: category_filter1
+  #   image: category_filter:latest
+  #   entrypoint: python3 main.py
+  #   environment:
+  #     - ITEMS_PER_BATCH=700
+  #     - FILTER_NUMBER=1
+  #   networks:
+  #     - tp1_testing_net
+  #   volumes:
+  #     - ./src/controllers/filters/category_filter/config.ini:/config.ini
+  #     - ./src/controllers/filters/category_filter/main.py:/main.py
+  #     - ./state/category_filter1/:/state
   # review_counter_lb_proxy:
   #   build:
   #     context: ./

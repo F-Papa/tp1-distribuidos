@@ -55,26 +55,30 @@ class Message(Enum):
     HELLO = 9
     COORDINATOR_OK = 10
 
-
 def decode_int(bytes: bytes) -> int:
     return int.from_bytes(bytes, "big")
 
+def sender_id(received: bytes) -> Optional[str]:
+    length = decode_int(received[INT_ENCODING_LENGTH:2*INT_ENCODING_LENGTH])
+    id = received[INT_ENCODING_LENGTH*2:].decode("utf-8")
+    if len(id) != length:
+        logging.error(f"Incomplete sender_id: {id} | {length} {len(id)}")
+        return None
+    return id
 
 def is_type(data: bytes, msg_type: Message) -> bool:
     return decode_int(data[:INT_ENCODING_LENGTH]) == msg_type.value
 
-
 def coordinator_ok_msg():
     return Message.COORDINATOR_OK.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
-
-def connect_msg(medic_number: int) -> bytes:
+def connect_msg(medic_id: str) -> bytes:
     return (
         b""
         + Message.CONNECT.value.to_bytes(INT_ENCODING_LENGTH, "big")
-        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
+        + len(medic_id).to_bytes(INT_ENCODING_LENGTH, "big")
+        + medic_id.encode("utf-8")
     )
-
 
 def hello_msg(medic_number: int) -> bytes:
     return (
@@ -83,38 +87,61 @@ def hello_msg(medic_number: int) -> bytes:
         + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
     )
 
-
-def im_alive_msg(medic_number: int) -> bytes:
+def im_alive_msg(medic_id: str) -> bytes:
     return (
         b""
         + Message.IM_ALIVE.value.to_bytes(INT_ENCODING_LENGTH, "big")
-        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
+        + len(medic_id).to_bytes(INT_ENCODING_LENGTH, "big")
+        + medic_id.encode('utf-8')
     )
-
 
 def connected_msg() -> bytes:
     return Message.CONNECTED.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
-
 def election_msg() -> bytes:
     return Message.ELECTION.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
-
-def healthcheck_msg(medic_number: int) -> bytes:
+def healthcheck_msg(sender_id: str) -> bytes:
     return (
         b""
         + Message.HEALTHCHECK.value.to_bytes(INT_ENCODING_LENGTH, "big")
-        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
+        + len(sender_id).to_bytes(INT_ENCODING_LENGTH, "big")
+        + sender_id.encode('utf-8')
     )
-
 
 def ok_msg() -> bytes:
     return Message.OK.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
-
 def coord_msg() -> bytes:
     return Message.COORDINATOR.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
+def free_socket(sock: socket.socket):
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except:
+        pass
+
+    sock.close()
+
+def is_socket_open(sock: socket.socket):
+    try:
+        sock.fileno()
+    except socket.error:
+        return False
+    return True
+
+def recv_bytes(sock: socket.socket, length: int):
+    received = b""
+    while len(received) < length:
+        received += sock.recv(length - len(received))
+        if len(received) == 0:
+            return received
+    return received
+
+def send_bytes(sock: socket.socket, data: bytes):
+    bytes_sent = 0
+    while bytes_sent < len(data):
+        bytes_sent += sock.send(data[bytes_sent:])
 
 class Medic:
     CONTROLLER_TYPE = "medic"
@@ -161,56 +188,97 @@ class Medic:
             conn.shutdown(socket.SHUT_RDWR)
             conn.close()
 
-    def connect_to_other(self, id: str):
+    # region: Connection Setup
+
+    def new_connection(self, id: str):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(CONNECTION_TIMEOUT)
-
-
-        for _ in range(CONNECTION_RETRIES):
-            try:
-                # logging.info(f"Trying to connect to {id}...")
-                sock.connect((id, CONNECTION_PORT))
-                break
-            except socket.gaierror:
-                logging.error(f"at connect_to_other ({id}): Error resolving name")
-                break
-            except Exception as e:
-                logging.error(f"at connect_to_other connect() ({id}): {e}")
+        expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT]
         
         for _ in range(CONNECTION_RETRIES):
             try:
-                self.send_bytes(sock, connect_msg(self._medic_number))
-                received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
-                if is_type(received, Message.CONNECTED):
-                    # logging.info(f"Connected to {id}")
-                    with self._connections_lock:
-                        self._connections[id] = sock
-                        return
-                else:
-                    logging.info(
-                        f"at connect_to_other: Received unexpected message from {id}: {received}"
-                    )
+                sock.connect((id, CONNECTION_PORT))
+                return sock
+            except socket.gaierror:
+                # Hostname could not be resolved to an address
+                logging.error(f"at connect_to_other ({id}): Error resolving name")
+                break
+            except OSError as e:
+                if e.errno in expected_errors:
+                    continue
+                else: 
+                    raise e
             except Exception as e:
-                logging.error(f"at connect_to_other ({id}): {e}")
-                pass
+                logging.error(f"Unexpected error connecting to {id}: {e}")
+                break
+        
+        return None
 
+    def handshake_initiation(self, sock: socket.socket, target_id: str):
+        try:
+            send_bytes(sock, connect_msg(self._id))
+        except:
+            logging.error("Unexpected error sending Handshake to {id}: {e}")
+            free_socket(sock)
+            return 
+        try:
+            sock.settimeout(CONNECTION_TIMEOUT) 
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+
+            if is_type(received, Message.CONNECTED):
+                with self._connections_lock:
+                    self._connections[target_id] = sock
+
+        except socket.timeout:
+            logging.error(f"{target_id} timed-out during handshake")
+            free_socket(sock)
+        except:
+            logging.error("Unexpected error receiving Handshake response from {id}: {e}")
+            free_socket(sock)
+
+
+    def connect_to(self, target_id: str):        
+        # Conect via TCP
+        conn = self.new_connection(target_id)
+        if not conn:
+            return
+        
+        # App Layer Handshake: Say who I am
+        self.handshake_initiation(conn, target_id)
+       
     def accept_connection(self, sock: socket.socket):
-        # logging.info("Listening...")
-
+        sock.settimeout(SETUP_TIMEOUT)
         conn, addr = sock.accept()
-        received = self.recv_bytes(conn, INT_ENCODING_LENGTH * 2)
-
+        try:
+            #TODO: que lo primero sea el length
+            received = recv_bytes(conn, INT_ENCODING_LENGTH)
+        except OSError as e:
+            if e.errno == errno.ETIMEDOUT:
+                # If one times out, elevate the exception to break the loop
+                raise e
+            logging.error(f"Unexpected error receiving Handshake from {addr}: {e}")
+            return
+            
         if is_type(received, Message.CONNECT):
-            number = decode_int(received[INT_ENCODING_LENGTH:])
-            id = f"medic{number}"
-            self.send_bytes(conn, connected_msg())
-            with self._connections_lock:
-                self._connections[id] = conn
-                # logging.info(f"Connected to {id}")
+            received += recv_bytes(conn, len("YmedicX"))
+            received_id = sender_id(received)
+            try:
+                send_bytes(conn, connected_msg())
+                with self._connections_lock:
+                    self._connections[received_id] = conn
+            except Exception as e:
+                logging.error(f"Unexpected error sending Handshake response to {received_id}: {e}")
+                return
         else:
-            logging.info(
-                f"at accept_connection: Received unexpected message from {addr}: {received}"
-            )
+            logging.info(f"at accept_connection: Received unexpected message from {addr}: {received}")
+    
+    def accept_connection_from_smaller_medics(self):
+        try:
+            for _ in range(len(self._smaller_medics)):
+                self.accept_connection(self._listen_socket)
+        except socket.timeout:
+            pass
+    #endregion: Connection
 
     def loop(self):
         sel = selectors.DefaultSelector()
@@ -256,7 +324,7 @@ class Medic:
 
                 with self._connections_lock:
                     conn = self._connections[leader]
-                    self.send_bytes(conn, coordinator_ok_msg())
+                    send_bytes(conn, coordinator_ok_msg())
 
             else:  # I Won
                 if not self._check_thread:  # If i wasn't already the leader
@@ -285,31 +353,31 @@ class Medic:
                 return
 
             elif sock == self._udp_sock:
-                received, addr = sock.recvfrom(2 * INT_ENCODING_LENGTH)
+                received, addr = sock.recvfrom(1024)
                 if is_type(received, Message.HELLO):
                     number = decode_int(received[INT_ENCODING_LENGTH:])
                     id = f"medic{number}"
                     logging.info(f"📣   HELLO from {id}")
-                    self.connect_to_other(id)
+                    self.connect_to(id)
                     logging.info(f"📶  Connected to {id}")
 
                 elif is_type(received, Message.HEALTHCHECK):
-                    number = decode_int(received[INT_ENCODING_LENGTH:])
-                    id = f"medic{number}"
-
+                    id = sender_id(received)
+                    if not id:
+                        return
+                    
                     sock.sendto(
-                        im_alive_msg(self._medic_number),
-                        (self._leader, CONNECTION_PORT),
+                        im_alive_msg(self._id),
+                        (id, CONNECTION_PORT),
                     )
-
-                    self._last_im_alive_timestamp[self._leader] = time.time()
-                    # logging.info(f"Received Healthcheck from leader {self._leader}")
+                    self._last_im_alive_timestamp[id] = time.time()
 
                 elif is_type(received, Message.IM_ALIVE):
-                    number = decode_int(received[INT_ENCODING_LENGTH:])
-                    id = f"medic{number}"
-                    self._last_im_alive_timestamp[id] = time.time()
+                    id = sender_id(received)
+                    if not id:
+                        return
                     logging.info(f"💓   Received IM ALIVE from {id}")
+                    self._last_im_alive_timestamp[id] = time.time()
                 else:
                     logging.error(f"Unkown UDP message received: {received}")
                 return
@@ -322,7 +390,7 @@ class Medic:
                             id = stored_id
                             break
             try:
-                received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+                received = recv_bytes(sock, INT_ENCODING_LENGTH)
             except Exception as e:
                 logging.error(f"Exception {e} happened in: {id}")
                 continue
@@ -331,7 +399,7 @@ class Medic:
                 if not self._is_leader:
                     with self._connections_lock:
                         conn = self._connections[id]
-                        self.send_bytes(conn, coordinator_ok_msg())
+                        send_bytes(conn, coordinator_ok_msg())
                     logging.info(f"⭐   Z COORDINATOR: {id}")
                 else:
 
@@ -343,7 +411,7 @@ class Medic:
                     
                     with self._connections_lock:
                         conn = self._connections[id]
-                        self.send_bytes(conn, coordinator_ok_msg())
+                        send_bytes(conn, coordinator_ok_msg())
                     self._transfering_leader = False
                     logging.info(f"⭐   Z COORDINATION TRANSFERED: {id}")
 
@@ -353,7 +421,7 @@ class Medic:
             elif is_type(received, Message.ELECTION):
                 logging.info(f"Election received from: {id}")
                 try:
-                    self.send_bytes(sock, ok_msg())
+                    send_bytes(sock, ok_msg())
                 
                 except Exception as e:
                     logging.error(f"at loop with {id}: {e}")
@@ -383,7 +451,7 @@ class Medic:
 
                     with self._connections_lock:
                         conn = self._connections[leader]
-                        self.send_bytes(conn, coordinator_ok_msg())
+                        send_bytes(conn, coordinator_ok_msg())
 
                 else:  # I Won
                     self._leader = self._id
@@ -407,7 +475,8 @@ class Medic:
             else:
                 logging.info(f"at loop: unexpected message from {id}: {received}")
 
-    def send_hello(self):
+    def send_hello_to_smaller_medics(self):
+        """Send a UDP datagram for to a smaller medic in case"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for medic in self._smaller_medics:
             try:
@@ -419,24 +488,21 @@ class Medic:
         # Connect to greater medics
         self._listen_socket.bind(("0.0.0.0", CONNECTION_PORT))
         self._listen_socket.listen(self._number_of_medics)
-        self._listen_socket.settimeout(SETUP_TIMEOUT)
-
-        self.send_hello()
 
         time.sleep(3)
-        setup_threads = []
+
+        # Fork Join: Connect to greater medics and accept connections 
+        # and at the same time accept connections from smaller medics
+        connection_threads = []
         for id in self._greater_medics:
-            thread = threading.Thread(target=self.connect_to_other, args=(id,))
+            thread = threading.Thread(target=self.connect_to, args=(id,))
             thread.start()
-            setup_threads.append(thread)
+            connection_threads.append(thread)
 
-        try:
-            for _ in range(len(self._smaller_medics)):
-                self.accept_connection(self._listen_socket)
-        except socket.timeout:
-            pass
+        self.send_hello_to_smaller_medics()
+        self.accept_connection_from_smaller_medics()
 
-        for thread in setup_threads:
+        for thread in connection_threads:
             thread.join()
 
         with self._connections_lock:
@@ -453,7 +519,7 @@ class Medic:
             self._is_leader = False
             with self._connections_lock:
                 conn = self._connections[self._leader]
-                self.send_bytes(conn, coordinator_ok_msg())
+                send_bytes(conn, coordinator_ok_msg())
             logging.info(f"⭐   Coordinator: {self._leader}")
 
         elif oks_received:
@@ -461,7 +527,7 @@ class Medic:
             self._is_leader = False
             with self._connections_lock:
                 conn = self._connections[self._leader]
-                self.send_bytes(conn, coordinator_ok_msg())
+                send_bytes(conn, coordinator_ok_msg())
             logging.info(f"⭐   Coordinator: {self._leader}")
 
         else:
@@ -485,7 +551,7 @@ class Medic:
             with self._connections_lock:
                 if conn := self._connections.get(id):
                     # logging.info(f"Sending Election to: {id}")
-                    self.send_bytes(conn, election_msg())
+                    send_bytes(conn, election_msg())
 
     def answer_to_elections(self, initiator: Optional[str]):
         if initiator:
@@ -520,7 +586,7 @@ class Medic:
                             id = conn_id
                             break
 
-                received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+                received = recv_bytes(sock, INT_ENCODING_LENGTH)
 
                 if id is None:
                     logging.info("Received message from unknown sender")
@@ -528,7 +594,7 @@ class Medic:
 
                 if is_type(received, Message.ELECTION):
                     elections_received += 1
-                    self.send_bytes(sock, ok_msg())
+                    send_bytes(sock, ok_msg())
 
                 elif not received:
                     logging.error(
@@ -562,7 +628,7 @@ class Medic:
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
                 try:
-                    received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
                 except Exception as e:
                     logging.error(f"at listen_for_coordinator_oks: {e}")
                     self.close_socket(sock)
@@ -575,8 +641,8 @@ class Medic:
                                 coord_oks_received.add(id)
                                 break
                 if is_type(received, Message.ELECTION):
-                    self.send_bytes(sock, ok_msg())
-                    self.send_bytes(sock, coord_msg())
+                    send_bytes(sock, ok_msg())
+                    send_bytes(sock, coord_msg())
                 elif not received:
                     logging.error(
                         f"at answer_to_elections: Received null from {id}"
@@ -609,7 +675,7 @@ class Medic:
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
                 try:
-                    received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
                 except Exception as e:
                     logging.error(f"at listen_for_coordinator: {e}")
                     self.close_socket(sock)
@@ -633,7 +699,7 @@ class Medic:
             for id in self._smaller_medics:
                 if conn := self._connections.get(id):
                     # logging.info(f"Sent coord to: {id}")
-                    self.send_bytes(conn, coord_msg())
+                    send_bytes(conn, coord_msg())
 
     def listen_for_oks(self):
         sel = selectors.DefaultSelector()
@@ -655,10 +721,10 @@ class Medic:
                 sock: socket.socket = key.fileobj  # type: ignore
 
                 try:
-                    received = self.recv_bytes(sock, INT_ENCODING_LENGTH)
+                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
                 except Exception as e:
                     logging.error(f"at answer_to_elections: {e}")
-                    self.close_socket(socket)
+                    self.close_socket(sock)
                 
                 if is_type(received, Message.OK):
                     with self._connections_lock:
@@ -691,7 +757,7 @@ class Medic:
 
         return leader, oks_received
 
-    def close_socket(self, sock: socket):
+    def close_socket(self, sock: socket.socket):
         
         with self._connections_lock:
             for id in self._connections:
@@ -705,20 +771,6 @@ class Medic:
                     del self._connections[id]
                     logging.info(f"Connection closed: {id}")    
                     return
-
-
-    def recv_bytes(self, sock: socket.socket, size: int):
-        received = b""
-        while len(received) < size:
-            received += sock.recv(size - len(received))
-            if len(received) == 0:
-                return received
-        return received
-
-    def send_bytes(self, sock: socket.socket, data: bytes):
-        bytes_sent = 0
-        while bytes_sent < len(data):
-            bytes_sent += sock.send(data[bytes_sent:])
 
     def greatest_id(self, medic_ids: list[str]) -> str:
         if not medic_ids:
@@ -752,11 +804,13 @@ class Medic:
             if (time.time() - last_check) >= (HEALTHCHECK_TIMEOUT // 2):
                 for id in controller_ids:
                     if not self._last_im_alive_timestamp.get(id):
+                        logging.info(f"{id} id not here")
                         dead_controllers.add(id)
                         continue
                     elif (
                         time.time() - self._last_im_alive_timestamp[id]
                     ) >= HEALTHCHECK_TIMEOUT:
+                        logging.info(f"{id} timed out")
                         dead_controllers.add(id)
 
                 logging.info(f"Dead Controllers: {len(dead_controllers)}")
@@ -771,7 +825,7 @@ class Medic:
             for id in controller_ids:
                 try:
                     sock.sendto(
-                        healthcheck_msg(self._medic_number), (id, CONNECTION_PORT)
+                        healthcheck_msg(self._id), (id, CONNECTION_PORT)
                     )
                 except socket.gaierror:
                     continue
