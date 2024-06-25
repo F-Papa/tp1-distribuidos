@@ -129,6 +129,7 @@ def free_socket(sock: socket.socket):
 
     sock.close()
 
+
 def recv_bytes(sock: socket.socket, length: int):
     received = b""
     while len(received) < length:
@@ -569,7 +570,10 @@ class Medic:
 
     def send_election(self):
         logging.info("Sending elections")
-        for medic_id in self._greater_medics:
+        
+        connected_greater_medics = self.filter_connected(self._greater_medics)
+
+        for medic_id in connected_greater_medics:
             try:
                 self.send_to(election_msg(), medic_id)
             except Exception as e:
@@ -585,7 +589,9 @@ class Medic:
         if initiator_id != self._id:
             elections_received.add(initiator_id)
 
-        while len(elections_received) < len(self._smaller_medics) and not self._shutting_down:
+        connected_smaller_medics = self.filter_connected(self._smaller_medics)
+
+        while len(elections_received) < len(connected_smaller_medics) and not self._shutting_down:
             events = sel.select(timeout=ELECTION_TIMEOUT)
 
             if not events:
@@ -646,8 +652,10 @@ class Medic:
         sel = selectors.DefaultSelector()
         self.register_connections(sel, self._smaller_medics)
         
+        connected_smaller = self.filter_connected(self._smaller_medics)
+
         coord_oks_received = set()
-        while len(coord_oks_received) < len(self._smaller_medics) and not self._shutting_down:
+        while len(coord_oks_received) < len(connected_smaller) and not self._shutting_down:
             events = sel.select(timeout=COORDINATOR_OK_TIMEOUT)
             
             if not events:
@@ -712,7 +720,10 @@ class Medic:
                 self.listen_for_coordinator_aux(sel, sock, coord_received)
 
         sel.close()
-        return self.greatest_id(coord_received)
+        if coord_received:
+            return self.greatest_id(coord_received)
+        else: 
+            return None
 
     def listen_for_coordinator_aux(self, sel: selectors.DefaultSelector, sock: socket.socket, coord_received: set):
         sender = self.resolve_socket(sock)
@@ -761,7 +772,9 @@ class Medic:
         coord_received.clear()
         oks_received.clear()
 
-        while len(oks_received) < len(self._greater_medics) and not self._shutting_down:
+        connected_greater_medics = self.filter_connected(self._greater_medics)
+
+        while len(oks_received) < len(connected_greater_medics) and not self._shutting_down:
             events = sel.select(timeout=OK_TIMEOUT * 4)
             if not events:
                 break
@@ -808,6 +821,18 @@ class Medic:
             )
     #endregion
 
+    #region: Auxiliary methods
+    def filter_connected(self, ids: Iterable[str]) -> set[str]:
+        connected = set()
+        
+        with self._connections_lock:
+            for id in ids:
+                if id in self._connections:
+                    connected.add(id)
+        
+        return connected
+        # for id in ids:
+
     def close_socket(self, sock: socket.socket):
         
         with self._connections_lock:
@@ -820,7 +845,7 @@ class Medic:
             
                     sock.close()
                     del self._connections[id]
-                    logging.info(f"Connection closed: {id}")    
+                    logging.info(f"❌   Disconnected: {id}")    
                     return
 
     def greatest_id(self, medic_ids: Iterable[str]) -> str:
