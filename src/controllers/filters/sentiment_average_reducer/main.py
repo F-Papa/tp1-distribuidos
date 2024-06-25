@@ -94,7 +94,6 @@ class SentimentAverager:
         self._state.set("saved_reviews", saved_reviews)
         self._state.inbound_transaction_committed(msg.get("sender"))
         
-        self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
         if (

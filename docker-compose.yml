@@ -104,20 +104,20 @@ services:
   #     - ./src/controllers/medic/config.ini:/config.ini
   #     - ./src/controllers/medic/medic.py:/medic.py
 
-  # boundary:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/boundary/Dockerfile
-  #   container_name: boundary
-  #   image: boundary:latest
-  #   entrypoint: python3 boundary.py
-  #   networks:
-  #     - tp1_testing_net
-  #   ports:
-  #     - "8080:8080"
-  #   volumes:
-  #     - ./src/boundary/config.ini:/config.ini
-  #     - ./src/boundary/boundary.py:/boundary.py
+  boundary:
+    build:
+      context: ./
+      dockerfile: ./src/boundary/Dockerfile
+    container_name: boundary
+    image: boundary:latest
+    entrypoint: python3 boundary.py
+    networks:
+      - tp1_testing_net
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/boundary/config.ini:/config.ini
+      - ./src/boundary/boundary.py:/boundary.py
 
   title_filter_lb_proxy:
     build:

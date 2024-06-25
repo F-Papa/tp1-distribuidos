@@ -23,7 +23,7 @@ HEALTHCHECK_RESPONSE_CODE = 2
 CONNECTION_PORT = 12345
 INT_ENCODING_LENGTH = 1
 CONNECTION_RETRIES = 5 #3 !!!
-SETUP_GRACE_PERIOD = 10
+SETUP_GRACE_PERIOD = 2
 RETRY_INTERVAL = 2
 
 CONNECTION_TIMEOUT = 10 #5
@@ -225,7 +225,7 @@ class Medic:
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(CONNECTION_TIMEOUT)
-        expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT]
+        expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT, errno.ECONNABORTED]
         
         for _ in range(CONNECTION_RETRIES):
             try:
@@ -234,7 +234,7 @@ class Medic:
             except socket.gaierror:
                 # Hostname could not be resolved to an address
                 logging.error(f"at connect_to_other ({id}): Error resolving name")
-                break
+                continue
             except OSError as e:
                 if e.errno in expected_errors:
                     continue
@@ -896,6 +896,8 @@ class Medic:
                 for id in dead_controllers:
                     self.revive_controller(id)
                     self._last_contact_timestamp[id] = time.time() + REVIVE_TIME
+                    if id in self._cached_ips:
+                        del self._cached_ips[id]
 
                 last_check = time.time()
                 dead_controllers.clear()

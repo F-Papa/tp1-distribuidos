@@ -194,7 +194,6 @@ class DecadeCounter:
 
         self._state.inbound_transaction_committed(sender)
         
-        self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
         if (self.unacked_msg_count > self.unacked_msg_limit):
