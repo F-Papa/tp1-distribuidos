@@ -23,10 +23,11 @@ HEALTHCHECK_RESPONSE_CODE = 2
 CONNECTION_PORT = 12345
 INT_ENCODING_LENGTH = 1
 CONNECTION_RETRIES = 5 #3 !!!
-SETUP_GRACE_PERIOD = 30
+SETUP_GRACE_PERIOD = 10
 RETRY_INTERVAL = 2
 
-CONNECTION_TIMEOUT = 5 #5
+CONNECTION_TIMEOUT = 10 #5
+HANDSHAKE_TIMEOUT = 20 #5
 SETUP_TIMEOUT = 7 #15
 TIMEOUT = 4
 OK_TIMEOUT = 4 #
@@ -182,6 +183,8 @@ class Medic:
         self._last_contact_timestamp = dict()
         self._shutting_down = False
 
+        self.loop_selector: Optional[selectors.DefaultSelector] = None
+
     def shutdown(self):
         self._shutting_down = True
         with self._connections_lock:
@@ -249,7 +252,7 @@ class Medic:
             free_socket(sock)
             return 
         try:
-            sock.settimeout(CONNECTION_TIMEOUT) 
+            sock.settimeout(HANDSHAKE_TIMEOUT) 
             received = recv_bytes(sock, INT_ENCODING_LENGTH)
 
             if not received:
@@ -259,6 +262,9 @@ class Medic:
             if is_type(received, Message.CONNECTED):
                 with self._connections_lock:
                     self._connections[target_id] = sock
+                    if self.loop_selector:
+                        self.loop_selector.register(sock, selectors.EVENT_READ)
+                    logging.info(f"📶   Connected to {target_id}")
 
         except socket.timeout:
             logging.error(f"{target_id} timed-out during handshake")
@@ -283,7 +289,7 @@ class Medic:
         """Listen for a TCP conection and respond to the handshake. If it is successful it will save it
         in the state, otherwise it will be closed"""
         
-        sock.settimeout(SETUP_TIMEOUT)
+        sock.settimeout(CONNECTION_TIMEOUT*CONNECTION_RETRIES)
         conn, addr = sock.accept()
         try:
             received = recv_bytes(conn, INT_ENCODING_LENGTH*2)
@@ -305,6 +311,9 @@ class Medic:
                 send_bytes(conn, connected_msg())
                 with self._connections_lock:
                     self._connections[received_id] = conn
+                    if self.loop_selector:
+                        self.loop_selector.register(conn, selectors.EVENT_READ)
+                    logging.info(f"📶   Connected to {received_id}")
             except Exception as e:
                 logging.error(f"Unexpected error sending Handshake response to {received_id}: {e}")
                 return
@@ -352,7 +361,6 @@ class Medic:
             logging.info(f"📣   HELLO from {id}")
             self._cached_ips[id] = addr[0]
             self.connect_to(id)
-            logging.info(f"📶  Connected to {id}")
 
         elif is_type(received, Message.HEALTHCHECK):
             id = sender_id(received)
@@ -431,6 +439,7 @@ class Medic:
         self._listen_socket.setblocking(False)
         sel.register(self._listen_socket, selectors.EVENT_READ)
 
+        self.loop_selector = sel
         try:
             while not self._shutting_down:
                 events = sel.select(timeout=LEADER_TIMEOUT + 2*self._medic_number)
@@ -439,8 +448,7 @@ class Medic:
                     if self.is_leader_dead():
                         logging.error("Leader is dead")
                         self.election(self._id)
-                    # TODO: Check if election failed
-                    break     
+                    # TODO: Check if election failed     
 
                 for key, _ in events:
                     
@@ -528,15 +536,17 @@ class Medic:
 
         # I won election
         else:
-            self.set_leader(self._id)
+            logging.info(f"📣   Announcing Coordinator: {self._id}")
             self.announce_coordinator()
             self.wait_for_coordinator_oks()
-            logging.info(f"🌟   Coordinator: {self._leader}")
+            logging.info(f"🌟   Coordinator: {self._id}")
+            self.set_leader(self._id)
     
     def set_leader(self, leader_id: str):
         self._leader = leader_id
         if leader_id == self._id:
             self._is_leader = True
+            logging.info("Im the leader...")
             if not self._check_thread:
                 controllers_to_check = self.controllers_to_check.copy()
                 controllers_to_check.update(self._other_medics)
@@ -551,6 +561,7 @@ class Medic:
                     self._transfering_leader_condvar.notify()
                 self._check_thread.join()
                 self._check_thread = None
+                self._transfering_leader = False
                 logging.info("Check thread Joined")
 
     def send_election(self):
@@ -727,7 +738,7 @@ class Medic:
             coord_received.add(sender)
         else:
             logging.error(
-                f"at listen_for_coordinator: Unexpected message received from {id}: {received}"
+                f"at listen_for_coordinator: Unexpected message received from {sender}: {received}"
             )
 
     def announce_coordinator(self):
@@ -834,7 +845,7 @@ class Medic:
     def check_on_controllers(self, controller_ids: Iterable[str]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
-
+        logging.info("Checking on controllers...")
 
         last_check = time.time()
         dead_controllers = set()
