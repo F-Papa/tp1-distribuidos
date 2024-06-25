@@ -1,0 +1,15 @@
+{"title": "Enterprise Linux at Work: How to Build 10 Distributed Applications for Your Organization", "publisher": "John Wiley & Sons Incorporated"}
+{"title": "Open Source Network Administration (Prentice Hall Series in Computer Networking and Distributed Systems)", "publisher": "Prentice Hall Professional"}
+{"title": "Distributed Systems Architecture: A Middleware Approach", "publisher": "Elsevier"}
+{"title": "IBM&reg; WebSphere&reg; Application Server for Distributed Platforms and z/OS&reg;: An Administrator's Guide", "publisher": "MIT Press"}
+{"title": "Holographic Reduced Representation: Distributed Representation for Cognitive Structures (Center for the Study of Language and Information - Lecture Notes)", "publisher": "Springer Nature"}
+{"title": "Distributed .NET Programming in VB .NET", "publisher": "Apress"}
+{"title": "Distributed Com Application Development Using Visual C++ 6.0 with CDROM (Prentice Hall Series on Microsoft Technologies)", "publisher": "Prentice Hall"}
+{"title": "Malware: Fighting Malicious Code (Prentice Hall Series in Computer Networking and Distributed)", "publisher": "Prentice Hall Professional"}
+{"title": "Inside Distributed COM (Mps)", "publisher": "Springer Science & Business Media"}
+{"title": "Replication Techniques in Distributed Systems (Advances in Database Systems)", "publisher": "Springer Science & Business Media"}
+{"title": "Engineering Distributed Objects: Second International Workshop, EDO 2000 Davis, CA, USA, November 2-3, 2000 Revised Papers (Lecture Notes in Computer Science)", "publisher": "Springer"}
+{"title": "Parallel and Distributed Programming Using C++", "publisher": "Addison-Wesley Professional"}
+{"title": "ASP.NET Distributed Data Applications", "publisher": "Apress"}
+{"title": "Elements of Distributed Computing", "publisher": "John Wiley & Sons"}
+{"title": "Trends in Distributed Systems: Towards a Universal Service Market: Third International IFIP/GI Working Conference, USM 2000 Munich, Germany, September ... (Lecture Notes in Computer Science)", "publisher": "Springer"}

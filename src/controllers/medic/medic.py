@@ -297,7 +297,8 @@ class Medic:
             return
 
         if is_type(received, Message.CONNECT):
-            received_id = sender_id(received)
+            received_id = decode_int(received[INT_ENCODING_LENGTH:INT_ENCODING_LENGTH*2])
+            received_id = f"medic{received_id}"
             try:
                 send_bytes(conn, connected_msg())
                 with self._connections_lock:
@@ -663,7 +664,7 @@ class Medic:
         
         else:
             logging.error(
-                f"at listen_for_coordinator_oks: Unexpected message received from {id}: {received}"
+                f"at listen_for_coordinator_oks: Unexpected message received from {sender}: {received}"
             )
 
     def listen_for_coordinator(self) -> Optional[str]:
@@ -774,7 +775,7 @@ class Medic:
         
         else:
             logging.error(
-                f"at listen_for_oks: Unexpected message received from {id}: {received}"
+                f"at listen_for_oks: Unexpected message received from {sender}: {received}"
             )
     #endregion
 
@@ -887,7 +888,13 @@ def main():
     config_logging(config.get("LOGGING_LEVEL"))
     logging.info(config)
 
-    medic = Medic(config=config, controllers_to_check={})
+    medic = Medic(config=config, controllers_to_check={
+        "title_filter1": "title_filter1", "title_filter2": "title_filter2",
+        "title_filter_proxy": "title_filter_proxy", "category_filter1": "category_filter1",
+        "category_filter_proxy": "title_filter_proxy"
+    }
+        
+    )
     signal.signal(signal.SIGTERM, lambda *_: medic.shutdown())
     # "title_filter1": "title_filter1", "title_filter2": "title_filter2",
     #                                              "title_filter_proxy": "title_filter_proxy", "date_filter1": "date_filter1",

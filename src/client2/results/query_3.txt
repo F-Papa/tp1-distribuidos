@@ -1,0 +1,84 @@
+{"title": "Hound of the Baskervilles (Lrs Large Print Heritage Series)", "authors": ["Arthur Conan Doyle"]}
+{"title": "A Connecticut Yankee in King Arthur's Court (Oxford World's Classics)", "authors": ["Mark Twain"]}
+{"title": "Jane Eyre (Everyman's Classics)", "authors": ["Charlotte Bront\u00eb"]}
+{"title": "Paradise", "authors": ["Hendrik Marsman"]}
+{"title": "Slaughterhouse-Five : Or the Children's Crusade", "authors": ["Kurt Vonnegut"]}
+{"title": "The Hitchhiker's Guide to the Galaxy", "authors": ["Douglas Adams"]}
+{"title": "One Hundred Years of Solitude", "authors": ["Gabriel Garc\u00eda M\u00e1rquez"]}
+{"title": "Jude the Obscure", "authors": ["Thomas Hardy"]}
+{"title": "The Mayor of Casterbridge (Signet classics)", "authors": ["Thomas Hardy", "JOHN SUTHERLAND"]}
+{"title": "Wuthering Heights (New Windmill)", "authors": ["Emily Bront\u00eb"]}
+{"title": "A Tramp Abroad", "authors": ["Mark Twain"]}
+{"title": "We Were the Mulvaneys (A William Abrahams Book)", "authors": ["Joyce Carol Oates"]}
+{"title": "No man knows my history: The life of Joseph Smith, the Mormon prophet", "authors": ["Fawn McKay Brodie"]}
+{"title": "Foundation and Empire", "authors": ["D. G. Leahy"]}
+{"title": "The Grapes of Wrath", "authors": ["John Steinbeck"]}
+{"title": "Jane Eyre (New Windmill)", "authors": ["Charlotte Bront\u00eb"]}
+{"title": "I am Legend", "authors": ["Richard Matheson"]}
+{"title": "Candide (Franklin Library)", "authors": ["Voltaire"]}
+{"title": "Dracula (G. K. Hall (Large Print))", "authors": ["Bram Stoker", "Grand Theatre Collection (University of Guelph)", "Aerie Books Ltd", "Earle Rice", "Paula Wing", "Victoria Adilman", "Krista Jackson", "Michael Shamata", "Wal-Mart (Firm)", "Oliver Dennis"]}
+{"title": "Heart of Darkness", "authors": ["Joseph Conrad"]}
+{"title": "The Secret Garden", "authors": ["Frances Hodgson Burnett"]}
+{"title": "Red Tent", "authors": ["Anita Diamant"]}
+{"title": "The Electric Kool-Aid Acid Test", "authors": ["Tom Wolfe"]}
+{"title": "Frankenstein (Running Press classics)", "authors": ["Mary Wollstonecraft Shelley"]}
+{"title": "A Portrait of the Artist as a Young Man", "authors": ["James Joyce"]}
+{"title": "The Adventures of Tom Sawyer (Courage Literary Classics)", "authors": ["Mark Twain"]}
+{"title": "The Lord of the Rings (3 Volume Set)", "authors": ["J. R. R. Tolkien"]}
+{"title": "A Portrait of the Artist As a Young Man", "authors": ["James Joyce"]}
+{"title": "Slaughter-House Five (First paperback edition)", "authors": ["Kurt Vonnegut"]}
+{"title": "Bridge to Terabithia", "authors": ["Andrew Davenport"]}
+{"title": "OF MICE AND MEN", "authors": ["John Steinbeck"]}
+{"title": "I Am Legend", "authors": ["Richard Matheson"]}
+{"title": "Animal Farm 50TH Anniversary Edition", "authors": ["George Orwell"]}
+{"title": "Of Mice And Men", "authors": ["John Steinbeck"]}
+{"title": "The Bluest Eye (G K Hall Large Print Book Series)", "authors": ["Toni Morrison"]}
+{"title": "Slaughter-House Five", "authors": ["Kurt Vonnegut"]}
+{"title": "Slaughterhouse-Five", "authors": ["Kurt Vonnegut"]}
+{"title": "The hitchhiker's guide to the galaxy", "authors": ["Douglas Adams"]}
+{"title": "Point of origin", "authors": ["Patricia Daniels Cornwell"]}
+{"title": "The Good Earth", "authors": ["Pearl S. Buck", "Emily Hutchinson"]}
+{"title": "The Pearl", "authors": ["John Steinbeck"]}
+{"title": "Executive Orders", "authors": ["Tom Clancy"]}
+{"title": "A Tree Grows in Brooklyn by Smith, Betty", "authors": ["Betty Smith"]}
+{"title": "Who Moved My Cheese? An-Amazing Way to Deal with Change in Your Work and in Your Life", "authors": ["Spencer Johnson"]}
+{"title": "The Stand. The Complete and Uncut Edition", "authors": ["Stephen King"]}
+{"title": "Slaughterhouse-five: Or, The children's crusade : a duty-dance with death", "authors": ["Kurt Vonnegut"]}
+{"title": "The Grapes of Wrath (Steinbeck Essentials)", "authors": ["John Steinbeck"]}
+{"title": "All quiet on the western front;", "authors": ["Erich Maria Remarque"]}
+{"title": "Little Women (Courage giant classics)", "authors": ["Louisa May Alcott"]}
+{"title": "Heart of Darkness (Everyman Classics)", "authors": ["Joseph Conrad"]}
+{"title": "ANIMAL FARM - A Fairy Story (Time Reading Program Special Edition)", "authors": ["Gillian Fenwick"]}
+{"title": "Like Water for Chocolate: A Novel in Monthly Installments, With Recipes, Romances, and Home Remedies", "authors": ["Laura Esquivel"]}
+{"title": "Life and Death of the Mayor of Casterbridge (New Wessex editions)", "authors": ["Thomas Hardy"]}
+{"title": "Mayor of Casterbridge, the", "authors": ["Thomas Hardy"]}
+{"title": "A Tree Grows in Brooklyn", "authors": ["Betty Smith"]}
+{"title": "Moll Flanders", "authors": ["Daniel Defoe"]}
+{"title": "Complete Works of William Shakespeare", "authors": ["William Shakespeare"]}
+{"title": "Catch 22", "authors": ["Joseph Heller"]}
+{"title": "Black Notice (Random House Large Print)", "authors": ["Patricia Daniels Cornwell"]}
+{"title": "The Complete Works of Shakespeare", "authors": ["William Shakespeare"]}
+{"title": "A Farewell to Arms", "authors": ["Ernest Hemingway"]}
+{"title": "Naked in Death", "authors": ["J. D. Robb"]}
+{"title": "Pride and Prejudice", "authors": ["Jane Austen"]}
+{"title": "The Girl Who Loved Tom Gordon", "authors": ["Stephen King"]}
+{"title": "Memoirs of a Geisha (Signed)", "authors": ["Arthur Golden"]}
+{"title": "For Whom the Bell Tolls", "authors": ["Ernest Hemingway"]}
+{"title": "Harry Potter and the Chamber of Secrets", "authors": ["J. K. Rowling"]}
+{"title": "Catch 22 (catch-22)", "authors": ["Joseph Heller"]}
+{"title": "All Creatures Great and Small", "authors": ["James Herriot"]}
+{"title": "The grapes of wrath", "authors": ["John Steinbeck"]}
+{"title": "The Adventures of Huckleberry Finn", "authors": ["Mark Twain"]}
+{"title": "The Red Tent (Bestselling Backlist)", "authors": ["Anita Diamant"]}
+{"title": "Foundation And Empire", "authors": ["D. G. Leahy"]}
+{"title": "The Scarlet Letter (Lake Illustrated Classics, Collection 2)", "authors": ["Thomas Hardy"]}
+{"title": "I know this much is true", "authors": ["Wally Lamb"]}
+{"title": "The Killer Angels (Turtleback School & Library Binding Edition)", "authors": ["Michael Shaara"]}
+{"title": "Wuthering Heights (Signet classics)", "authors": ["Emily Bront\u00eb"]}
+{"title": "Adventures of Huckleberry Finn", "authors": ["Mark Twain"]}
+{"title": "Killing Time", "authors": ["Paul Feyerabend"]}
+{"title": "Ulysses,", "authors": ["James Joyce"]}
+{"title": "Brave new world,: A novel", "authors": ["Aldous Huxley"]}
+{"title": "A Christmas Carol [One Voice Recordings Edition]", "authors": ["Charles Dickens"]}
+{"title": "Rich Dad, Poor Dad", "authors": ["Sharon L. Lechter"]}
+{"title": "Black and Blue: A Novel (Oprah's Book Club)", "authors": ["Anna Quindlen"]}

@@ -47,9 +47,9 @@ class TitleFilter:
             filter_config.get("FILTER_NUMBER")
         )
 
+    def controller_id(self):
+        return self.controller_name
         
-        
-
     # HEALTHCHECK HANDLING
     def send_healthcheck_response(self, address, seq_num):
         message = (
@@ -61,39 +61,6 @@ class TitleFilter:
 
         for _ in range(self.MSG_REDUNDANCY):
             sock.sendto(message.encode(), (address, self.CONTROL_PORT))
-
-    # def healthcheck_handler(self):
-    #     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    #     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    #     sock.bind(("0.0.0.0", self.CONTROL_PORT))
-    #     terminator_bytes = bytes("$", "utf-8")[0]
-
-    #     try:
-    #         while True:
-    #             data = b""
-    #             while len(data) == 0 or data[-1] != terminator_bytes:
-    #                 try:
-    #                     recieved, _ = sock.recvfrom(1024)
-    #                     data += recieved
-    #                 except socket.timeout:
-    #                     break
-
-    #             data = data.decode()
-    #             logging.debug(f"received healthcheck: {data}")
-    #             seq_num, controller_id, response_code = data[:-1].split(",")
-    #             response_code = int(response_code)
-    #             if response_code == ControlMessage.HEALTHCHECK.value:
-    #                 self.send_healthcheck_response(controller_id, seq_num)
-    #     except Exception as e:
-    #         logging.error(f"Exception at healthcheck_handler Thread: {e}")
-    #     finally:
-    #         sock.close()
-
-    def periodic_stop_consuming(self):
-        while not self._shutting_down:
-            time.sleep(10)
-            logging.info(f"STOPPING MAIN THREAD")
-            self._messaging.stop_consuming(self.input_queue_name)
 
     def start(self):
         # Main Flow
@@ -282,7 +249,7 @@ def main():
     controller_thread.start()
 
     # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(title_filter.controller_name)
+    healthcheck_handler = HealthcheckHandler(title_filter)
     healthcheck_handler.start()
 
 

@@ -15,9 +15,9 @@ class HealthcheckHandler:
     
     def __init__(
         self,
-        controller_name: str
+        controller
     ):
-        self.controller_name = controller_name
+        self.controller = controller
 
     def start(self):
         while True:
@@ -31,6 +31,7 @@ class HealthcheckHandler:
                             logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
                         if len(threading.enumerate()) == 2: # Check if main Thread is alive
                             response = self.im_alive_msg()
+                            logging.info(f"SENDING{response}")
                             s.sendto(response, (medic_id, self.CONNECTION_PORT))
                             logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
             except Exception as e:
@@ -56,8 +57,8 @@ class HealthcheckHandler:
         return (
             b""
             + Message.IM_ALIVE.value.to_bytes(self.INT_ENCODING_LENGTH, "big")
-            + len(self.controller_name).to_bytes(self.INT_ENCODING_LENGTH, "big")
-            + self.controller_name.encode('utf-8')
+            + len(self.controller.controller_id()).to_bytes(self.INT_ENCODING_LENGTH, "big")
+            + self.controller.controller_id().encode('utf-8')
         )
 
     def sender_id(self, received: bytes) -> Optional[str]:

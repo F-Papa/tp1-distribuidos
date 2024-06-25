@@ -8,6 +8,7 @@ from enum import Enum
 import os
 import socket
 import threading
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.utils.config_loader import Configuration
 import logging
 import signal
@@ -49,6 +50,9 @@ class LoadBalancerProxy:
             queue_name = config.get("FILTER_TYPE") + str(i)
             self._filter_queues.append(queue_name)
 
+    def controller_id(self):
+        return self.controller_name
+
     # HEALTHCHECK HANDLING
     def send_healthcheck_response(self, address, seq_num):
         message = (
@@ -61,36 +65,7 @@ class LoadBalancerProxy:
         for _ in range(self.MSG_REDUNDANCY):
             sock.sendto(message.encode(), (address, self.CONTROL_PORT))
 
-    def healthcheck_handler(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", self.CONTROL_PORT))
-        terminator_bytes = bytes("$", "utf-8")[0]
-
-        try:
-            while True:
-                data = b""
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    try:
-                        recieved, _ = sock.recvfrom(1024)
-                        data += recieved
-                    except socket.timeout:
-                        break
-
-                data = data.decode()
-                logging.debug(f"received healthcheck: {data}")
-                seq_num, controller_id, response_code = data[:-1].split(",")
-                response_code = int(response_code)
-                if response_code == ControlMessage.HEALTHCHECK.value:
-                    self.send_healthcheck_response(controller_id, seq_num)
-        except Exception as e:
-            logging.error(f"Exception at healthcheck_handler Thread: {e}")
-        finally:
-            sock.close()
-
     def start(self):
-        threading.Thread(target=self.healthcheck_handler, args=()).start()
-
         try:
             if not self.shutting_down:
                 # Set callbacks
@@ -348,7 +323,14 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     load_balancer = LoadBalancerProxy(config, messaging, state)
-    load_balancer.start()
+
+
+    controller_thread = threading.Thread(target=load_balancer.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(load_balancer)
+    healthcheck_handler.start()
 
 
 if __name__ == "__main__":
