@@ -217,6 +217,7 @@ class CategoryFilter:
         self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
+        self._state.save_to_disk()
         self._messaging.ack_delivery(msg.delivery_id)      
 
 

@@ -282,6 +282,7 @@ class DateFilter:
             self._state.outbound_transaction_committed(self._proxy_queue)
   
         self._state.inbound_transaction_committed(sender)
+        self._state.save_to_disk()
         self._messaging.ack_delivery(msg.delivery_id)
 
 def config_logging(level: str):

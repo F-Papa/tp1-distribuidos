@@ -94,16 +94,23 @@ class ReviewCounter:
         self.unacked_msg_count
         self.unacked_msgs.append(msg.delivery_id)
 
+
+        if (self.unacked_msg_count > self.unacked_msg_limit):
+            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            self._state.save_to_disk()
+            self.time_of_last_commit = time.time()
+            
+            for delivery_id in self.unacked_msgs:
+                self._messaging.ack_delivery(delivery_id)
+
+            self.unacked_msg_count = 0
+            self.unacked_msgs.clear()
+
+    def time_window_passed(self):
         now = time.time()
         time_since_last_commit = now - self.time_of_last_commit
-
-        if self.unacked_msg_count == 0:
-            return
-
-        if (
-            self.unacked_msg_count > self.unacked_msg_limit
-            or time_since_last_commit > self.unacked_time_limit_in_seconds
-        ):
+        
+        if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
             self._state.save_to_disk()
             self.time_of_last_commit = now
