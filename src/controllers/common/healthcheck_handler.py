@@ -36,7 +36,6 @@ class HealthcheckHandler:
                             #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
                         time_passed_func = getattr(self.controller, "time_window_passed", None)
                         if callable(time_passed_func):
-                            logging.info(f"TIME WDW PASSED!!")
                             self.controller.time_window_passed()
             except Exception as e:
                 logging.error(f"Error in start method: {e}")

@@ -22,7 +22,8 @@ from src.controller_state.controller_state import ControllerState
 
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.0001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 class ControlMessage(Enum):

@@ -16,7 +16,8 @@ from src.controller_state.controller_state import ControllerState
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 class SentimentAnalyzer: 
@@ -157,9 +158,9 @@ class SentimentAnalyzer:
 
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._state.save_to_disk()
-        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+        crash_maybe()
+        self._state.save_to_disk()
 
     def _analyze_reviews(self, reviews: list):
         analyzed_reviews = []

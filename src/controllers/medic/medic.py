@@ -23,7 +23,7 @@ HEALTHCHECK_RESPONSE_CODE = 2
 CONNECTION_PORT = 12345
 INT_ENCODING_LENGTH = 1
 CONNECTION_RETRIES = 5 #3 !!!
-SETUP_GRACE_PERIOD = 2
+SETUP_GRACE_PERIOD = 8
 RETRY_INTERVAL = 2
 
 CONNECTION_TIMEOUT = 10 #5
@@ -225,7 +225,7 @@ class Medic:
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(CONNECTION_TIMEOUT)
-        expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT, errno.ECONNABORTED]
+        expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT, errno.ECONNABORTED, errno.ECONNRESET]
         
         for _ in range(CONNECTION_RETRIES):
             try:

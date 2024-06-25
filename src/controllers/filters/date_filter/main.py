@@ -26,7 +26,8 @@ OUTPUT_Q1 = "title_filter_queue"
 OUTPUT_Q3_4_PREFIX = "review_joiner_books"
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 class ControlMessage(Enum):
@@ -266,9 +267,9 @@ class DateFilter:
   
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._state.save_to_disk()
-        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+        crash_maybe()
+        self._state.save_to_disk()
 
     def controller_id(self):
         return self.controller_name

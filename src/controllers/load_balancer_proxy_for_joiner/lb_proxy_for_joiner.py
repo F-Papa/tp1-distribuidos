@@ -25,7 +25,8 @@ CONTROLLER_ID = "review_joiner_proxy"
 
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.00005:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 

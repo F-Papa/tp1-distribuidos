@@ -22,7 +22,8 @@ total_books = 0
 
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 
@@ -194,6 +195,7 @@ class ReviewsJoiner:
         self._state.set("saved_books", saved_books)
         self._state.inbound_transaction_committed(sender)
 
+        self.unacked_msg_count += 1
         self.unacked_msgs.append(msg.delivery_id)
 
         if (
@@ -205,10 +207,10 @@ class ReviewsJoiner:
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
-
             for delivery_id in self.unacked_msgs:
                 crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
+
 
             self.unacked_msg_count = 0
             self.unacked_msgs.clear()
@@ -283,6 +285,7 @@ class ReviewsJoiner:
 
         self._state.inbound_transaction_committed(sender)
 
+        self.unacked_msg_count += 1
         self.unacked_msgs.append(msg.delivery_id)
 
         
@@ -308,6 +311,7 @@ class ReviewsJoiner:
         now = time.time()
         time_since_last_commit = now - self.time_of_last_commit
         
+        #logging.info(f"TIME SINCe {time_since_last_commit} | LIMIT {self.unacked_time_limit_in_seconds} | UNACKED COUNT: {self.unacked_msg_count}")
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
             crash_maybe()

@@ -28,7 +28,8 @@ OUTPUT_Q1_PREFIX = "results_"
 OUTPUT_Q5_PREFIX = "review_joiner_books"
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 
@@ -204,9 +205,9 @@ class CategoryFilter:
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
         crash_maybe()
-        self._state.save_to_disk()
-        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)      
+        crash_maybe()
+        self._state.save_to_disk()
 
 
     def callback_aux_q1(self, msg: Message):

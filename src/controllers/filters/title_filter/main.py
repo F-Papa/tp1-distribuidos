@@ -20,7 +20,8 @@ OUTPUT_Q1 = "category_filter_queue"
 
 
 def crash_maybe():
-    if random.random() < 0.00001:
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
         sys.exit(1)
 
 
@@ -190,9 +191,9 @@ class TitleFilter:
 
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._state.save_to_disk()
-        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
+        crash_maybe()
+        self._state.save_to_disk()
 
     def _columns_for_query1(self, book: dict) -> dict:
         return {
