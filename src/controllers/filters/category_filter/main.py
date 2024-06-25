@@ -302,7 +302,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
 

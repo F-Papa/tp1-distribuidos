@@ -16,10 +16,9 @@ from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
 def crash_maybe():
-    pass
-    # if random.random() < 0.001:
-    #     logging.error("CRASHING..")
-    #     sys.exit(1)
+    if random.random() < 0.001:
+        logging.error("CRASHING..")
+        sys.exit(1)
 
 class SentimentAverager:
 
@@ -107,7 +106,7 @@ class SentimentAverager:
             self.unacked_msg_count > self.unacked_msg_limit
             or msg.get("EOF")
         ):
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
             
             crash_maybe()
             self._state.save_to_disk()
@@ -125,7 +124,7 @@ class SentimentAverager:
         
         #logging.info(f"TIME SINCe {time_since_last_commit} | LIMIT {self.unacked_time_limit_in_seconds} | UNACKED COUNT: {self.unacked_msg_count}")
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
             
             crash_maybe()
             self._state.save_to_disk()
@@ -284,7 +283,7 @@ def main():
     }
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
     
     counter = SentimentAverager(config, state, output_queues)

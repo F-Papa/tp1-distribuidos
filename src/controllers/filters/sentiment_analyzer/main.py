@@ -16,10 +16,9 @@ from src.controller_state.controller_state import ControllerState
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
-    pass
-    # if random.random() < 0.001:
-    #     logging.error("CRASHING..")
-    #     sys.exit(1)
+    if random.random() < 0.00005:
+        logging.error("CRASHING..")
+        sys.exit(1)
 
 class SentimentAnalyzer: 
     FILTER_TYPE = "sentiment_analyzer"
@@ -223,7 +222,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
 

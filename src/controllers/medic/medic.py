@@ -42,7 +42,8 @@ ELECTION_COOLDOWN = 2
 VOTING_DURATION = 8
 LEADER_ANNOUNCEMENT_DURATION = 8
 HEALTHCHECK_INTERVAL_SECONDS = 5
-HEALTHCHECK_TIMEOUT = 25
+HEALTHCHECK_TIMEOUT_MEDIC = 25
+HEALTHCHECK_TIMEOUT_CONTROLLER = 10
 VOTING_COOLDOWN = 6
 
 MSG_REDUNDANCY = 1
@@ -387,10 +388,8 @@ class Medic:
             id = sender_id(received)
             if not id:
                 return
-            if id == "review_joiner_proxy":
-                logging.info(f"CONTESTÓ HC")
+            
             self._cached_ips[id] = addr[0]
-            #logging.info(f"💓   Received IM ALIVE from {id}")
             self._last_contact_timestamp[id] = time.time()
         else:
 
@@ -866,20 +865,7 @@ class Medic:
     def revive_controller(self, controller_id: str):
         logging.info(f"🩺   Reviving controllers: {controller_id}")
         container = self.docker_client.containers.get(controller_id)
-        # try:  # KILL IF NOT DEAD
-        #     container.kill()
-        #     #container.stop()
-        # except:
-        #     pass
-
-        for cont in self.docker_client.containers.list():
-            logging.info(f"{cont.name} - {cont.status}")
-
-        # logging.info(f"FFAF{[cont for cont in list(self.docker_client.containers)]}")
-        # logging.info(f"ANTES DE REVIVIR {container}, {container.status}")
-        container.start()  # REVIVE
-        if container:
-            logging.info(f"REVIVI A {container.name}, {container.status}")
+        container.start()
 
     def check_on_controllers(self, controller_ids: Iterable[str]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -890,17 +876,18 @@ class Medic:
         dead_controllers = set()
 
         while not self._shutting_down:
-            if (time.time() - last_check) >= (HEALTHCHECK_TIMEOUT // 2):
+            if (time.time() - last_check) >= min(HEALTHCHECK_TIMEOUT_CONTROLLER, HEALTHCHECK_TIMEOUT_MEDIC):
                 for id in controller_ids:
                     if not self._last_contact_timestamp.get(id):
-                        logging.info(f"{id} id not here")
                         dead_controllers.add(id)
-                        continue
-                    elif (
-                        time.time() - self._last_contact_timestamp[id]
-                    ) >= HEALTHCHECK_TIMEOUT:
-                        logging.info(f"{id} timed out")
-                        dead_controllers.add(id)
+                    else:
+                        if id in self._other_medics:
+                            thresh = HEALTHCHECK_TIMEOUT_MEDIC
+                        else:
+                            thresh = HEALTHCHECK_TIMEOUT_CONTROLLER
+
+                        if time.time() - self._last_contact_timestamp[id] >= thresh:
+                            dead_controllers.add(id)
 
                 logging.info(f"Dead Controllers: {len(dead_controllers)}")
 
@@ -915,8 +902,6 @@ class Medic:
 
             for id in controller_ids:
                 try:
-                    if id == "review_joiner_proxy":
-                        logging.info(f"MANDANDO HC")
                     sock.sendto(
                         healthcheck_msg(self._id), (id, CONNECTION_PORT)
                     )

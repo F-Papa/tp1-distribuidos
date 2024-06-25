@@ -22,10 +22,9 @@ total_books = 0
 
 
 def crash_maybe():
-    pass
-    #if random.random() < 0.001:
-    #    logging.error("CRASHING..")
-    #    sys.exit(1)
+    if random.random() < 0.00005:
+       logging.error("CRASHING..")
+       sys.exit(1)
 
 
 class ReviewsJoiner:
@@ -202,9 +201,9 @@ class ReviewsJoiner:
         if (
             self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
-            logging.info(
-                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
-            )
+            # logging.info(
+            #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
+            # )
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -294,9 +293,9 @@ class ReviewsJoiner:
         if (
             self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
-            logging.info(
-                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
-            )
+            # logging.info(
+            #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
+            # )
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -314,7 +313,7 @@ class ReviewsJoiner:
         
         #logging.info(f"TIME SINCe {time_since_last_commit} | LIMIT {self.unacked_time_limit_in_seconds} | UNACKED COUNT: {self.unacked_msg_count}")
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now

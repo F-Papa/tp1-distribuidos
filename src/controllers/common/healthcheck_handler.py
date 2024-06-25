@@ -21,26 +21,19 @@ class HealthcheckHandler:
 
     def start(self):
         while True:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.bind(('0.0.0.0', self.CONNECTION_PORT))
-                    received, addr = s.recvfrom(1024)
-                    if self.is_type(received, Message.HEALTHCHECK):
-                        medic_id = self.sender_id(received)
-                        if not medic_id:
-                            logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
-                        if len(threading.enumerate()) == 2: # Check if main Thread is alive
-                            response = self.im_alive_msg()
-                            #logging.debug(f"SENDING{response}")
-                            s.sendto(response, (medic_id, self.CONNECTION_PORT))
-                            #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
-                        else:
-                            logging.info("CONTROLLER THREAD MURIO")
-                            return
-            except Exception as e:
-                logging.error(f"Error in start method: {e}")
-                break
-        logging.info(f"Exiting.")
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.bind(('0.0.0.0', self.CONNECTION_PORT))
+                received, addr = s.recvfrom(1024)
+                if self.is_type(received, Message.HEALTHCHECK):
+                    medic_id = self.sender_id(received)
+                    if not medic_id:
+                        logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
+                    if len(threading.enumerate()) == 2: # Check if main Thread is alive
+                        response = self.im_alive_msg()
+                        s.sendto(response, (medic_id, self.CONNECTION_PORT))
+                        #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
+                    else:
+                        exit(1)
 
     def decode_int(self, bytes: bytes) -> int:
         return int.from_bytes(bytes, "big")

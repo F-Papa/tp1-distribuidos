@@ -20,12 +20,12 @@ from src.messaging.goutong import Goutong
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
+total = 0
 
 def crash_maybe():
-    pass
-    #if random.random() < 0.0001:
-    #    logging.error("CRASHING..")
-     #   sys.exit(1)
+    if random.random() < 0.0008:
+       logging.error("CRASHING..")
+       sys.exit(1)
 
 class ControlMessage(Enum):
     HEALTHCHECK = 6
@@ -61,18 +61,6 @@ class LoadBalancerProxy:
 
     def controller_id(self):
         return self.controller_name
-
-    # HEALTHCHECK HANDLING
-    def send_healthcheck_response(self, address, seq_num):
-        message = (
-            f"{seq_num},{self.controller_name},{ControlMessage.IM_ALIVE.value}$"
-        )
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logging.info(f"Sending IM ALIVE to {address}")
-        logging.debug(f"IM ALIVE message: {message}")
-
-        for _ in range(self.MSG_REDUNDANCY):
-            sock.sendto(message.encode(), (address, self.CONTROL_PORT))
 
     def start(self):
         try:
@@ -147,11 +135,16 @@ class LoadBalancerProxy:
                     "data": data,
                 }
                 crash_maybe()
+                global total
+                total += len(data)
                 self._messaging.send_to_queue(queue, Message(msg_body))
                 self._state.outbound_transaction_committed(queue)
         
         if msg.get("EOF"):
             eof_received[conn_id_str][queries_str][sender] = True
+            logging.info(
+                f"Received EOF number {len(eof_received[conn_id_str][queries_str])} Sender: {sender},  Transaction: {msg.get('transaction_id')}"
+            )
 
             if len(eof_received[conn_id_str][queries_str]) == len(self._filter_queues):
                 for queue in msg.get("forward_to"):
@@ -163,6 +156,7 @@ class LoadBalancerProxy:
                         "EOF": True,
                     }
                     crash_maybe()
+                    logging.info(f"#{transaction_id} Sending EOF to: {queue}")
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
             self._state.set("eof_received", eof_received)
@@ -210,6 +204,7 @@ class LoadBalancerProxy:
         if not self._is_transaction_id_valid(msg):
             self._handle_invalid_transaction_id(msg)
             return
+
 
         # Forward data to one of the filters
         if data := msg.get("data"):
@@ -268,6 +263,8 @@ class LoadBalancerProxy:
                         element_copy = element.copy()
                         element_copy[self._key_to_hash] = [value]
                         hashed = hash(value) % len(self._filter_queues)
+                        # if value == "Edgar Allan Poe":
+                        #     logging.info(f"Hashing Edgar Allan Poe: {hashed}, {hash(value)}, {self._filter_queues[hashed]}")
                         queue = self._filter_queues[hashed]
                         batches[queue].append(element_copy)
                 else:
@@ -323,6 +320,7 @@ def main():
     }
     config = Configuration.from_env(required, "config.ini")
     config.validate()
+    config_logging(config.get("LOGGING_LEVEL"))
 
     controller_id = f"{config.get('FILTER_TYPE')}_lb_proxy"
 
@@ -333,10 +331,9 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
-    config_logging(config.get("LOGGING_LEVEL"))
     logging.info(config)
 
     load_balancer = LoadBalancerProxy(config, state)

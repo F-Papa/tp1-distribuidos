@@ -26,7 +26,7 @@ CONTROLLER_ID = "review_joiner_proxy"
 
 
 def crash_maybe():
-    if random.random() < 0.0015:
+    if random.random() < 0.00015:
         logging.error("CRASHING..")
         exit(1)
 
@@ -310,7 +310,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
     else:
         logging.info("no state file")

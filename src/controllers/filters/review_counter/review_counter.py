@@ -71,7 +71,6 @@ class ReviewCounter:
             self._handle_invalid_transaction_id(msg)
             return
         
-        logging.info(f"PROCESANDo {msg.get('transaction_id')}")
 
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
@@ -109,7 +108,7 @@ class ReviewCounter:
 
 
         if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -127,7 +126,7 @@ class ReviewCounter:
         
         #logging.info(f"TIME SINCe {time_since_last_commit} | LIMIT {self.unacked_time_limit_in_seconds} | UNACKED COUNT: {self.unacked_msg_count}")
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
             
             crash_maybe()
             self._state.save_to_disk()
@@ -305,7 +304,7 @@ def main():
     }
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
     counter = ReviewCounter(config, state, output_queues)

@@ -20,10 +20,9 @@ OUTPUT_Q1 = "category_filter_queue"
 
 
 def crash_maybe():
-    pass
-    # if random.random() < 0.001:
-    #     logging.error("CRASHING..")
-    #     sys.exit(1)
+    if random.random() < 0.0005:
+        logging.error("CRASHING..")
+        sys.exit(1)
 
 
 class ControlMessage(Enum):
@@ -243,7 +242,7 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        logging.info("Loading state from file...")
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
 

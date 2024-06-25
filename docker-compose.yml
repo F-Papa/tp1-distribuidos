@@ -127,6 +127,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - FILTER_TYPE=title_filter
       - FILTER_COUNT=2
       - INPUT_QUEUES=title_filter_queue
@@ -182,6 +183,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=date_filter_queue
       - FILTER_TYPE=date_filter
       - FILTER_COUNT=2
@@ -239,6 +241,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=category_filter_queue
       - FILTER_TYPE=category_filter
       - FILTER_COUNT=1
@@ -277,6 +280,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=review_counter_queue
       - FILTER_TYPE=review_counter
       - FILTER_COUNT=1
@@ -349,6 +353,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=decade_counter_queue
       - FILTER_TYPE=decade_counter
       - FILTER_COUNT=3
@@ -370,6 +375,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=sentiment_analyzer_queue
       - FILTER_TYPE=sentiment_analyzer
       - FILTER_COUNT=6
@@ -499,6 +505,7 @@ services:
     image: load_balancer_proxy_for_joiner:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - FILTER_COUNT=3
       - LOGGING_LEVEL=INFO
     networks:
@@ -618,6 +625,7 @@ services:
     image: lb_proxy:latest
     entrypoint: python3 main.py
     environment:
+      - PYTHONHASHSEED=86
       - INPUT_QUEUES=sentiment_averager_queue
       - FILTER_TYPE=sentiment_averager
       - FILTER_COUNT=2
