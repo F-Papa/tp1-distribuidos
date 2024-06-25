@@ -119,57 +119,59 @@ services:
   #     - ./src/boundary/config.ini:/config.ini
   #     - ./src/boundary/boundary.py:/boundary.py
 
-  # title_filter_lb_proxy:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
-  #   container_name: title_filter_proxy
-  #   image: lb_proxy:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - FILTER_TYPE=title_filter
-  #     - FILTER_COUNT=2
-  #     - INPUT_QUEUES=title_filter_queue
-  #     - LOGGING_LEVEL=INFO
-  #     - KEY_TO_HASH=title
-  #     - IS_PROXY=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
+  title_filter_lb_proxy:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/load_balancer_proxy/Dockerfile
+    container_name: title_filter_proxy
+    image: lb_proxy:latest
+    entrypoint: python3 main.py
+    environment:
+      - FILTER_TYPE=title_filter
+      - FILTER_COUNT=2
+      - INPUT_QUEUES=title_filter_queue
+      - LOGGING_LEVEL=INFO
+      - KEY_TO_HASH=title
+      - IS_PROXY=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/load_balancer_proxy/lb_proxy.py:/main.py
 
-  # title_filter1:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/title_filter/Dockerfile
-  #   container_name: title_filter1
-  #   image: title_filter:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=1
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/title_filter/config.ini:/config.ini
-  #     - ./src/controllers/filters/title_filter/main.py:/main.py
-  #     - ./state/title_filter1/:/state
-  # title_filter2:
-  #   build:
-  #     context: ./
-  #     dockerfile: ./src/controllers/filters/title_filter/Dockerfile
-  #   container_name: title_filter2
-  #   image: title_filter:latest
-  #   entrypoint: python3 main.py
-  #   environment:
-  #     - ITEMS_PER_BATCH=700
-  #     - FILTER_NUMBER=2
-  #   networks:
-  #     - tp1_testing_net
-  #   volumes:
-  #     - ./src/controllers/filters/title_filter/config.ini:/config.ini
-  #     - ./src/controllers/filters/title_filter/main.py:/main.py
-  #     - ./state/title_filter2/:/state
+  title_filter1:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
+    container_name: title_filter1
+    image: title_filter:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=1
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/title_filter/config.ini:/config.ini
+      - ./src/controllers/filters/title_filter/main.py:/main.py
+      - ./src/controllers/common/healthcheck_handler.py:/src/controllers/common/healthcheck_handler.py
+      - ./state/title_filter1/:/state
+  title_filter2:
+    build:
+      context: ./
+      dockerfile: ./src/controllers/filters/title_filter/Dockerfile
+    container_name: title_filter2
+    image: title_filter:latest
+    entrypoint: python3 main.py
+    environment:
+      - ITEMS_PER_BATCH=700
+      - FILTER_NUMBER=2
+    networks:
+      - tp1_testing_net
+    volumes:
+      - ./src/controllers/filters/title_filter/config.ini:/config.ini
+      - ./src/controllers/filters/title_filter/main.py:/main.py
+      - ./src/controllers/common/healthcheck_handler.py:/src/controllers/common/healthcheck_handler.py
+      - ./state/title_filter2/:/state
   # date_filter_lb_proxy:
   #   build:
   #     context: ./
