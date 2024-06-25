@@ -1,8 +1,10 @@
 from collections import defaultdict
 import json
 import os
+import threading
 import time
 from typing import Union
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 from src.controller_state.controller_state import ControllerState
@@ -35,7 +37,7 @@ class DecadeCounter:
         self._input_queue = f"{INPUT_QUEUE_PREFIX}{self._filter_number}"
         self._proxy_queue = f"{INPUT_QUEUE_PREFIX}_proxy"
         self._output_queues = output_queues
-
+        self.controller_name = f"{DecadeCounter.CONTROLLER_NAME}{self._filter_number}"
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
         self.unacked_msgs = []
@@ -222,6 +224,9 @@ class DecadeCounter:
             self.unacked_msg_count = 0
             self.unacked_msgs.clear()
 
+    def controller_id(self):
+        return self.controller_name
+
     def start(self):
         logging.info("Starting Decade Counter")
         try:
@@ -285,7 +290,12 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     decade_counter = DecadeCounter(filter_config, state, messaging, output_queues)
-    decade_counter.start()
+    controller_thread = threading.Thread(target=decade_counter.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(decade_counter)
+    healthcheck_handler.start()
 
 if __name__ == "__main__":
     main()

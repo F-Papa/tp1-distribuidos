@@ -22,16 +22,17 @@ HEALTHCHECK_RESPONSE_CODE = 2
 
 CONNECTION_PORT = 12345
 INT_ENCODING_LENGTH = 1
-CONNECTION_RETRIES = 3
+CONNECTION_RETRIES = 5 #3 !!!
+SETUP_GRACE_PERIOD = 30
 RETRY_INTERVAL = 2
 
-CONNECTION_TIMEOUT = 2 #5
-SETUP_TIMEOUT = 5 #15
+CONNECTION_TIMEOUT = 5 #5
+SETUP_TIMEOUT = 7 #15
 TIMEOUT = 4
-OK_TIMEOUT = 1 #
-ELECTION_TIMEOUT = 1 #4
+OK_TIMEOUT = 4 #
+ELECTION_TIMEOUT = 2 #4
 RESOLUTION_APROX_TIMEOUT = 4
-LEADER_TIMEOUT = 30
+LEADER_TIMEOUT = 60
 REVIVE_TIME = 15
 COORDINATOR_TIMEOUT = LEADER_TIMEOUT
 COORDINATOR_OK_TIMEOUT = 15 #15
@@ -173,6 +174,7 @@ class Medic:
         
         self._connections_lock = threading.Lock()
         self._connections = {}
+        self._cached_ips = {}
 
         self._check_thread: Optional[threading.Thread] = None
         self._transfering_leader_condvar = threading.Condition()
@@ -200,7 +202,7 @@ class Medic:
         self._listen_socket.bind(("0.0.0.0", CONNECTION_PORT))
         self._listen_socket.listen(self._number_of_medics)
 
-        time.sleep(3)
+        time.sleep(SETUP_GRACE_PERIOD)
 
         connection_threads = []
         for id in self._greater_medics:
@@ -241,7 +243,7 @@ class Medic:
 
     def handshake(self, sock: socket.socket, target_id: str):
         try:
-            send_bytes(sock, connect_msg(self._number_of_medics))
+            send_bytes(sock, connect_msg(self._medic_number))
         except:
             logging.error("Unexpected error sending Handshake to {id}: {e}")
             free_socket(sock)
@@ -336,16 +338,19 @@ class Medic:
 
     #region: Loop handlers
     def is_leader_dead(self) -> int:
+        if self._leader not in self._last_contact_timestamp:
+            return True
         time_elapsed = time.time() - self._last_contact_timestamp[self._leader]
         return time_elapsed >= LEADER_TIMEOUT
 
     def handle_udp_message(self):
-        received = self._udp_sock.recv(1024)
-        
+        received, addr = self._udp_sock.recvfrom(1024)
+
         if is_type(received, Message.HELLO):
             number = decode_int(received[INT_ENCODING_LENGTH:])
             id = f"medic{number}"
             logging.info(f"📣   HELLO from {id}")
+            self._cached_ips[id] = addr[0]
             self.connect_to(id)
             logging.info(f"📶  Connected to {id}")
 
@@ -354,10 +359,17 @@ class Medic:
             if not id:
                 return
             
-            self._udp_sock.sendto(
-                im_alive_msg(self._id),
-                (id, CONNECTION_PORT),
-            )
+            self._cached_ips[id] = addr[0]
+            if id in self._cached_ips:
+                self._udp_sock.sendto(
+                    im_alive_msg(self._id),
+                    (self._cached_ips[id], CONNECTION_PORT),
+                )
+            else:
+                self._udp_sock.sendto(
+                    im_alive_msg(self._id),
+                    (id, CONNECTION_PORT),
+                )
 
             self._last_contact_timestamp[id] = time.time()
 
@@ -365,7 +377,8 @@ class Medic:
             id = sender_id(received)
             if not id:
                 return
-            logging.info(f"💓   Received IM ALIVE from {id}")
+            self._cached_ips[id] = addr[0]
+            #logging.info(f"💓   Received IM ALIVE from {id}")
             self._last_contact_timestamp[id] = time.time()
         else:
 
@@ -525,7 +538,9 @@ class Medic:
         if leader_id == self._id:
             self._is_leader = True
             if not self._check_thread:
-                check_thread = threading.Thread(target=self.check_on_controllers, args=(self._other_medics,))
+                controllers_to_check = self.controllers_to_check.copy()
+                controllers_to_check.update(self._other_medics)
+                check_thread = threading.Thread(target=self.check_on_controllers, args=(controllers_to_check,))
                 self._check_thread = check_thread
                 check_thread.start()
         else:
@@ -818,6 +833,8 @@ class Medic:
 
     def check_on_controllers(self, controller_ids: Iterable[str]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+
 
         last_check = time.time()
         dead_controllers = set()
@@ -889,9 +906,34 @@ def main():
     logging.info(config)
 
     medic = Medic(config=config, controllers_to_check={
-        "title_filter1": "title_filter1", "title_filter2": "title_filter2",
-        "title_filter_proxy": "title_filter_proxy", "category_filter1": "category_filter1",
-        "category_filter_proxy": "title_filter_proxy"
+        "title_filter1": "title_filter1",
+        "title_filter2": "title_filter2",
+        "title_filter_proxy": "title_filter_proxy",
+        "category_filter1": "category_filter1",
+        "category_filter_proxy": "category_filter_proxy",
+        "date_filter1": "date_filter1",
+        "date_filter2": "date_filter2",
+        "date_filter_proxy": "date_filter_proxy",
+        "review_counter_proxy": "review_counter_proxy",
+        "review_counter1": "review_counter1",
+        "decade_counter1": "decade_counter1",
+        "decade_counter2": "decade_counter2",
+        "decade_counter3": "decade_counter3",
+        "decade_counter_proxy": "decade_counter_proxy",
+        "sentiment_analyzer_proxy": "sentiment_analyzer_proxy",
+        "sentiment_analyzer1": "sentiment_analyzer1",
+        "sentiment_analyzer2": "sentiment_analyzer2",
+        "sentiment_analyzer3": "sentiment_analyzer3",
+        "sentiment_analyzer4": "sentiment_analyzer4",
+        "sentiment_analyzer5": "sentiment_analyzer5",
+        "sentiment_analyzer6": "sentiment_analyzer6",
+        "review_joiner_proxy": "review_joiner_proxy",
+        "review_joiner1": "review_joiner1",
+        "review_joiner2": "review_joiner2",
+        "review_joiner3": "review_joiner3",
+        "sentiment_average_reducer1": "sentiment_average_reducer1",
+        "sentiment_average_reducer2": "sentiment_average_reducer2",
+        "sentiment_averager_proxy": "sentiment_averager_proxy",
     }
         
     )

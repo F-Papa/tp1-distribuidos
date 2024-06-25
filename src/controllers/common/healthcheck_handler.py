@@ -31,9 +31,9 @@ class HealthcheckHandler:
                             logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
                         if len(threading.enumerate()) == 2: # Check if main Thread is alive
                             response = self.im_alive_msg()
-                            logging.info(f"SENDING{response}")
+                            #logging.info(f"SENDING{response}")
                             s.sendto(response, (medic_id, self.CONNECTION_PORT))
-                            logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
+                            #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
             except Exception as e:
                 logging.error(f"Error in start method: {e}")
                 break

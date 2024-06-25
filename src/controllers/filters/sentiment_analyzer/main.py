@@ -1,3 +1,5 @@
+import threading
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
 from src.utils.config_loader import Configuration
 import logging
@@ -25,9 +27,10 @@ class SentimentAnalyzer:
         self._shutting_down = False
         self._state = state
         self._config = filter_config
-        self.input_queue_name = self.FILTER_TYPE + str(
+        self.controller_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self.input_queue_name = self.controller_name
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue = output_queue
         self._messaging = messaging
@@ -165,6 +168,9 @@ class SentimentAnalyzer:
         blob = TextBlob(text)
         sentiment = blob.sentiment.polarity  # type: ignore
         return sentiment
+    
+    def controller_id(self):
+        return self.controller_name
 
 def config_logging(level: str):
 
@@ -219,7 +225,12 @@ def main():
     )
 
     signal.signal(signal.SIGTERM, lambda sig, frame: sentiment_analyzer.shutdown())
-    sentiment_analyzer.start()
+    controller_thread = threading.Thread(target=sentiment_analyzer.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(sentiment_analyzer)
+    healthcheck_handler.start()
 
 if __name__ == "__main__":
     main()

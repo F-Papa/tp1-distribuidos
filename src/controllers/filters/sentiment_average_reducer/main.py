@@ -1,6 +1,8 @@
+import threading
 import time
 from typing import Any, Union
 from src.controller_state.controller_state import ControllerState
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
@@ -29,6 +31,7 @@ class SentimentAverager:
         self._state = state
         self._output_queues = output_queues
         self._shutting_down = False
+        self.controller_name = f"{self.CONTROLLER_NAME[:-1]}_reducer{self._filter_number}"
         self._input_queue = f"{self.CONTROLLER_NAME}{self._filter_number}"
 
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
@@ -51,7 +54,9 @@ class SentimentAverager:
             temp_file_path=temp_file_path,
             extra_fields=extra_fields,
         )
-    
+
+    def controller_id(self):
+        return self.controller_name    
 
     # region: callback methods
     def reviews_callback(self, _: Goutong, msg: Message):
@@ -269,7 +274,13 @@ def main():
     counter = SentimentAverager(config, messaging, state, output_queues)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
-    counter.start()
+    
+    controller_thread = threading.Thread(target=counter.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(counter)
+    healthcheck_handler.start()
 
 if __name__ == "__main__":
     main()

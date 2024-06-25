@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 
 import pika
 import pika.exceptions
 from src.controller_state.controller_state import ControllerState
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
@@ -46,6 +48,7 @@ class ReviewsJoiner:
         self._shutting_down = False
         self._state = state
         self._messaging = messaging
+        self.controller_name = f"{self.CONTROLLER_NAME}{self._filter_number}"
         self._books_queue = f"{self.CONTROLLER_NAME}_{self._filter_number}_books"
         self._reviews_queue_prefix = (
             f"{self.CONTROLLER_NAME}_{self._filter_number}_reviews_conn_"
@@ -85,6 +88,9 @@ class ReviewsJoiner:
             temp_file_path=temp_file_path,
             extra_fields=extra_fields,
         )
+
+    def controller_id(self):
+        return self.controller_name
 
     def start(self):
         logging.info("Starting Review Joiner")
@@ -420,7 +426,12 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     joiner = ReviewsJoiner(config, state, messaging, output_queues)
-    joiner.start()
+    controller_thread = threading.Thread(target=joiner.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(joiner)
+    healthcheck_handler.start()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from collections import defaultdict
 from enum import Enum
 import socket
 import threading
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 import logging
@@ -73,36 +74,7 @@ class DateFilter:
         for _ in range(self.MSG_REDUNDANCY):
             sock.sendto(message.encode(), (address, self.CONTROL_PORT))
 
-    def healthcheck_handler(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(("0.0.0.0", self.CONTROL_PORT))
-        terminator_bytes = bytes("$", "utf-8")[0]
-
-        try:
-            while True:
-                data = b""
-                while len(data) == 0 or data[-1] != terminator_bytes:
-                    try:
-                        recieved, _ = sock.recvfrom(1024)
-                        data += recieved
-                    except socket.timeout:
-                        break
-
-                data = data.decode()
-                logging.debug(f"received healthcheck: {data}")
-                seq_num, controller_id, response_code = data[:-1].split(",")
-                response_code = int(response_code)
-                if response_code == ControlMessage.HEALTHCHECK.value:
-                    self.send_healthcheck_response(controller_id, seq_num)
-        except Exception as e:
-            logging.error(f"Exception at healthcheck_handler Thread: {e}")
-        finally:
-            sock.close()
-
     def start(self):
-        threading.Thread(target=self.healthcheck_handler, args=()).start()
-
         # Main Flow
         try:
             if not self._shutting_down:
@@ -285,6 +257,9 @@ class DateFilter:
         self._state.save_to_disk()
         self._messaging.ack_delivery(msg.delivery_id)
 
+    def controller_id(self):
+        return self.controller_name
+
 def config_logging(level: str):
 
     level = getattr(logging, level)
@@ -341,7 +316,14 @@ def main():
     )
 
     signal.signal(signal.SIGTERM, lambda sig, frame: filter.shutdown())
-    filter.start()
+    
+    controller_thread = threading.Thread(target=filter.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(filter)
+    healthcheck_handler.start()
+
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ It also works as a threading barrier, forwarding EOF messages to the next filter
 
 from collections import defaultdict
 import os
+import threading
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.utils.config_loader import Configuration
 import logging
 import signal
@@ -17,13 +19,14 @@ from src.controller_state.controller_state import ControllerState
 INPUT_QUEUE_BOOKS = "review_joiner_books"
 INPUT_QUEUE_REVIEWS = "review_joiner_reviews"
 FILTER_TYPE = "review_joiner"
-
+CONTROLLER_ID = "review_joiner_proxy"
 
 class LoadBalancerProxyForJoiner:
 
     def __init__(
         self, config: Configuration, messaging: Goutong, state: ControllerState
     ):
+        self.controller_name = CONTROLLER_ID
         self.barrier_config = config
         self._messaging = messaging
         self._state = state
@@ -43,6 +46,9 @@ class LoadBalancerProxyForJoiner:
             )
 
         logging.info("Filter Queues: " + str(self._filter_queues))
+
+    def controller_id(self):
+        return self.controller_name
 
     def start(self):
         try:
@@ -293,7 +299,12 @@ def main():
 
     messaging = Goutong(sender_id=controller_id)
     load_balancer = LoadBalancerProxyForJoiner(barrier_config, messaging, state)
-    load_balancer.start()
+    controller_thread = threading.Thread(target=load_balancer.start)
+    controller_thread.start()
+
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(load_balancer)
+    healthcheck_handler.start()
 
 
 if __name__ == "__main__":
