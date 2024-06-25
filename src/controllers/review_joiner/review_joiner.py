@@ -202,10 +202,12 @@ class ReviewsJoiner:
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
             )
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
 
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -239,6 +241,7 @@ class ReviewsJoiner:
                     "data": trimmed_data,
                     "forward_to": [output_queue],
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
                 self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -253,6 +256,7 @@ class ReviewsJoiner:
                 "data": [],
                 "forward_to": [output_queue],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -289,10 +293,12 @@ class ReviewsJoiner:
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
             )
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
 
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -304,10 +310,12 @@ class ReviewsJoiner:
         
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now
             
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -330,6 +338,7 @@ class ReviewsJoiner:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

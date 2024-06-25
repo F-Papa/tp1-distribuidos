@@ -1,3 +1,5 @@
+import random
+import sys
 import threading
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
@@ -13,6 +15,9 @@ from src.controller_state.controller_state import ControllerState
 
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
 
 class SentimentAnalyzer: 
     FILTER_TYPE = "sentiment_analyzer"
@@ -85,6 +90,7 @@ class SentimentAnalyzer:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -127,6 +133,7 @@ class SentimentAnalyzer:
                 "data": filtered_books,
                 "forward_to": [self.output_queue()],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -144,11 +151,14 @@ class SentimentAnalyzer:
                 "queries": [5],
             }
 
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _analyze_reviews(self, reviews: list):

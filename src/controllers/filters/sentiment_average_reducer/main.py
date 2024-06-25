@@ -1,3 +1,5 @@
+import random
+import sys
 import threading
 import time
 from typing import Any, Union
@@ -13,6 +15,9 @@ import os
 from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
 
 class SentimentAverager:
 
@@ -100,10 +105,12 @@ class SentimentAverager:
             self.unacked_msg_count > self.unacked_msg_limit
         ):
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
             
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -115,10 +122,12 @@ class SentimentAverager:
         
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = now
             
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -191,7 +200,7 @@ class SentimentAverager:
             "data": q5_results,
             "EOF": True,
         }
-
+        crash_maybe()
         self._messaging.send_to_queue(output_queue, Message(msg_q5_body))
         self._state.outbound_transaction_committed(output_queue)
 
@@ -210,6 +219,7 @@ class SentimentAverager:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

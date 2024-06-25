@@ -120,6 +120,7 @@ class DecadeCounter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -147,6 +148,7 @@ class DecadeCounter:
         output_queue = OUTPUT_QUEUE_PREFIX + conn_id
         transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg = Message({"conn_id": conn_id, "queries": [2], "data": ten_decade_authors, "forward_to": [output_queue], "transaction_id": transaction_id})
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, msg)
         self._state.outbound_transaction_committed(self._proxy_queue)
         logging.debug(f"Sent Data to: {self._proxy_queue}")
@@ -155,6 +157,7 @@ class DecadeCounter:
         output_queue = OUTPUT_QUEUE_PREFIX + conn_id
         transaction_id = self._state.next_outbound_transaction_id(self._proxy_queue)
         msg = Message({"conn_id": conn_id, "EOF": True, "queries": [2], "forward_to": [output_queue], "transaction_id": transaction_id})
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, msg)
         self._state.outbound_transaction_committed(self._proxy_queue)
         logging.debug(f"Sent EOF to: {self._proxy_queue}")
@@ -199,10 +202,12 @@ class DecadeCounter:
         if (self.unacked_msg_count > self.unacked_msg_limit):
             
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            crash_maybe()
             self._save_state()
             self.time_of_last_commit = time.time()
             
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
@@ -214,10 +219,12 @@ class DecadeCounter:
         
         if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
+            crash_maybe()
             self._save_state()
             self.time_of_last_commit = now
             
             for delivery_id in self.unacked_msgs:
+                crash_maybe()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0

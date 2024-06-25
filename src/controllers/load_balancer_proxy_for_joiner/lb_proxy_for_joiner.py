@@ -5,6 +5,8 @@ It also works as a threading barrier, forwarding EOF messages to the next filter
 
 from collections import defaultdict
 import os
+import random
+import sys
 import threading
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.utils.config_loader import Configuration
@@ -20,6 +22,12 @@ INPUT_QUEUE_BOOKS = "review_joiner_books"
 INPUT_QUEUE_REVIEWS = "review_joiner_reviews"
 FILTER_TYPE = "review_joiner"
 CONTROLLER_ID = "review_joiner_proxy"
+
+
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
+
 
 class LoadBalancerProxyForJoiner:
 
@@ -142,6 +150,7 @@ class LoadBalancerProxyForJoiner:
                     "queries": queries,
                     "data": data,
                 }
+                crash_maybe()
                 self._messaging.send_to_queue(queue, Message(msg_body))
                 self._state.outbound_transaction_committed(queue)
 
@@ -157,12 +166,15 @@ class LoadBalancerProxyForJoiner:
                         "queries": queries,
                         "EOF": True,
                     }
+                    crash_maybe()
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
             self._state.set("eof_received", eof_received)
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _is_transaction_id_valid(self, msg: Message):
@@ -182,6 +194,7 @@ class LoadBalancerProxyForJoiner:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -211,7 +224,9 @@ class LoadBalancerProxyForJoiner:
             )
 
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _forward_end_of_file(self, conn_id: int, queries: list[int], source: str):
@@ -233,6 +248,7 @@ class LoadBalancerProxyForJoiner:
                 "queries": queries,
                 "EOF": True,
             }
+            crash_maybe()
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
@@ -249,7 +265,7 @@ class LoadBalancerProxyForJoiner:
                 "queries": queries,
                 "data": data_for_queue,
             }
-
+            crash_maybe()
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 

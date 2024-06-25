@@ -1,6 +1,8 @@
 from collections import defaultdict
 from enum import Enum
+import random
 import socket
+import sys
 import threading
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
@@ -15,6 +17,8 @@ from src.controller_state.controller_state import ControllerState
 from src.messaging.message import Message
 from src.exceptions.shutting_down import ShuttingDown
 
+
+
 EOF_QUEUE = "category_filter_eof"
 
 CATEGORY_Q1 = "Computers"
@@ -22,6 +26,11 @@ CATEGORY_Q5 = "Fiction"
 
 OUTPUT_Q1_PREFIX = "results_"
 OUTPUT_Q5_PREFIX = "review_joiner_books"
+
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
+
 
 class ControlMessage(Enum):
     HEALTHCHECK = 6
@@ -137,6 +146,7 @@ class CategoryFilter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -189,10 +199,13 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)      
 
 
@@ -217,9 +230,11 @@ class CategoryFilter:
         if msg.get("EOF"):
             msg_content["EOF"] = True
 
+        crash_maybe()
         self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def _filter_by_category(self, data: list, category: str) -> list:

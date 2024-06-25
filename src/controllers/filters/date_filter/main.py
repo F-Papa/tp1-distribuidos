@@ -1,6 +1,8 @@
 from collections import defaultdict
 from enum import Enum
+import random
 import socket
+import sys
 import threading
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
@@ -22,6 +24,10 @@ LOWER_Q3_4 = 1990
 
 OUTPUT_Q1 = "title_filter_queue"
 OUTPUT_Q3_4_PREFIX = "review_joiner_books"
+
+def crash_maybe():
+    if random.random() < 0.00001:
+        sys.exit(1)
 
 class ControlMessage(Enum):
     HEALTHCHECK = 6
@@ -162,6 +168,7 @@ class DateFilter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
+            crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -206,6 +213,7 @@ class DateFilter:
             if msg.get("EOF"):
                 msg_content["EOF"] = True
 
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -218,6 +226,7 @@ class DateFilter:
                 "EOF": True,
                 "forward_to": [self.output_queue_q1()],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
     
@@ -237,7 +246,8 @@ class DateFilter:
 
             if msg.get("EOF"):
                 msg_content["EOF"] = True
-
+            
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
 
@@ -250,11 +260,14 @@ class DateFilter:
                 "EOF": True,
                 "forward_to": [output_q3_4],
             }
+            crash_maybe()
             self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
             self._state.outbound_transaction_committed(self._proxy_queue)
   
         self._state.inbound_transaction_committed(sender)
+        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
         self._messaging.ack_delivery(msg.delivery_id)
 
     def controller_id(self):
