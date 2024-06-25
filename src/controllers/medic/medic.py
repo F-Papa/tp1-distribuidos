@@ -14,6 +14,8 @@ import logging
 import threading
 from src.utils.config_loader import Configuration
 
+class ShuttingDown(Exception):
+    pass
 
 HEALTHCHECK_REQUEST_CODE = 1
 HEALTHCHECK_RESPONSE_CODE = 2
@@ -42,7 +44,7 @@ VOTING_COOLDOWN = 6
 
 MSG_REDUNDANCY = 1
 
-
+#region: Messages
 class Message(Enum):
     CONNECT = 1
     CONNECTED = 2
@@ -72,12 +74,11 @@ def is_type(data: bytes, msg_type: Message) -> bool:
 def coordinator_ok_msg():
     return Message.COORDINATOR_OK.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
-def connect_msg(medic_id: str) -> bytes:
+def connect_msg(medic_number: int) -> bytes:
     return (
         b""
         + Message.CONNECT.value.to_bytes(INT_ENCODING_LENGTH, "big")
-        + len(medic_id).to_bytes(INT_ENCODING_LENGTH, "big")
-        + medic_id.encode("utf-8")
+        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
     )
 
 def hello_msg(medic_number: int) -> bytes:
@@ -115,6 +116,8 @@ def ok_msg() -> bytes:
 def coord_msg() -> bytes:
     return Message.COORDINATOR.value.to_bytes(INT_ENCODING_LENGTH, "big")
 
+#endregion
+#region: Sockets
 def free_socket(sock: socket.socket):
     try:
         sock.shutdown(socket.SHUT_RDWR)
@@ -123,19 +126,12 @@ def free_socket(sock: socket.socket):
 
     sock.close()
 
-def is_socket_open(sock: socket.socket):
-    try:
-        sock.fileno()
-    except socket.error:
-        return False
-    return True
-
 def recv_bytes(sock: socket.socket, length: int):
     received = b""
     while len(received) < length:
         received += sock.recv(length - len(received))
-        if len(received) == 0:
-            return received
+        if not received:
+            return None
     return received
 
 def send_bytes(sock: socket.socket, data: bytes):
@@ -143,6 +139,7 @@ def send_bytes(sock: socket.socket, data: bytes):
     while bytes_sent < len(data):
         bytes_sent += sock.send(data[bytes_sent:])
 
+#endregion
 class Medic:
     CONTROLLER_TYPE = "medic"
 
@@ -152,7 +149,6 @@ class Medic:
         self._medic_number = config.get("MEDIC_NUMBER")
         self._other_medics = {}
         self._greater_medics = {}
-        self._first_election_done = False
         self._smaller_medics = {}
 
         for i in range(1, self._number_of_medics + 1):
@@ -168,29 +164,58 @@ class Medic:
 
         self._listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._id = f"{self.CONTROLLER_TYPE}{self._medic_number}"
+        
         self._is_leader = False
         self._leader = None
+        
         self.docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock")
+        self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
         self._connections_lock = threading.Lock()
         self._connections = {}
-        self._threads = {}
+
         self._check_thread: Optional[threading.Thread] = None
         self._transfering_leader_condvar = threading.Condition()
         self._transfering_leader = False
-
-        self._ok_received = set()
-        self._ok_received_lock = threading.Lock()
-        self._udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._last_im_alive_timestamp = dict()
+        self._last_contact_timestamp = dict()
+        self._shutting_down = False
 
     def shutdown(self):
-        for _, conn in self._connections.items():
-            conn.shutdown(socket.SHUT_RDWR)
-            conn.close()
+        self._shutting_down = True
+        with self._connections_lock:
+            open_conns = list(self._connections.items())
+        for _, conn in open_conns:
+            self.close_socket(conn)
+        
+        self._transfering_leader = True
+        with self._transfering_leader_condvar:
+            self._transfering_leader_condvar.notify()
+        
+        self.close_socket(self._listen_socket)
+        logging.info("Shutting down")
 
     # region: Connection Setup
+    def setup_connections(self):
+        """Setup up connection with all other medics, some of them may not be established succesfully"""
+        self._listen_socket.bind(("0.0.0.0", CONNECTION_PORT))
+        self._listen_socket.listen(self._number_of_medics)
+
+        time.sleep(3)
+
+        connection_threads = []
+        for id in self._greater_medics:
+            thread = threading.Thread(target=self.connect_to, args=(id,))
+            thread.start()
+            connection_threads.append(thread)
+
+        self.accept_connection_from_smaller_medics()
+
+        for thread in connection_threads:
+            thread.join()
 
     def new_connection(self, id: str):
+        """Establish a TCP connection with 'id'. Returns the socket if successful or None otherwise."""
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(CONNECTION_TIMEOUT)
         expected_errors = [errno.ECONNREFUSED, errno.ETIMEDOUT]
@@ -214,9 +239,9 @@ class Medic:
         
         return None
 
-    def handshake_initiation(self, sock: socket.socket, target_id: str):
+    def handshake(self, sock: socket.socket, target_id: str):
         try:
-            send_bytes(sock, connect_msg(self._id))
+            send_bytes(sock, connect_msg(self._number_of_medics))
         except:
             logging.error("Unexpected error sending Handshake to {id}: {e}")
             free_socket(sock)
@@ -224,6 +249,10 @@ class Medic:
         try:
             sock.settimeout(CONNECTION_TIMEOUT) 
             received = recv_bytes(sock, INT_ENCODING_LENGTH)
+
+            if not received:
+                free_socket(sock)
+                return
 
             if is_type(received, Message.CONNECTED):
                 with self._connections_lock:
@@ -236,31 +265,38 @@ class Medic:
             logging.error("Unexpected error receiving Handshake response from {id}: {e}")
             free_socket(sock)
 
+    def connect_to(self, target_id: str):
+        """Establish the connection and initiate the handshake. If the handshake is successful, 
+        the connection is saved in the state, otherwise it is closed"""
 
-    def connect_to(self, target_id: str):        
         # Conect via TCP
         conn = self.new_connection(target_id)
         if not conn:
             return
         
         # App Layer Handshake: Say who I am
-        self.handshake_initiation(conn, target_id)
+        self.handshake(conn, target_id)
        
     def accept_connection(self, sock: socket.socket):
+        """Listen for a TCP conection and respond to the handshake. If it is successful it will save it
+        in the state, otherwise it will be closed"""
+        
         sock.settimeout(SETUP_TIMEOUT)
         conn, addr = sock.accept()
         try:
-            #TODO: que lo primero sea el length
-            received = recv_bytes(conn, INT_ENCODING_LENGTH)
+            received = recv_bytes(conn, INT_ENCODING_LENGTH*2)
         except OSError as e:
             if e.errno == errno.ETIMEDOUT:
                 # If one times out, elevate the exception to break the loop
                 raise e
             logging.error(f"Unexpected error receiving Handshake from {addr}: {e}")
             return
-            
+        
+        if not received:
+            free_socket(conn)
+            return
+
         if is_type(received, Message.CONNECT):
-            received += recv_bytes(conn, len("YmedicX"))
             received_id = sender_id(received)
             try:
                 send_bytes(conn, connected_msg())
@@ -271,212 +307,9 @@ class Medic:
                 return
         else:
             logging.info(f"at accept_connection: Received unexpected message from {addr}: {received}")
-    
-    def accept_connection_from_smaller_medics(self):
-        try:
-            for _ in range(len(self._smaller_medics)):
-                self.accept_connection(self._listen_socket)
-        except socket.timeout:
-            pass
-    #endregion: Connection
-
-    def loop(self):
-        sel = selectors.DefaultSelector()
-        with self._connections_lock:
-            for stored_id in self._other_medics:
-                if conn := self._connections.get(stored_id):
-                    conn.setblocking(False)
-                    sel.register(conn, selectors.EVENT_READ)
-
-        self._udp_sock.setblocking(False)
-        self._listen_socket.setblocking(False)
-        sel.register(self._udp_sock, selectors.EVENT_READ)
-        sel.register(self._listen_socket, selectors.EVENT_READ)
-
-        # logging.info("selecting...")
-        events = sel.select(timeout=LEADER_TIMEOUT + 2*self._medic_number)
-
-        if not events:
-            logging.error(f"Selector timed out")
-            last_contact_with_leader = self._last_im_alive_timestamp.get(self._leader)
-
-            if last_contact_with_leader and time.time() - last_contact_with_leader < LEADER_TIMEOUT:
-                return
-
-            logging.error(f"💀  Leader {self._leader} is dead, raising election")
-            self.send_election()
-            self.answer_to_elections(initiator=None)
-            leader, oks_received = self.listen_for_oks()
-
-            if leader or oks_received:  # I lost
-                if not leader:
-                    leader = self.listen_for_coordinator()
-
-                if self._check_thread:
-                    self._check_thread.join()
-                    logging.info(f"⭐   X Coordinator Transfered: {leader}")
-
-                else:
-                    logging.info(f"⭐   X Coordinator: {leader}")
-
-                self._leader = leader
-                self._is_leader = False
-
-                with self._connections_lock:
-                    conn = self._connections[leader]
-                    send_bytes(conn, coordinator_ok_msg())
-
-            else:  # I Won
-                if not self._check_thread:  # If i wasn't already the leader
-                    check_thread = threading.Thread(
-                        target=self.check_on_controllers,
-                        args=(self._other_medics,),
-                    )
-                    self._check_thread = check_thread
-                    check_thread.start()
-
-                self._leader = self._id
-                self._is_leader = True
-                logging.info(f"🌟   Coordinator: {self._leader}")
-                self.send_coordinator()
-                self.listen_for_coordinator_oks()     
-            return           
-
-        for key, _ in events:
-            
-            sock: socket.socket = key.fileobj  # type: ignore
-
-            if sock == self._listen_socket:
-                self.accept_connection(sock)
-                # logging.info("New connection accepted")
-                # Election?
-                return
-
-            elif sock == self._udp_sock:
-                received, addr = sock.recvfrom(1024)
-                if is_type(received, Message.HELLO):
-                    number = decode_int(received[INT_ENCODING_LENGTH:])
-                    id = f"medic{number}"
-                    logging.info(f"📣   HELLO from {id}")
-                    self.connect_to(id)
-                    logging.info(f"📶  Connected to {id}")
-
-                elif is_type(received, Message.HEALTHCHECK):
-                    id = sender_id(received)
-                    if not id:
-                        return
-                    
-                    sock.sendto(
-                        im_alive_msg(self._id),
-                        (id, CONNECTION_PORT),
-                    )
-                    self._last_im_alive_timestamp[id] = time.time()
-
-                elif is_type(received, Message.IM_ALIVE):
-                    id = sender_id(received)
-                    if not id:
-                        return
-                    logging.info(f"💓   Received IM ALIVE from {id}")
-                    self._last_im_alive_timestamp[id] = time.time()
-                else:
-                    logging.error(f"Unkown UDP message received: {received}")
-                return
-
-            id = None
-            with self._connections_lock:
-                for stored_id in self._other_medics:
-                    if conn := self._connections.get(stored_id):
-                        if sock == conn:
-                            id = stored_id
-                            break
-            try:
-                received = recv_bytes(sock, INT_ENCODING_LENGTH)
-            except Exception as e:
-                logging.error(f"Exception {e} happened in: {id}")
-                continue
-
-            if is_type(received, Message.COORDINATOR):
-                if not self._is_leader:
-                    with self._connections_lock:
-                        conn = self._connections[id]
-                        send_bytes(conn, coordinator_ok_msg())
-                    logging.info(f"⭐   Z COORDINATOR: {id}")
-                else:
-
-                    if self._check_thread:
-                        self._transfering_leader = True
-                        with self._transfering_leader_condvar:
-                            self._transfering_leader_condvar.notify()
-                        self._check_thread.join()
-                    
-                    with self._connections_lock:
-                        conn = self._connections[id]
-                        send_bytes(conn, coordinator_ok_msg())
-                    self._transfering_leader = False
-                    logging.info(f"⭐   Z COORDINATION TRANSFERED: {id}")
-
-                self._is_leader = False
-                self._leader = id
-
-            elif is_type(received, Message.ELECTION):
-                logging.info(f"Election received from: {id}")
-                try:
-                    send_bytes(sock, ok_msg())
-                
-                except Exception as e:
-                    logging.error(f"at loop with {id}: {e}")
-                    self.close_socket(sock)
-                    pass
-
-                self.send_election()
-                self.answer_to_elections(initiator=id)
-                leader, oks_received = self.listen_for_oks()
-
-                if leader or oks_received:  # I lost
-                    if not leader:
-                        leader = self.listen_for_coordinator()
-
-                    if self._check_thread:
-                        self._transfering_leader = True
-                        with self._transfering_leader_condvar:
-                            self._transfering_leader_condvar.notify()
-                        self._check_thread.join()
-                        logging.info(f"⭐   Y Coordinator Transfered: {leader}")
-
-                    else:
-                        logging.info(f"⭐   Y Coordinator: {leader}")
-
-                    self._leader = leader
-                    self._is_leader = False
-
-                    with self._connections_lock:
-                        conn = self._connections[leader]
-                        send_bytes(conn, coordinator_ok_msg())
-
-                else:  # I Won
-                    self._leader = self._id
-                    self._is_leader = True
-                    self.send_coordinator()
-                    self.listen_for_coordinator_oks()
-                    logging.info(f"🌟   Y Coordinator: {self._leader}")
-                    
-                    if not self._check_thread:  # If i wasn't already the leader
-                            check_thread = threading.Thread(
-                                target=self.check_on_controllers,
-                                args=(self._other_medics,),
-                            )
-                            self._check_thread = check_thread
-                            check_thread.start()
-
-            elif not received:
-                logging.info(f"at loop: received null from {id}")
-                self.close_socket(sock)
-                return
-            else:
-                logging.info(f"at loop: unexpected message from {id}: {received}")
 
     def send_hello_to_smaller_medics(self):
-        """Send a UDP datagram for to a smaller medic in case"""
+        """Send a UDP datagram for to a smaller medics so that they initiate the connection"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for medic in self._smaller_medics:
             try:
@@ -484,93 +317,245 @@ class Medic:
             except:
                 pass
 
-    def start(self):
-        # Connect to greater medics
-        self._listen_socket.bind(("0.0.0.0", CONNECTION_PORT))
-        self._listen_socket.listen(self._number_of_medics)
-
-        time.sleep(3)
-
-        # Fork Join: Connect to greater medics and accept connections 
-        # and at the same time accept connections from smaller medics
-        connection_threads = []
-        for id in self._greater_medics:
-            thread = threading.Thread(target=self.connect_to, args=(id,))
-            thread.start()
-            connection_threads.append(thread)
-
+    def accept_connection_from_smaller_medics(self):
+        """Accept connection from all smaller medics, prompting them via UDP to initiate it"""
         self.send_hello_to_smaller_medics()
-        self.accept_connection_from_smaller_medics()
-
-        for thread in connection_threads:
-            thread.join()
-
+        try:
+            for _ in range(len(self._smaller_medics)):
+                self.accept_connection(self._listen_socket)
+        except socket.timeout:
+            pass
+    
+    def succesful_connections(self) -> list[str]:
         with self._connections_lock:
             connected_to = list(self._connections.keys())
             connected_to.sort()
-            logging.info(f"📶   Connected to: {connected_to}")
+            return connected_to
+    #endregion: Connection
 
-        self.send_election()
-        self.answer_to_elections(initiator=None)
-        leader, oks_received = self.listen_for_oks()
+    #region: Loop handlers
+    def is_leader_dead(self) -> int:
+        time_elapsed = time.time() - self._last_contact_timestamp[self._leader]
+        return time_elapsed >= LEADER_TIMEOUT
 
-        if leader:
-            self._leader = leader
-            self._is_leader = False
-            with self._connections_lock:
-                conn = self._connections[self._leader]
-                send_bytes(conn, coordinator_ok_msg())
-            logging.info(f"⭐   Coordinator: {self._leader}")
-
-        elif oks_received:
-            self._leader = self.listen_for_coordinator()
-            self._is_leader = False
-            with self._connections_lock:
-                conn = self._connections[self._leader]
-                send_bytes(conn, coordinator_ok_msg())
-            logging.info(f"⭐   Coordinator: {self._leader}")
-
-        else:
-            self._leader = self._id
-            self._is_leader = True
-            self.send_coordinator()
-            self.listen_for_coordinator_oks()
-            logging.info(f"🌟   Coordinator: {self._leader}")
-            threading.Thread(
-                target=self.check_on_controllers, args=(self._other_medics,)
-            ).start()
-
-        self._udp_sock.bind(("0.0.0.0", CONNECTION_PORT))
+    def handle_udp_message(self):
+        received = self._udp_sock.recv(1024)
         
-        while True:
-            self.loop()
+        if is_type(received, Message.HELLO):
+            number = decode_int(received[INT_ENCODING_LENGTH:])
+            id = f"medic{number}"
+            logging.info(f"📣   HELLO from {id}")
+            self.connect_to(id)
+            logging.info(f"📶  Connected to {id}")
 
-    def send_election(self):
-        logging.info("Sending elections")
-        for id in self._greater_medics:
-            with self._connections_lock:
-                if conn := self._connections.get(id):
-                    # logging.info(f"Sending Election to: {id}")
-                    send_bytes(conn, election_msg())
+        elif is_type(received, Message.HEALTHCHECK):
+            id = sender_id(received)
+            if not id:
+                return
+            
+            self._udp_sock.sendto(
+                im_alive_msg(self._id),
+                (id, CONNECTION_PORT),
+            )
 
-    def answer_to_elections(self, initiator: Optional[str]):
-        if initiator:
-            logging.info(f"Answering to elections initiated by {initiator}")
+            self._last_contact_timestamp[id] = time.time()
+
+        elif is_type(received, Message.IM_ALIVE):
+            id = sender_id(received)
+            if not id:
+                return
+            logging.info(f"💓   Received IM ALIVE from {id}")
+            self._last_contact_timestamp[id] = time.time()
         else:
-            logging.info("Answering to elections")
 
+            logging.error(f"Unkown UDP message received: {received}")
+
+    def handle_tcp_message(self, sock: socket.socket, sel: selectors.DefaultSelector):
+        sender = self.resolve_socket(sock)
+        if not sender:
+            logging.error("At handle_tcp_message: Invalid Socket")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+
+        try:
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+        except Exception as e:
+            logging.error(f"Exception {e} happened in: {sender}")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+
+        if not received:
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+
+        if is_type(received, Message.COORDINATOR):
+            self.set_leader(sender)
+            self.send_to(coordinator_ok_msg(), sender)
+            logging.info(f"⭐   Z COORDINATOR: {sender}")
+
+        elif is_type(received, Message.ELECTION):
+            logging.info(f"Election received from: {sender}")
+            try:
+                self.send_to(ok_msg(), sender)
+            except Exception as e:
+                logging.error(f"at loop with {sender}: {e}")
+                self.close_socket(sock)
+            self.election(initiator_id=sender)
+        else:
+            logging.info(f"at loop: unexpected message from {sender}: {received}")
+
+    def loop(self):
+        self._udp_sock.bind(("0.0.0.0", CONNECTION_PORT))
         sel = selectors.DefaultSelector()
-        for id in self._smaller_medics:
-            if id == initiator:
-                continue
+        
+        self.register_connections(sel, self._other_medics)
+        self._udp_sock.setblocking(False)
+        sel.register(self._udp_sock, selectors.EVENT_READ)
+        self._listen_socket.setblocking(False)
+        sel.register(self._listen_socket, selectors.EVENT_READ)
+
+        try:
+            while not self._shutting_down:
+                events = sel.select(timeout=LEADER_TIMEOUT + 2*self._medic_number)
+
+                if not events:
+                    if self.is_leader_dead():
+                        logging.error("Leader is dead")
+                        self.election(self._id)
+                    # TODO: Check if election failed
+                    break     
+
+                for key, _ in events:
+                    
+                    sock: socket.socket = key.fileobj  # type: ignore
+
+                    if sock == self._listen_socket:
+                        self.accept_connection(sock)
+                        continue
+
+                    elif sock == self._udp_sock:
+                        self.handle_udp_message()
+                        continue
+                    
+                    else:
+                        self.handle_tcp_message(sock, sel)
+        
+        except ShuttingDown:
+            pass
+        finally:
+            sel.close()
+    #endregion
+
+    #region: Start
+    def start(self):
+        try:
+            self.setup_connections()
+            connections = self.succesful_connections()
+            logging.info(f"📶   Connections: {connections}")
+            self.election(self._id)
+        except ShuttingDown:
+            return
+        
+        # TODO: Check if election failed        
+        self.loop()
+    #endregion
+    def send_to(self, message: bytes, medic_id: str):
+        with self._connections_lock:
+            if conn := self._connections.get(medic_id):
+                try:
+                    send_bytes(conn, message)
+                except Exception as e:
+                    logging.error(f"Exception sending message to {medic_id}: {e}")
+            else:
+                msg_type = int.from_bytes(message[:INT_ENCODING_LENGTH], "big")
+                logging.error(f"Cannot send {Message(msg_type).name} message to {medic_id}. Not connected")
+
+    def register_connections(self, sel: selectors.DefaultSelector, medic_ids: Iterable[str]):
+        for id in medic_ids:
             with self._connections_lock:
                 if conn := self._connections.get(id):
                     conn.setblocking(False)
                     sel.register(conn, selectors.EVENT_READ)
 
-        elections_received = 1 if initiator is not None else 0
+#region: Election
 
-        while elections_received < len(self._smaller_medics):
+    def election(self, initiator_id: str):
+        
+        if initiator_id != self._id:
+            self.send_to(ok_msg(), initiator_id)
+
+        self.send_election()
+        self.answer_to_elections(initiator_id)
+        
+        oks_received = set()
+        coord_received = set()
+        self.listen_for_oks(oks_received, coord_received)
+
+        # Someone else won election
+        if coord_received or oks_received:
+            
+            if coord_received:
+                leader_id = self.greatest_id(coord_received)
+            else:
+                leader_id = self.listen_for_coordinator()
+
+            if leader_id is None:
+                # TODO: Restart election
+                logging.error("Election failed")
+                exit(1)
+
+            self.set_leader(leader_id)
+            self.send_to(coordinator_ok_msg(), leader_id)
+
+            logging.info(f"⭐   Coordinator: {self._leader}")
+
+        # I won election
+        else:
+            self.set_leader(self._id)
+            self.announce_coordinator()
+            self.wait_for_coordinator_oks()
+            logging.info(f"🌟   Coordinator: {self._leader}")
+    
+    def set_leader(self, leader_id: str):
+        self._leader = leader_id
+        if leader_id == self._id:
+            self._is_leader = True
+            if not self._check_thread:
+                check_thread = threading.Thread(target=self.check_on_controllers, args=(self._other_medics,))
+                self._check_thread = check_thread
+                check_thread.start()
+        else:
+            self._is_leader = False
+            if self._check_thread:
+                self._transfering_leader = True
+                with self._transfering_leader_condvar:
+                    self._transfering_leader_condvar.notify()
+                self._check_thread.join()
+                self._check_thread = None
+                logging.info("Check thread Joined")
+
+    def send_election(self):
+        logging.info("Sending elections")
+        for medic_id in self._greater_medics:
+            try:
+                self.send_to(election_msg(), medic_id)
+            except Exception as e:
+                logging.error(f"Unexpected error sending Election to: {medic_id}: {e}")
+
+    def answer_to_elections(self, initiator_id: str):
+        logging.info("Answering to elections")
+
+        sel = selectors.DefaultSelector()  
+        self.register_connections(sel, self._smaller_medics)
+
+        elections_received = set()
+        if initiator_id != self._id:
+            elections_received.add(initiator_id)
+
+        while len(elections_received) < len(self._smaller_medics) and not self._shutting_down:
             events = sel.select(timeout=ELECTION_TIMEOUT)
 
             if not events:
@@ -578,184 +563,220 @@ class Medic:
 
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
-
-                id = None
-                with self._connections_lock:
-                    for conn_id in self._connections:
-                        if sock == self._connections[conn_id]:
-                            id = conn_id
-                            break
-
-                received = recv_bytes(sock, INT_ENCODING_LENGTH)
-
-                if id is None:
-                    logging.info("Received message from unknown sender")
-                    continue
-
-                if is_type(received, Message.ELECTION):
-                    elections_received += 1
-                    send_bytes(sock, ok_msg())
-
-                elif not received:
-                    logging.error(
-                        f"at answer_to_elections: Received null from {id}"
-                    )
-                    self.close_socket(sock)
-                else:
-                    logging.error(
-                        f"at answer_to_elections: Unexpected message received from {id}: {received}"
-                    )
+                self.answer_to_elections_aux(sel, sock, elections_received)
 
         logging.info(
-            f"{elections_received}/{len(self._smaller_medics)} Elections received"
+            f"{len(elections_received)}/{len(self._smaller_medics)} Elections received"
         )
 
-    def listen_for_coordinator_oks(self) -> Optional[str]:
+        sel.close()
+
+    def answer_to_elections_aux(self, sel: selectors.DefaultSelector, sock: socket.socket, elections_received: set):
+        sender = self.resolve_socket(sock)
+        if not sender:
+            logging.error("At answer_to_elections_aux: Invalid Socket")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+        
+        try:
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+        except Exception as e:
+            logging.error(f"at wait_for_coordinator_oks_aux: {e}")
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+        
+        if not received:
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return            
+
+        if is_type(received, Message.ELECTION):
+            elections_received.add(sender)
+            self.send_to(ok_msg(), sender)
+
+        else:
+            logging.error(
+                f"at answer_to_elections: Unexpected message received from {id}: {received}"
+            )
+
+
+
+
+    def resolve_socket(self, sock: socket.socket) -> Optional[str]:
+        with self._connections_lock:
+            for id in self._connections:
+                if self._connections[id] == sock:
+                    return id
+        
+        return None
+
+    def wait_for_coordinator_oks(self):
+        sel = selectors.DefaultSelector()
+        self.register_connections(sel, self._smaller_medics)
+        
         coord_oks_received = set()
-        while len(coord_oks_received) < len(self._smaller_medics):
-            sel = selectors.DefaultSelector()
-            for id in self._smaller_medics:
-                with self._connections_lock:
-                    if conn := self._connections.get(id):
-                        conn.setblocking(False)
-                        sel.register(conn, selectors.EVENT_READ)
-
+        while len(coord_oks_received) < len(self._smaller_medics) and not self._shutting_down:
             events = sel.select(timeout=COORDINATOR_OK_TIMEOUT)
-
+            
             if not events:
                 break
 
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
-                try:
-                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
-                except Exception as e:
-                    logging.error(f"at listen_for_coordinator_oks: {e}")
-                    self.close_socket(sock)
-                    continue
-
-                if is_type(received, Message.COORDINATOR_OK):
-                    with self._connections_lock:
-                        for id in self._connections:
-                            if self._connections[id] == sock:
-                                coord_oks_received.add(id)
-                                break
-                if is_type(received, Message.ELECTION):
-                    send_bytes(sock, ok_msg())
-                    send_bytes(sock, coord_msg())
-                elif not received:
-                    logging.error(
-                        f"at answer_to_elections: Received null from {id}"
-                    )
-                    self.close_socket(sock)
-                else:
-                    logging.error(
-                        f"at listen_for_coordinator_oks: Unexpected message received from {id}: {received}"
-                    )
+                self.wait_for_coordinator_oks_aux(sel, sock, coord_oks_received)
 
         if len(coord_oks_received) < len(self._smaller_medics):
             logging.info(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received: {list(coord_oks_received)}")
         else:
             logging.info(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received")
 
-    def listen_for_coordinator(self) -> Optional[str]:
-        while True:
-            sel = selectors.DefaultSelector()
-            for id in self._greater_medics:
-                with self._connections_lock:
-                    if conn := self._connections.get(id):
-                        conn.setblocking(False)
-                        sel.register(conn, selectors.EVENT_READ)
+        sel.close()
 
+    def wait_for_coordinator_oks_aux(self, sel: selectors.DefaultSelector, sock: socket.socket, coordinator_oks_received: set):
+        sender = self.resolve_socket(sock)
+        if not sender:
+            logging.error("At wait_for_coordinator_oks_aux: Invalid Socket")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+        try:
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+        except Exception as e:
+            logging.error(f"at wait_for_coordinator_oks_aux: {e}")
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+
+        if not received:
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+
+        elif is_type(received, Message.COORDINATOR_OK):
+            coordinator_oks_received.add(sender)
+
+        elif is_type(received, Message.ELECTION):
+            self.send_to(ok_msg(), sender)
+            self.send_to(coord_msg(), sender)
+        
+        else:
+            logging.error(
+                f"at listen_for_coordinator_oks: Unexpected message received from {id}: {received}"
+            )
+
+    def listen_for_coordinator(self) -> Optional[str]:
+        sel = selectors.DefaultSelector()
+        self.register_connections(sel, self._greater_medics)
+
+        coord_received = set()
+        while len(coord_received) < 1 and not self._shutting_down:
             events = sel.select(timeout=COORDINATOR_TIMEOUT)
             if not events:
                 logging.error("No coordinator received")
-                return None
+                break
 
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
-                try:
-                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
-                except Exception as e:
-                    logging.error(f"at listen_for_coordinator: {e}")
-                    self.close_socket(sock)
-                    continue
-            
-                if is_type(received, Message.COORDINATOR):
-                    with self._connections_lock:
-                        for id in self._connections:
-                            if (
-                                self._connections[id] == sock
-                            ):  # and id in self._greater_medics:
-                                logging.info(f"Received coordinator from {id}")
-                                return id
-                else:
-                    logging.error(
-                        f"at listen_for_coordinator: Unexpected message received from {id}: {received}"
-                    )
+                self.listen_for_coordinator_aux(sel, sock, coord_received)
 
-    def send_coordinator(self):
+        sel.close()
+        return self.greatest_id(coord_received)
+
+    def listen_for_coordinator_aux(self, sel: selectors.DefaultSelector, sock: socket.socket, coord_received: set):
+        sender = self.resolve_socket(sock)
+        if not sender:
+            logging.error("At wait_for_coordinator_oks_aux: Invalid Socket")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+        
+        try:
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+        
+        except Exception as e:
+            logging.error(f"at listen_for_coordinator: {e}")
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+            
+        if not received:
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+    
+        if is_type(received, Message.COORDINATOR):
+            logging.info(f"Received coordinator from {sender}")
+            coord_received.add(sender)
+        else:
+            logging.error(
+                f"at listen_for_coordinator: Unexpected message received from {id}: {received}"
+            )
+
+    def announce_coordinator(self):
         with self._connections_lock:
             for id in self._smaller_medics:
                 if conn := self._connections.get(id):
                     # logging.info(f"Sent coord to: {id}")
                     send_bytes(conn, coord_msg())
 
-    def listen_for_oks(self):
+    def listen_for_oks(self, oks_received: set, coord_received: set):
+        """Listens for OK messages and adds the senders to 'oks_received'. 
+        If a COORDINATOR message is received, it returns it"""
+
         sel = selectors.DefaultSelector()
-        for id in self._greater_medics:
-            with self._connections_lock:
-                if conn := self._connections.get(id):
-                    conn.setblocking(False)
-                    sel.register(conn, selectors.EVENT_READ)
+        self.register_connections(sel, self._greater_medics)
 
-        oks_received = set()
-        leader = None
+        coord_received.clear()
+        oks_received.clear()
 
-        while len(oks_received) < len(self._greater_medics):
+        while len(oks_received) < len(self._greater_medics) and not self._shutting_down:
             events = sel.select(timeout=OK_TIMEOUT * 4)
             if not events:
                 break
 
             for key, _ in events:
                 sock: socket.socket = key.fileobj  # type: ignore
-
-                try:
-                    received = recv_bytes(sock, INT_ENCODING_LENGTH)
-                except Exception as e:
-                    logging.error(f"at answer_to_elections: {e}")
-                    self.close_socket(sock)
-                
-                if is_type(received, Message.OK):
-                    with self._connections_lock:
-                        for id in self._connections:
-                            if (
-                                self._connections[id] == sock
-                            ):  # and id in self._greater_medics:
-                                oks_received.add(id)
-                                break
-                elif is_type(received, Message.COORDINATOR):
-                    for id in self._connections:
-                        if (
-                            self._connections[id] == sock
-                        ):  # and id in self._greater_medics:
-                            leader = id
-                            break
-                elif not received:
-                    logging.error(
-                        f"at answer_to_elections: Received null from {id}"
-                    )
-                    self.close_socket(sock)
-                else:
-                    logging.error(
-                        f"at listen_for_oks: Unexpected message received from {id}: {received}"
-                    )
+                self.listen_for_oks_aux(sel, sock, oks_received, coord_received)
 
         logging.info(
             f"{len(oks_received)}/{len(self._greater_medics)} Oks received: {list(oks_received)}"
         )
+        sel.close()
 
-        return leader, oks_received
+    def listen_for_oks_aux(self, sel: selectors.DefaultSelector, sock: socket.socket, oks_received: set, coord_received: set) -> Optional[str]:
+        sender = self.resolve_socket(sock)
+        if not sender:
+            logging.error("At listen_for_oks_aux: Invalid Socket")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+        
+        try:
+            received = recv_bytes(sock, INT_ENCODING_LENGTH)
+        except Exception as e:
+            logging.error(f"at listen_for_oks_aux: {e}")
+            sel.unregister(sock)
+            self.close_socket(sock)
+            return
+        
+        if not received:
+            self.close_socket(sock)
+            sel.unregister(sock)
+            return
+        
+        if is_type(received, Message.OK):
+            oks_received.add(sender)
+        
+        elif is_type(received, Message.COORDINATOR):
+            coord_received.add(sender)
+        
+        else:
+            logging.error(
+                f"at listen_for_oks: Unexpected message received from {id}: {received}"
+            )
+    #endregion
 
     def close_socket(self, sock: socket.socket):
         
@@ -772,7 +793,7 @@ class Medic:
                     logging.info(f"Connection closed: {id}")    
                     return
 
-    def greatest_id(self, medic_ids: list[str]) -> str:
+    def greatest_id(self, medic_ids: Iterable[str]) -> str:
         if not medic_ids:
             raise ValueError("No medics to choose from")
 
@@ -786,7 +807,7 @@ class Medic:
         return number_to_id[max_key]
 
     def revive_controller(self, controller_id: str):
-        logging.info(f"REVIVIENDO CONTROLADOR: {controller_id}")
+        logging.info(f"🩺   Reviving controllers: {controller_id}")
         container = self.docker_client.containers.get(controller_id)
         try:  # KILL IF NOT DEAD
             container.kill()
@@ -800,15 +821,15 @@ class Medic:
         last_check = time.time()
         dead_controllers = set()
 
-        while True:
+        while not self._shutting_down:
             if (time.time() - last_check) >= (HEALTHCHECK_TIMEOUT // 2):
                 for id in controller_ids:
-                    if not self._last_im_alive_timestamp.get(id):
+                    if not self._last_contact_timestamp.get(id):
                         logging.info(f"{id} id not here")
                         dead_controllers.add(id)
                         continue
                     elif (
-                        time.time() - self._last_im_alive_timestamp[id]
+                        time.time() - self._last_contact_timestamp[id]
                     ) >= HEALTHCHECK_TIMEOUT:
                         logging.info(f"{id} timed out")
                         dead_controllers.add(id)
@@ -817,7 +838,7 @@ class Medic:
 
                 for id in dead_controllers:
                     self.revive_controller(id)
-                    self._last_im_alive_timestamp[id] = time.time() + REVIVE_TIME
+                    self._last_contact_timestamp[id] = time.time() + REVIVE_TIME
 
                 last_check = time.time()
                 dead_controllers.clear()
@@ -838,7 +859,6 @@ class Medic:
                     timeout=HEALTHCHECK_INTERVAL_SECONDS
                 ):
                     return
-
 
 def config_logging(level: str):
 
