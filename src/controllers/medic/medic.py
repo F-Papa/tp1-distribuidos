@@ -37,6 +37,7 @@ LEADER_TIMEOUT = 60
 REVIVE_TIME = 15
 COORDINATOR_TIMEOUT = LEADER_TIMEOUT
 COORDINATOR_OK_TIMEOUT = 15 #15
+ELECTION_COOLDOWN = 2
 
 VOTING_DURATION = 8
 LEADER_ANNOUNCEMENT_DURATION = 8
@@ -422,10 +423,10 @@ class Medic:
             logging.info(f"Election received from: {sender}")
             try:
                 self.send_to(ok_msg(), sender)
+                self.election(initiator_id=sender)
             except Exception as e:
                 logging.error(f"at loop with {sender}: {e}")
                 self.close_socket(sock)
-            self.election(initiator_id=sender)
         else:
             logging.info(f"at loop: unexpected message from {sender}: {received}")
 
@@ -448,7 +449,6 @@ class Medic:
                     if self.is_leader_dead():
                         logging.error("Leader is dead")
                         self.election(self._id)
-                    # TODO: Check if election failed     
 
                 for key, _ in events:
                     
@@ -480,8 +480,7 @@ class Medic:
             self.election(self._id)
         except ShuttingDown:
             return
-        
-        # TODO: Check if election failed        
+           
         self.loop()
     #endregion
     def send_to(self, message: bytes, medic_id: str):
@@ -503,9 +502,13 @@ class Medic:
                     sel.register(conn, selectors.EVENT_READ)
 
 #region: Election
-
     def election(self, initiator_id: str):
-        
+        leader = None
+        while leader is None:
+            leader = self.election_aux(initiator_id)
+            time.sleep(ELECTION_COOLDOWN)
+
+    def election_aux(self, initiator_id: str):
         if initiator_id != self._id:
             self.send_to(ok_msg(), initiator_id)
 
@@ -525,9 +528,7 @@ class Medic:
                 leader_id = self.listen_for_coordinator()
 
             if leader_id is None:
-                # TODO: Restart election
-                logging.error("Election failed")
-                exit(1)
+                return None
 
             self.set_leader(leader_id)
             self.send_to(coordinator_ok_msg(), leader_id)
@@ -541,6 +542,8 @@ class Medic:
             self.wait_for_coordinator_oks()
             logging.info(f"🌟   Coordinator: {self._id}")
             self.set_leader(self._id)
+        
+        return self._leader
     
     def set_leader(self, leader_id: str):
         self._leader = leader_id
