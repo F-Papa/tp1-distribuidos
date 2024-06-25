@@ -22,9 +22,10 @@ total_books = 0
 
 
 def crash_maybe():
-    if random.random() < 0.001:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    #if random.random() < 0.001:
+    #    logging.error("CRASHING..")
+    #    sys.exit(1)
 
 
 class ReviewsJoiner:
@@ -43,13 +44,13 @@ class ReviewsJoiner:
     }
 
     def __init__(
-        self, config, state: ControllerState, messaging: Goutong, output_queues: dict
+        self, config, state: ControllerState, output_queues: dict
     ):
         self._filter_number = config.get("FILTER_NUMBER")
         self._shutting_down = False
         self._state = state
-        self._messaging = messaging
         self.controller_name = f"{self.CONTROLLER_NAME}{self._filter_number}"
+        self._messaging = Goutong(sender_id=self.controller_name)
         self._books_queue = f"{self.CONTROLLER_NAME}_{self._filter_number}_books"
         self._reviews_queue_prefix = (
             f"{self.CONTROLLER_NAME}_{self._filter_number}_reviews_conn_"
@@ -199,7 +200,7 @@ class ReviewsJoiner:
         self.unacked_msgs.append(msg.delivery_id)
 
         if (
-            self.unacked_msg_count > self.unacked_msg_limit
+            self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
@@ -291,7 +292,7 @@ class ReviewsJoiner:
         
 
         if (
-            self.unacked_msg_count > self.unacked_msg_limit
+            self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
             logging.info(
                 f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
@@ -437,8 +438,7 @@ def main():
         (5,): {"name": OUTPUT_Q5, "is_prefix": False},
     }
 
-    messaging = Goutong(sender_id=controller_id)
-    joiner = ReviewsJoiner(config, state, messaging, output_queues)
+    joiner = ReviewsJoiner(config, state, output_queues)
     controller_thread = threading.Thread(target=joiner.start)
     controller_thread.start()
 

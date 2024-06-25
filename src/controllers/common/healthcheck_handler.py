@@ -31,12 +31,12 @@ class HealthcheckHandler:
                             logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
                         if len(threading.enumerate()) == 2: # Check if main Thread is alive
                             response = self.im_alive_msg()
-                            #logging.info(f"SENDING{response}")
+                            #logging.debug(f"SENDING{response}")
                             s.sendto(response, (medic_id, self.CONNECTION_PORT))
                             #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
-                        time_passed_func = getattr(self.controller, "time_window_passed", None)
-                        if callable(time_passed_func):
-                            self.controller.time_window_passed()
+                        else:
+                            logging.info("CONTROLLER THREAD MURIO")
+                            return
             except Exception as e:
                 logging.error(f"Error in start method: {e}")
                 break

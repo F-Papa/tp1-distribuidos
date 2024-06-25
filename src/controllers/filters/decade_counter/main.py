@@ -23,18 +23,17 @@ FILTER_TYPE = "decade_counter"
 OUTPUT_QUEUE_PREFIX = "results_"
 
 def crash_maybe():
-    if random.random() < 0.01:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    # if random.random() < 0.01:
+    #     logging.error("CRASHING..")
+    #     sys.exit(1)
 
 class DecadeCounter:
     CONTROLLER_NAME = "decade_counter"
 
-    def __init__(self, config, state: ControllerState, messaging: Goutong, output_queues: dict
-    ):
+    def __init__(self, config, state: ControllerState, output_queues: dict):
         self._filter_number = config.get("FILTER_NUMBER")
         self._shutting_down = False
-        self._messaging = messaging
         self._input_queue = f"{INPUT_QUEUE_PREFIX}{self._filter_number}"
         self._proxy_queue = f"{INPUT_QUEUE_PREFIX}_proxy"
         self._output_queues = output_queues
@@ -47,7 +46,7 @@ class DecadeCounter:
 
         self._state = state
         self._denormalize_state()
-
+        self._messaging =  Goutong(sender_id=self.controller_name)
 
     @classmethod
     def default_state(
@@ -201,7 +200,7 @@ class DecadeCounter:
         self.unacked_msg_count += 1
         self.unacked_msgs.append(msg.delivery_id)
 
-        if (self.unacked_msg_count > self.unacked_msg_limit):
+        if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
             
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
 
@@ -300,8 +299,7 @@ def main():
 
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
 
-    messaging = Goutong(sender_id=controller_id)
-    decade_counter = DecadeCounter(filter_config, state, messaging, output_queues)
+    decade_counter = DecadeCounter(filter_config, state, output_queues)
     controller_thread = threading.Thread(target=decade_counter.start)
     controller_thread.start()
 

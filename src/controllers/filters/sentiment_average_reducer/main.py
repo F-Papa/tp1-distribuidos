@@ -16,9 +16,10 @@ from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
 def crash_maybe():
-    if random.random() < 0.001:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    # if random.random() < 0.001:
+    #     logging.error("CRASHING..")
+    #     sys.exit(1)
 
 class SentimentAverager:
 
@@ -27,17 +28,16 @@ class SentimentAverager:
     def __init__(
         self,
         config: Configuration,
-        messaging: Goutong,
         state: ControllerState,
         output_queues: dict,
     ):
         self._filter_number = config.get("FILTER_NUMBER")
         self.quantile = config.get("QUANTILE")
-        self._messaging = messaging
         self._state = state
         self._output_queues = output_queues
         self._shutting_down = False
         self.controller_name = f"{self.CONTROLLER_NAME[:-1]}_reducer{self._filter_number}"
+        self._messaging = Goutong(sender_id=f"{SentimentAverager.CONTROLLER_NAME}_{config.get('FILTER_NUMBER')}")
         self._input_queue = f"{self.CONTROLLER_NAME}{self._filter_number}"
 
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
@@ -105,6 +105,7 @@ class SentimentAverager:
 
         if (
             self.unacked_msg_count > self.unacked_msg_limit
+            or msg.get("EOF")
         ):
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
             
@@ -249,7 +250,6 @@ def config_logging(level: str):
     pika_logger = logging.getLogger("pika")
     pika_logger.setLevel(logging.ERROR)
 
-
 def main():
     required = {
         "LOGGING_LEVEL": str,
@@ -286,9 +286,8 @@ def main():
     if os.path.exists(state.file_path):
         logging.info("Loading state from file...")
         state.update_from_file()
-
-    messaging = Goutong(sender_id=controller_id)
-    counter = SentimentAverager(config, messaging, state, output_queues)
+    
+    counter = SentimentAverager(config, state, output_queues)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
     

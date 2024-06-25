@@ -22,9 +22,10 @@ from src.controller_state.controller_state import ControllerState
 
 
 def crash_maybe():
-    if random.random() < 0.0001:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    #if random.random() < 0.0001:
+    #    logging.error("CRASHING..")
+     #   sys.exit(1)
 
 class ControlMessage(Enum):
     HEALTHCHECK = 6
@@ -35,13 +36,13 @@ class LoadBalancerProxy:
     MSG_REDUNDANCY = 3
 
     def __init__(
-        self, config: Configuration, messaging: Goutong, state: ControllerState
+        self, config: Configuration, state: ControllerState
     ):
         self.barrier_config = config
-        self._messaging = messaging
         self._state = state
 
         self.controller_name = config.get("FILTER_TYPE") + "_proxy"
+        self._messaging = Goutong(sender_id=self.controller_name)
 
         # Graceful Shutdown Handling
         self.shutting_down = False
@@ -338,8 +339,7 @@ def main():
     config_logging(config.get("LOGGING_LEVEL"))
     logging.info(config)
 
-    messaging = Goutong(sender_id=controller_id)
-    load_balancer = LoadBalancerProxy(config, messaging, state)
+    load_balancer = LoadBalancerProxy(config, state)
 
 
     controller_thread = threading.Thread(target=load_balancer.start)

@@ -387,6 +387,8 @@ class Medic:
             id = sender_id(received)
             if not id:
                 return
+            if id == "review_joiner_proxy":
+                logging.info(f"CONTESTÓ HC")
             self._cached_ips[id] = addr[0]
             #logging.info(f"💓   Received IM ALIVE from {id}")
             self._last_contact_timestamp[id] = time.time()
@@ -864,11 +866,20 @@ class Medic:
     def revive_controller(self, controller_id: str):
         logging.info(f"🩺   Reviving controllers: {controller_id}")
         container = self.docker_client.containers.get(controller_id)
-        try:  # KILL IF NOT DEAD
-            container.kill()
-        except:
-            pass
+        # try:  # KILL IF NOT DEAD
+        #     container.kill()
+        #     #container.stop()
+        # except:
+        #     pass
+
+        for cont in self.docker_client.containers.list():
+            logging.info(f"{cont.name} - {cont.status}")
+
+        # logging.info(f"FFAF{[cont for cont in list(self.docker_client.containers)]}")
+        # logging.info(f"ANTES DE REVIVIR {container}, {container.status}")
         container.start()  # REVIVE
+        if container:
+            logging.info(f"REVIVI A {container.name}, {container.status}")
 
     def check_on_controllers(self, controller_ids: Iterable[str]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -904,6 +915,8 @@ class Medic:
 
             for id in controller_ids:
                 try:
+                    if id == "review_joiner_proxy":
+                        logging.info(f"MANDANDO HC")
                     sock.sendto(
                         healthcheck_msg(self._id), (id, CONNECTION_PORT)
                     )

@@ -43,7 +43,6 @@ class DateFilter:
         self,
         filter_config: Configuration,
         state: ControllerState,
-        messaging: Goutong,
         upper_q3_4: int,
         lower_q3_4: int,
         upper_q1: int,
@@ -54,7 +53,6 @@ class DateFilter:
         self._shutting_down = False
         self.filter_config = filter_config
         self._state = state
-        self._messaging = messaging
         self._input_queue = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
@@ -68,6 +66,7 @@ class DateFilter:
         self.controller_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._messaging =  Goutong(sender_id=self.controller_name)
 
     # HEALTHCHECK HANDLING
     def send_healthcheck_response(self, address, seq_num):
@@ -320,7 +319,6 @@ def main():
     filter = DateFilter(
         filter_config=filter_config,
         state=state,
-        messaging=messaging,
         upper_q3_4=UPPER_Q3_4,
         lower_q3_4=LOWER_Q3_4,
         upper_q1=UPPER_Q1,

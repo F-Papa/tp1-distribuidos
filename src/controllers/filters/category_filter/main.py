@@ -46,7 +46,6 @@ class CategoryFilter:
         self,
         filter_config: Configuration,
         state: ControllerState,
-        messaging: Goutong,
         category_q1: str,
         output_queue_q1_prefix: str,
         category_q5: str,
@@ -62,10 +61,10 @@ class CategoryFilter:
         self._output_queue_q1_prefix = output_queue_q1_prefix
         self._category_q5 = category_q5
         self._output_queue_q5_prefix = output_queue_q5_prefix
-        self._messaging = messaging
         self.controller_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._messaging = Goutong(sender_id=self.controller_name)
 
     @classmethod
     def default_state(
@@ -306,12 +305,10 @@ def main():
         logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong(sender_id=controller_id)
 
     category_filter = CategoryFilter(
         filter_config=filter_config,
         state=state,
-        messaging=messaging,
         category_q1=CATEGORY_Q1,
         output_queue_q1_prefix=OUTPUT_Q1_PREFIX,
         category_q5=CATEGORY_Q5,

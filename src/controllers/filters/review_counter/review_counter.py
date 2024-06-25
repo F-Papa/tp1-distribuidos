@@ -28,18 +28,17 @@ class ReviewCounter:
     def __init__(
         self,
         config: Configuration,
-        messaging: Goutong,
         state: ControllerState,
         output_queues: dict,
     ):
         self._filter_number = config.get("FILTER_NUMBER")
         self.n_best = config.get("N_BEST")
         self.threshold = config.get("REVIEW_THRESHOLD")
-        self._messaging = messaging
         self._state = state
         self._output_queues = output_queues
         self._shutting_down = False
         self.controller_name = f"{self.CONTROLLER_NAME}{self._filter_number}"
+        self._messaging = Goutong(sender_id=self.controller_name)
         self._input_queue = self.controller_name
 
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
@@ -71,6 +70,8 @@ class ReviewCounter:
         if not self._is_transaction_id_valid(msg):
             self._handle_invalid_transaction_id(msg)
             return
+        
+        logging.info(f"PROCESANDo {msg.get('transaction_id')}")
 
         conn_id = msg.get("conn_id")
         conn_id_str = str(conn_id)
@@ -107,7 +108,7 @@ class ReviewCounter:
         self.unacked_msgs.append(msg.delivery_id)
 
 
-        if (self.unacked_msg_count > self.unacked_msg_limit):
+        if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
             logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
             crash_maybe()
             self._state.save_to_disk()
@@ -307,8 +308,7 @@ def main():
         logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong(sender_id=controller_id)
-    counter = ReviewCounter(config, messaging, state, output_queues)
+    counter = ReviewCounter(config, state, output_queues)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
     controller_thread = threading.Thread(target=counter.start)

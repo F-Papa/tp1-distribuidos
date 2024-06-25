@@ -16,9 +16,10 @@ from src.controller_state.controller_state import ControllerState
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
-    if random.random() < 0.001:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    # if random.random() < 0.001:
+    #     logging.error("CRASHING..")
+    #     sys.exit(1)
 
 class SentimentAnalyzer: 
     FILTER_TYPE = "sentiment_analyzer"
@@ -27,7 +28,6 @@ class SentimentAnalyzer:
         self,
         filter_config: Configuration,
         state: ControllerState,
-        messaging: Goutong,
         output_queue: str,
     ):
         self._shutting_down = False
@@ -39,7 +39,7 @@ class SentimentAnalyzer:
         self.input_queue_name = self.controller_name
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self._output_queue = output_queue
-        self._messaging = messaging
+        self._messaging = Goutong(sender_id=self.controller_name)
 
     @classmethod
     def default_state(
@@ -226,12 +226,10 @@ def main():
         logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong(sender_id=controller_id)
 
     sentiment_analyzer = SentimentAnalyzer(
         filter_config=filter_config,
         state=state,
-        messaging=messaging,
         output_queue=OUTPUT_QUEUE,
     )
 

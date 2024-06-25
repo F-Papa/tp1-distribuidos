@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import threading
+import time
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.utils.config_loader import Configuration
 import logging
@@ -25,19 +26,19 @@ CONTROLLER_ID = "review_joiner_proxy"
 
 
 def crash_maybe():
-    if random.random() < 0.00005:
+    if random.random() < 0.0015:
         logging.error("CRASHING..")
-        sys.exit(1)
+        exit(1)
 
 
 class LoadBalancerProxyForJoiner:
 
     def __init__(
-        self, config: Configuration, messaging: Goutong, state: ControllerState
+        self, config: Configuration, state: ControllerState
     ):
         self.controller_name = CONTROLLER_ID
         self.barrier_config = config
-        self._messaging = messaging
+        self._messaging = Goutong(sender_id=self.controller_name)
         self._state = state
 
         # Graceful Shutdown Handling
@@ -299,6 +300,7 @@ def main():
     barrier_config = Configuration.from_env(required, "config.ini")
     barrier_config.validate()
 
+    config_logging(barrier_config.get("LOGGING_LEVEL"))
     controller_id = f"{FILTER_TYPE}_lb_proxy"
 
     state = LoadBalancerProxyForJoiner.default_state(
@@ -310,12 +312,11 @@ def main():
     if os.path.exists(state.file_path):
         logging.info("Loading state from file...")
         state.update_from_file()
+    else:
+        logging.info("no state file")
 
-    config_logging(barrier_config.get("LOGGING_LEVEL"))
     logging.info(barrier_config)
-
-    messaging = Goutong(sender_id=controller_id)
-    load_balancer = LoadBalancerProxyForJoiner(barrier_config, messaging, state)
+    load_balancer = LoadBalancerProxyForJoiner(barrier_config, state)
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
 

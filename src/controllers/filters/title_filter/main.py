@@ -20,9 +20,10 @@ OUTPUT_Q1 = "category_filter_queue"
 
 
 def crash_maybe():
-    if random.random() < 0.001:
-        logging.error("CRASHING..")
-        sys.exit(1)
+    pass
+    # if random.random() < 0.001:
+    #     logging.error("CRASHING..")
+    #     sys.exit(1)
 
 
 class ControlMessage(Enum):
@@ -38,7 +39,6 @@ class TitleFilter:
         self,
         filter_config: Configuration,
         state: ControllerState,
-        messaging: Goutong,
         title_keyword: str,
         output_queue: str,
     ):
@@ -51,10 +51,10 @@ class TitleFilter:
         self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
         self.title_keyword = title_keyword
         self._output_queue = output_queue
-        self._messaging = messaging
         self.controller_name = self.FILTER_TYPE + str(
             filter_config.get("FILTER_NUMBER")
         )
+        self._messaging = Goutong(sender_id=self.controller_name)
 
     def controller_id(self):
         return self.controller_name
@@ -246,12 +246,10 @@ def main():
         logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong(sender_id=controller_id)
 
     title_filter = TitleFilter(
         filter_config=filter_config,
         state=state,
-        messaging=messaging,
         title_keyword=KEYWORD_Q1,
         output_queue=OUTPUT_Q1,
     )
