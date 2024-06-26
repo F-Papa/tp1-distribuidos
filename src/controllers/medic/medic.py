@@ -58,8 +58,7 @@ class Message(Enum):
     ACCEPTED = 6
     HEALTHCHECK = 7
     IM_ALIVE = 8
-    HELLO = 9
-    COORDINATOR_OK = 10
+    COORDINATOR_OK = 9
 
 def decode_int(bytes: bytes) -> int:
     return int.from_bytes(bytes, "big")
@@ -82,13 +81,6 @@ def connect_msg(medic_number: int) -> bytes:
     return (
         b""
         + Message.CONNECT.value.to_bytes(INT_ENCODING_LENGTH, "big")
-        + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
-    )
-
-def hello_msg(medic_number: int) -> bytes:
-    return (
-        b""
-        + Message.HELLO.value.to_bytes(INT_ENCODING_LENGTH, "big")
         + medic_number.to_bytes(INT_ENCODING_LENGTH, "big")
     )
 
@@ -220,6 +212,22 @@ class Medic:
 
         for thread in connection_threads:
             thread.join()
+            connection_threads.remove(thread)
+
+        smaller_medics_disconected = set()
+        with self._connections_lock:
+            for id in self._smaller_medics:
+                if id not in self._connections:
+                    smaller_medics_disconected.add(id)
+        
+        for id in smaller_medics_disconected:
+            thread = threading.Thread(target=self.connect_to, args=(id,))
+            thread.start()
+            connection_threads.append(thread)
+
+        for thread in connection_threads:
+            thread.join()
+            connection_threads.remove(thread)
 
     def new_connection(self, id: str):
         """Establish a TCP connection with 'id'. Returns the socket if successful or None otherwise."""
@@ -323,18 +331,9 @@ class Medic:
         else:
             logging.info(f"at accept_connection: Received unexpected message from {addr}: {received}")
 
-    def send_hello_to_smaller_medics(self):
-        """Send a UDP datagram for to a smaller medics so that they initiate the connection"""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        for medic in self._smaller_medics:
-            try:
-                sock.sendto(hello_msg(self._medic_number), (medic, CONNECTION_PORT))
-            except:
-                pass
 
     def accept_connection_from_smaller_medics(self):
         """Accept connection from all smaller medics, prompting them via UDP to initiate it"""
-        self.send_hello_to_smaller_medics()
         try:
             for _ in range(len(self._smaller_medics)):
                 self.accept_connection(self._listen_socket)
@@ -358,14 +357,7 @@ class Medic:
     def handle_udp_message(self):
         received, addr = self._udp_sock.recvfrom(1024)
 
-        if is_type(received, Message.HELLO):
-            number = decode_int(received[INT_ENCODING_LENGTH:])
-            id = f"medic{number}"
-            logging.info(f"📣   HELLO from {id}")
-            self._cached_ips[id] = addr[0]
-            self.connect_to(id)
-
-        elif is_type(received, Message.HEALTHCHECK):
+        if is_type(received, Message.HEALTHCHECK):
             id = sender_id(received)
             if not id:
                 return
@@ -412,8 +404,12 @@ class Medic:
             return
 
         if not received:
+            medic = self.resolve_socket(sock)
             sel.unregister(sock)
             self.close_socket(sock)
+            if medic == self._leader:
+                logging.info("Lost connection to leader")
+                self.election(initiator_id=self._id)
             return
 
         if is_type(received, Message.COORDINATOR):
@@ -892,6 +888,9 @@ class Medic:
                 logging.info(f"Dead Controllers: {len(dead_controllers)}")
 
                 for id in dead_controllers:
+                    if self._transfering_leader:
+                        return
+
                     self.revive_controller(id)
                     self._last_contact_timestamp[id] = time.time() + REVIVE_TIME
                     if id in self._cached_ips:
@@ -901,6 +900,9 @@ class Medic:
                 dead_controllers.clear()
 
             for id in controller_ids:
+                if self._transfering_leader:
+                    return
+
                 try:
                     sock.sendto(
                         healthcheck_msg(self._id), (id, CONNECTION_PORT)
@@ -955,6 +957,7 @@ def main():
         "date_filter_proxy": "date_filter_proxy",
         "review_counter_proxy": "review_counter_proxy",
         "review_counter1": "review_counter1",
+        "review_counter2": "review_counter2",
         "decade_counter1": "decade_counter1",
         "decade_counter2": "decade_counter2",
         "decade_counter3": "decade_counter3",
@@ -966,6 +969,10 @@ def main():
         "sentiment_analyzer4": "sentiment_analyzer4",
         "sentiment_analyzer5": "sentiment_analyzer5",
         "sentiment_analyzer6": "sentiment_analyzer6",
+        "sentiment_analyzer7": "sentiment_analyzer7",
+        "sentiment_analyzer8": "sentiment_analyzer8",
+        "sentiment_analyzer9": "sentiment_analyzer9",
+        "sentiment_analyzer10": "sentiment_analyzer10",
         "review_joiner_proxy": "review_joiner_proxy",
         "review_joiner1": "review_joiner1",
         "review_joiner2": "review_joiner2",
