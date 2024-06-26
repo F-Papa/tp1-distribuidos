@@ -5,6 +5,7 @@ import multiprocessing
 import socket
 import time
 
+from src.controller_state.controller_state import ControllerState
 from src.messaging.goutong import Goutong
 from src.messaging.goutong import Message
 from src.utils.config_loader import Configuration
@@ -29,6 +30,7 @@ class ClientConnection:
         messaging_module: type,
         messaging_host: str,
         messaging_port: int,
+        state: ControllerState
     ):
         self.conn = conn
         self.conn_id = conn_id
@@ -45,6 +47,33 @@ class ClientConnection:
         self.EOFs_received = 0
         self.reviews = b""
         self.books = b""
+        self._state = state
+
+    def _is_transaction_id_valid(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        return transaction_id == expected_transaction_id
+
+    def _handle_invalid_transaction_id(self, messaging: Goutong, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            # crash_maybe()
+            messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
 
     def handle_connection(self):
         # Send books to the messaging server
@@ -63,6 +92,10 @@ class ClientConnection:
         self.conn.close()
 
     def forward_results(self, messaging: Goutong, msg: Message):
+        if not self._is_transaction_id_valid(msg):
+            self._handle_invalid_transaction_id(messaging, msg)
+            return
+
         if msg.has_key("EOF"):
             to_show = {
                 "transaction_id": msg.get("transaction_id"),
@@ -84,6 +117,7 @@ class ClientConnection:
         to_send = length + encoded_msg
         while bytes_sent < len(to_send):
             bytes_sent += self.conn.send(to_send[bytes_sent:])
+        self._state.inbound_transaction_committed(msg.get('sender'))
 
     def __dispatch_books(self):
         eof_reached = False
@@ -125,7 +159,7 @@ class ClientConnection:
         data_q1_3_4, data_q2, data_q5 = self.__separate_columns_by_query(batch)
         # Queries 1,3,4
         msg_body = {
-            "transaction_id": self.next_transaction_ids[Q1_3_4_QUEUE],
+            "transaction_id": self._state.next_outbound_transaction_id(Q1_3_4_QUEUE),
             "conn_id": self.conn_id,
             "data": data_q1_3_4,
             "queries": [1, 3, 4],
@@ -133,11 +167,12 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q1_3_4_QUEUE, Message(msg_body))
-        self.next_transaction_ids[Q1_3_4_QUEUE] += 1
+        self._state.outbound_transaction_committed(Q1_3_4_QUEUE)
+        # self.next_transaction_ids[Q1_3_4_QUEUE] += 1
 
         # Query 2
         msg_body = {
-            "transaction_id": self.next_transaction_ids[Q2_QUEUE],
+            "transaction_id": self._state.next_outbound_transaction_id(Q2_QUEUE),
             "conn_id": self.conn_id,
             "data": data_q2,
             "queries": [2],
@@ -145,11 +180,12 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q2_QUEUE, Message(msg_body))
-        self.next_transaction_ids[Q2_QUEUE] += 1
+        self._state.outbound_transaction_committed(Q2_QUEUE)
+        # self.next_transaction_ids[Q2_QUEUE] += 1
 
         # Query 5
         msg_body = {
-            "transaction_id": self.next_transaction_ids[Q5_QUEUE],
+            "transaction_id": self._state.next_outbound_transaction_id(Q5_QUEUE),
             "conn_id": self.conn_id,
             "data": data_q5,
             "queries": [5],
@@ -157,7 +193,8 @@ class ClientConnection:
         if eof_reached:
             msg_body["EOF"] = True
         self.messaging.send_to_queue(Q5_QUEUE, Message(msg_body))
-        self.next_transaction_ids[Q5_QUEUE] += 1
+        self._state.outbound_transaction_committed(Q5_QUEUE)
+        # self.next_transaction_ids[Q5_QUEUE] += 1
 
     def __dispatch_reviews(self):
         output_queue_name = REVIEWS_QUEUE_PREFIX
@@ -202,7 +239,7 @@ class ClientConnection:
     def __send_batch_reviews(self, batch: list, eof_reached: bool):
         queue_name = REVIEWS_QUEUE_PREFIX
         body = {
-            "transaction_id": self.next_transaction_ids[queue_name],
+            "transaction_id": self._state.next_outbound_transaction_id(queue_name),
             "conn_id": self.conn_id,
             "data": batch,
             "queries": [5, 3, 4],
@@ -220,7 +257,8 @@ class ClientConnection:
         message = Message(body)
         # logging.info(f"Sending {len(batch)} reviews to queue")
         self.messaging.send_to_queue(queue_name, message)
-        self.next_transaction_ids[queue_name] += 1
+        self._state.outbound_transaction_committed(queue_name)
+        # self.next_transaction_ids[queue_name] += 1
 
     def __parse_decade(self, year: int) -> int:
         return year - (year % 10)
@@ -274,6 +312,9 @@ class Boundary:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("", self.server_port))
         sock.listen(self.backlog)
+        controller_id = f"boundary{self.__conn_id}"
+        state = ControllerState(controller_id, "", "", {})
+
         while not self.__shutting_down:
             new_sock, _ = sock.accept()
             logging.info(f"[Conn {self.__conn_id}] Connection accepted")
@@ -284,6 +325,7 @@ class Boundary:
                 self.__messaging_module,
                 self.__messaging_host,
                 self.__messaging_port,
+                state
             )
             self.client_connections[self.__conn_id] = new_connection
             p = multiprocessing.Process(
