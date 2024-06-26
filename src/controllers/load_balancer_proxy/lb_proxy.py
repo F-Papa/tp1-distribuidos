@@ -23,7 +23,8 @@ from src.controller_state.controller_state import ControllerState
 total = 0
 
 def crash_maybe():
-    if random.random() < 0.0008:
+    #pass
+    if random.random() < 0.0001:
        logging.error("CRASHING..")
        sys.exit(1)
 

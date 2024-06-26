@@ -266,9 +266,9 @@ class DateFilter:
   
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._messaging.ack_delivery(msg.delivery_id)
-        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)
 
     def controller_id(self):
         return self.controller_name

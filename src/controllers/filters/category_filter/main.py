@@ -204,9 +204,9 @@ class CategoryFilter:
         self._state.outbound_transaction_committed(self._proxy_queue)
         self._state.inbound_transaction_committed(msg.get("sender"))
         crash_maybe()
-        self._messaging.ack_delivery(msg.delivery_id)      
-        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)      
 
 
     def callback_aux_q1(self, msg: Message):

@@ -16,6 +16,7 @@ from src.utils.config_loader import Configuration
 from src.exceptions.shutting_down import ShuttingDown
 
 def crash_maybe():
+    pass
     if random.random() < 0.001:
         logging.error("CRASHING..")
         sys.exit(1)

@@ -16,7 +16,8 @@ from src.controller_state.controller_state import ControllerState
 OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
-    if random.random() < 0.00005:
+    #pass
+    if random.random() < 0.0005:
         logging.error("CRASHING..")
         sys.exit(1)
 
@@ -110,7 +111,6 @@ class SentimentAnalyzer:
 
     def _callback_sentiment_analyzer(self, _: Goutong, msg: Message):
         sender = msg.get("sender")
-        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
         transaction_id = msg.get("transaction_id")
         conn_id = msg.get("conn_id")
         queries = msg.get("queries")
@@ -157,9 +157,9 @@ class SentimentAnalyzer:
 
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._messaging.ack_delivery(msg.delivery_id)
-        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)
 
     def _analyze_reviews(self, reviews: list):
         analyzed_reviews = []

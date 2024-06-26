@@ -17,7 +17,7 @@ from src.exceptions.shutting_down import ShuttingDown
 
 
 def crash_maybe():
-    if random.random() < 0.001:
+    if random.random() < 0.0001:
         logging.error("CRASHING..")
         sys.exit(1)
 

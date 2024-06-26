@@ -190,9 +190,9 @@ class TitleFilter:
 
         self._state.inbound_transaction_committed(sender)
         crash_maybe()
-        self._messaging.ack_delivery(msg.delivery_id)
-        crash_maybe()
         self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)
 
     def _columns_for_query1(self, book: dict) -> dict:
         return {
