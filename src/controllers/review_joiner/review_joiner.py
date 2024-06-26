@@ -21,9 +21,14 @@ MAX_RETRIES = 3
 total_books = 0
 
 
-def crash_maybe():
-    if random.random() < 0.00005:
-       logging.error("CRASHING..")
+def crash_maybe_reviews():
+    if random.random() < 0.00007:
+       logging.error("CRASHING REVIEWS..")
+       sys.exit(1)
+
+def crash_maybe_books():
+    if random.random() < 0.00007:#0.00025:
+       logging.error("CRASHING BOOKS..")
        sys.exit(1)
 
 
@@ -204,11 +209,11 @@ class ReviewsJoiner:
             # logging.info(
             #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
             # )
-            crash_maybe()
+            crash_maybe_books()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
             for delivery_id in self.unacked_msgs:
-                crash_maybe()
+                crash_maybe_books()
                 self._messaging.ack_delivery(delivery_id)
 
 
@@ -221,6 +226,8 @@ class ReviewsJoiner:
         queries_tuple = tuple(json.loads(queries_str))
         output_queue = self.output_queue_name(queries_tuple, conn_id)
         
+        flow_id = f"{queries_str}#{conn_id}"
+
         if reviews := msg.get("data"):
             books_this_queries_and_conn = self._state.get("saved_books")[conn_id_str][
                 queries_str
@@ -228,39 +235,32 @@ class ReviewsJoiner:
             joined_data = self._books_and_reviews_left_join_by_title(
                 books_this_queries_and_conn, reviews
             )
-            trimmed_data = self._columns_for_queries(joined_data, queries_tuple)
-
-            if not trimmed_data and not msg.get("EOF"):
-                return
             
-            if trimmed_data:
+            if trimmed_data := self._columns_for_queries(joined_data, queries_tuple):
                 msg_content = {
-                    "transaction_id": self._state.next_outbound_transaction_id(
-                        self._proxy_queue
-                    ),
+                    "transaction_id": self._state.next_outbound_transaction_id(self._proxy_queue, flow_id),
                     "conn_id": conn_id,
-                    "queries": [3, 4],
+                    "queries": queries_tuple,
                     "data": trimmed_data,
                     "forward_to": [output_queue],
                 }
-                crash_maybe()
-                self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
-                self._state.outbound_transaction_committed(self._proxy_queue)
+                crash_maybe_reviews()
+                self._messaging.send_to_queue(self._proxy_queue, Message(msg_content), flow_id)
+                self._state.outbound_transaction_committed(self._proxy_queue, flow_id)
 
         if msg.get("EOF"):
             msg_content = {
-                "transaction_id": self._state.next_outbound_transaction_id(
-                    self._proxy_queue
-                ),
+                "transaction_id": self._state.next_outbound_transaction_id(self._proxy_queue, flow_id),
                 "EOF": True,
                 "conn_id": conn_id,
-                "queries": [3, 4],
+                "queries": queries_tuple,
                 "data": [],
                 "forward_to": [output_queue],
             }
-            crash_maybe()
-            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
-            self._state.outbound_transaction_committed(self._proxy_queue)
+
+            crash_maybe_books()
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content), flow_id)
+            self._state.outbound_transaction_committed(self._proxy_queue, flow_id)
 
     def callback_reviews(self, _: Goutong, msg: Message):
         # Validate transaction_id
@@ -296,35 +296,16 @@ class ReviewsJoiner:
             # logging.info(
             #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
             # )
-            crash_maybe()
+            crash_maybe_reviews()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
 
             for delivery_id in self.unacked_msgs:
-                crash_maybe()
+                crash_maybe_reviews()
                 self._messaging.ack_delivery(delivery_id)
 
             self.unacked_msg_count = 0
             self.unacked_msgs.clear()
-
-    def time_window_passed(self):
-        now = time.time()
-        time_since_last_commit = now - self.time_of_last_commit
-        
-        #logging.info(f"TIME SINCe {time_since_last_commit} | LIMIT {self.unacked_time_limit_in_seconds} | UNACKED COUNT: {self.unacked_msg_count}")
-        if (time_since_last_commit > self.unacked_time_limit_in_seconds) and self.unacked_msg_count:
-            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count} | Secs. since last commit: {time_since_last_commit}")
-            crash_maybe()
-            self._state.save_to_disk()
-            self.time_of_last_commit = now
-            
-            for delivery_id in self.unacked_msgs:
-                crash_maybe()
-                self._messaging.ack_delivery(delivery_id)
-
-            self.unacked_msg_count = 0
-            self.unacked_msgs.clear()
-    # endregion
 
     # region: Command methods
     def shutdown(self):
@@ -342,7 +323,7 @@ class ReviewsJoiner:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

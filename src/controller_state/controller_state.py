@@ -2,6 +2,7 @@ from collections import defaultdict
 import json
 import logging
 import os
+from typing import Optional
 
 
 class ControllerState:
@@ -30,17 +31,24 @@ class ControllerState:
         for key in extra_fields:
             setattr(self, key, extra_fields[key])
 
-    def outbound_transaction_committed(self, queue: str):
+    def outbound_transaction_committed(self, queue: str, flow_id: Optional[str] = None):
         """Increments the transaction id for the given queue, indicating that a new transaction was committed"""
-        self.next_outbound_transaction_ids[queue] += 1
+        if flow_id:
+            self.next_outbound_transaction_ids[f"{queue}@{flow_id}"] += 1
+        else:
+            self.next_outbound_transaction_ids[queue] += 1
 
     def inbound_transaction_committed(self, sender: str):
         """Increments the transaction id for the given sender, indicating that one more transaction was received by that sender"""
         self.next_inbound_transactions_ids[sender] += 1
 
-    def next_outbound_transaction_id(self, queue: str) -> int:
+    def next_outbound_transaction_id(self, queue: str, flow_id: Optional[str] = None) -> int:
         """Returns the next transaction id for the given queue"""
-        return self.next_outbound_transaction_ids[queue]
+        if flow_id:
+            return self.next_outbound_transaction_ids[f"{queue}@{flow_id}"]
+        else:
+            return self.next_outbound_transaction_ids[queue]
+
 
     def next_inbound_transaction_id(self, sender: str) -> int:
         """Returns the next expected transaction id from a given sender"""

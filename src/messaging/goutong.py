@@ -5,7 +5,7 @@ It uses RabbitMQ.
 
 import logging
 import pika
-from typing import Callable
+from typing import Callable, Optional
 from .message import Message
 
 
@@ -27,8 +27,14 @@ class Goutong:
     def listen(self):
         self.channel.start_consuming()
 
-    def send_to_queue(self, queue_name: str, message: Message):
-        message = message.with_sender(self.sender_id)
+    def send_to_queue(self, queue_name: str, message: Message, flow_id: Optional[str] =None):
+        
+        sender_id = self.sender_id
+        if flow_id:
+            sender_id += f"@{flow_id}"
+        
+        message = message.with_sender(sender_id)
+
         if queue_name not in self.queues_added:
             self.queues_added.add(queue_name)
             self.channel.queue_declare(queue=queue_name)
