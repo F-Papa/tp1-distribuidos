@@ -3,8 +3,7 @@ import json
 import logging
 import os
 import socket
-import sys
-import threading
+import signal
 import time
 import common.parsing as parsing
 import chalk
@@ -18,6 +17,10 @@ REVIEWS_FILE = "../../data/test/Books_rating_reduced.csv"
 BATCH_SIZE_LEN = 8
 NUM_OF_QUERIES = 5
 BEGIN_MSG = "BEGIN"
+
+class ShuttingDown(Exception):
+    def __init__(self):
+        pass
 
 
 class CLI():
@@ -39,7 +42,6 @@ class CLI():
 
 
     def show_results_file(self):
-        print()
         print("Results can be found inside the directory named 'results'.")
         
 
@@ -95,7 +97,6 @@ class CLI():
         print(f"\n{red(bold('ERROR'))}: {yellow(text)}")
 
 class Client:
-
     def __init__(
         self, items_per_batch: int, server_host: str, server_port: int
     ) -> None:
@@ -105,6 +106,7 @@ class Client:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((self.__server_host, self.__server_port))
         self._sock = sock
+        self._shutting_down = False
 
         # Create directories for results
         if not os.path.exists("results"):
@@ -114,63 +116,86 @@ class Client:
             with open(f"results/query_{i+1}.txt", "w") as file:
                 pass
 
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+
     def run(self, cli: CLI):
-        # Connect
-
         cli.print_info()
-
-        cli.on_hold()
-
-        batch = []
-        files = [BOOKS_FILE, REVIEWS_FILE]
-        parsing_func = [parsing.parse_book_line, parsing.parse_review_line]
-
         
-        buffer = b""
-        while len(buffer) < len(BEGIN_MSG):
-            try:
-                recv = self._sock.recv(len(BEGIN_MSG) - len(buffer))
-                buffer += recv
-                if not recv:
-                    raise Exception
-            except:    
-                cli.error("Connection failed.")
+        try:
+            # Connect
+            batch = []
+            files = [BOOKS_FILE, REVIEWS_FILE]
+            parsing_func = [parsing.parse_book_line, parsing.parse_review_line]
+
+            cli.on_hold()
+            
+            buffer = b""
+            while len(buffer) < len(BEGIN_MSG) and not self._shutting_down:
+                try:
+                    recv = self._sock.recv(len(BEGIN_MSG) - len(buffer))
+                    buffer += recv
+                    if not recv:
+                        raise Exception
+                except:    
+                    cli.error("Connection failed.")
+                    buffer += recv
+            
+            if buffer.decode() != BEGIN_MSG:
+                cli.error("Unknown message received.")
                 return
-        
-        if buffer.decode() != BEGIN_MSG:
-            cli.error('Unknown message received.')
-            return
 
-        sending = [cli.sending_books, cli.sending_reviews]
-        # Send reviews
-        for i in range(2):
-            lines_sent = 0
-            sending[i]()
-            with open(files[i], "r") as file:
-                reader = csv.DictReader(file)
-                for line in reader:
-                    lines_sent += 1
-                    batch.append(parsing_func[i](line))
-                    if len(batch) == self.__items_per_batch:
-                        self.__send_batch(batch, False)
+            prints = [cli.sending_books, cli.sending_reviews]
+            # Send reviews
+            for i in range(2):
+                if self._shutting_down:
+                    break
+                lines_sent = 0
+                prints[i]()
+                with open(files[i], "r") as file:
+                    reader = csv.DictReader(file)
+                    for line in reader:
+                        lines_sent += 1
+                        batch.append(parsing_func[i](line))
+                        if len(batch) == self.__items_per_batch:
+                            if self._shutting_down:
+                                break
+                            self.__send_batch(batch, False)
+                            batch.clear()
+
+                    # Send EOF and remaining batch if any
+                    if not self._shutting_down:
+                        self.__send_batch(batch, True)
                         batch.clear()
 
-                # Send EOF and remaining batch if any
-                self.__send_batch(batch, True)
-                batch.clear()
+            if not self._shutting_down:
+                cli.waiting_for_results()
+                self.__listen_for_results(cli)
+            else:
+                print("Shutting down")
+        except (BrokenPipeError, ConnectionResetError):
+            cli.error("Connection to system lost. Shutting down Gracefully.")
+        except ShuttingDown:
+            pass
+        finally:
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            self._sock.close()
 
         print()
-        self.__listen_for_results(cli)
-        cli.show_results_file()
         cli.print_credits()
 
     def __listen_for_results(self, cli: CLI):
         eof_count = 0
         num_of_results = {i+1: 0 for i in range(NUM_OF_QUERIES)}
 
-        while eof_count < NUM_OF_QUERIES:
-            cli.waiting_for_results()
+        while eof_count < NUM_OF_QUERIES and not self._shutting_down:
             response = b""
+
             while len(response) < BATCH_SIZE_LEN:
                 response += self._sock.recv(BATCH_SIZE_LEN)
             
@@ -193,7 +218,7 @@ class Client:
                 for number in queries:
                     eof_count += 1
                     cli.query_results(number, num_of_results[number])
-                
+        cli.show_results_file()                
 
     def __send_batch(self, lines, eof=False):
 
@@ -205,7 +230,7 @@ class Client:
         
         to_send = size + encoded_msg
         bytes_sent = 0
-        while bytes_sent < len(to_send):
+        while bytes_sent < len(to_send) and not self._shutting_down:
             bytes_sent += self._sock.send(to_send[bytes_sent:])
         
         # print(f"Sent batch of {len(lines)} elements to server. EOF: {eof}")
@@ -236,7 +261,6 @@ if __name__ == "__main__":
     config_logging(config["LOGGING_LEVEL"])
     
     client = Client(config["ITEMS_PER_BATCH"], config["MESSAGING_HOST"], config["MESSAGING_PORT"])
+    signal.signal(signal.SIGTERM, lambda sig, frame: client.shutdown())
+
     client.run(CLI())
-
-
-
