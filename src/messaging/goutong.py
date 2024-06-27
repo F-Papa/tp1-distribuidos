@@ -24,6 +24,9 @@ class Goutong:
     #     for queue_name in args:
     #         self.channel.queue_declare(queue=queue_name)
 
+    def delete_queue(self, queue_name: str):
+        self.channel.queue_delete(queue_name)
+
     def listen(self):
         self.channel.start_consuming()
 

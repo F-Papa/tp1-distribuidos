@@ -28,7 +28,7 @@ OUTPUT_Q1_PREFIX = "results_"
 OUTPUT_Q5_PREFIX = "review_joiner_books"
 
 def crash_maybe():
-    if random.random() < 0.001:
+    if random.random() < 0.0005:
         logging.error("CRASHING..")
         sys.exit(1)
 
@@ -146,7 +146,7 @@ class CategoryFilter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

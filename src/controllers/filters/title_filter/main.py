@@ -20,7 +20,7 @@ OUTPUT_Q1 = "category_filter_queue"
 
 
 def crash_maybe():
-    if random.random() < 0.0005:
+    if random.random() < 0.00004:
         logging.error("CRASHING..")
         sys.exit(1)
 
@@ -132,7 +132,7 @@ class TitleFilter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

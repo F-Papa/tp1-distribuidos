@@ -24,7 +24,7 @@ OUTPUT_QUEUE_PREFIX = "results_"
 
 
 def crash_maybe():
-    if random.random() < 0.0003:
+    if random.random() < 0.00015:
         logging.error("CRASHING..")
         sys.exit(1)
 
@@ -120,7 +120,7 @@ class DecadeCounter:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
@@ -179,7 +179,7 @@ class DecadeCounter:
         ongoing_connections.add(conn_id_str) #es un Set(), si ya exitse no la agrega
 
         if msg.get("EOF"):  #calculate results, send results, send EOF
-            logging.info(f"EOF received from {conn_id_str}")
+            # logging.info(f"EOF received from {conn_id_str}")
             self._send_results(conn_id_str)
             self._send_eof(conn_id_str)
 
@@ -204,7 +204,7 @@ class DecadeCounter:
 
         if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
             
-            logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
+            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
 
             crash_maybe()
             self._save_state()

@@ -17,7 +17,7 @@ OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
     #pass
-    if random.random() < 0.0005:
+    if random.random() < 0.00017:
         logging.error("CRASHING..")
         sys.exit(1)
 
@@ -91,7 +91,7 @@ class SentimentAnalyzer:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

@@ -24,7 +24,7 @@ total = 0
 
 def crash_maybe():
     #pass
-    if random.random() < 0.0001:
+    if random.random() < 0.000001:
        logging.error("CRASHING..")
        sys.exit(1)
 
@@ -143,9 +143,6 @@ class LoadBalancerProxy:
         
         if msg.get("EOF"):
             eof_received[conn_id_str][queries_str][sender] = True
-            logging.info(
-                f"Received EOF number {len(eof_received[conn_id_str][queries_str])} Sender: {sender},  Transaction: {msg.get('transaction_id')}"
-            )
 
             if len(eof_received[conn_id_str][queries_str]) == len(self._filter_queues):
                 for queue in msg.get("forward_to"):
@@ -157,7 +154,6 @@ class LoadBalancerProxy:
                         "EOF": True,
                     }
                     crash_maybe()
-                    logging.info(f"#{transaction_id} Sending EOF to: {queue}")
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
             self._state.set("eof_received", eof_received)
@@ -185,7 +181,7 @@ class LoadBalancerProxy:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:

@@ -25,7 +25,7 @@ FILTER_TYPE = "review_joiner"
 CONTROLLER_ID = "review_joiner_proxy"
 
 
-def crash_maybe():
+def crash_maybe(): #402254
     if random.random() < 0.00001:
         logging.error("CRASHING..")
         exit(1)
@@ -46,9 +46,9 @@ class LoadBalancerProxyForJoiner:
         self._input_queue_books = INPUT_QUEUE_BOOKS
         self._input_queue_reviews = INPUT_QUEUE_REVIEWS
         self._input_queue_proxy = FILTER_TYPE + "_proxy"
-
+        self._filter_count = config.get("FILTER_COUNT")
         self._filter_queues = []
-        for i in range(1, config.get("FILTER_COUNT") + 1):
+        for i in range(1, self._filter_count + 1):
             books_queue = f"{FILTER_TYPE}_{i}_books"
             reviews_queue_prefix = f"{FILTER_TYPE}_{i}_reviews_conn_"
             self._filter_queues.append(
@@ -158,6 +158,17 @@ class LoadBalancerProxyForJoiner:
 
         if msg.get("EOF"):
             eof_received[conn_id_str][queries_str][sender] = True
+            
+            for queue_pair in self._filter_queues:
+                prefix = queue_pair["reviews"]
+                queue_to_remove = prefix + str(conn_id)
+                
+                try:
+                    self._messaging.delete_queue(queue_to_remove)
+                    logging.error(f"Queue {queue_to_remove} deleted.")
+                except:
+                    logging.info(f"Queue: {queue_to_remove} already deleted.")
+                
 
             if len(eof_received[conn_id_str][queries_str]) == len(self._filter_queues):
                 for queue in msg.get("forward_to"):
@@ -196,7 +207,7 @@ class LoadBalancerProxyForJoiner:
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            crash_maybe()
+            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
