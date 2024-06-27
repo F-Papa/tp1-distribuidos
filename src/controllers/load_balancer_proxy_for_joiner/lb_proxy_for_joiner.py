@@ -329,10 +329,11 @@ def main():
 
     logging.info(barrier_config)
     load_balancer = LoadBalancerProxyForJoiner(barrier_config, state)
+    signal.signal(signal.SIGTERM, lambda sig, frame: load_balancer.shutdown())
+    
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: load_balancer.shutdown())
 
     # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(load_balancer)
