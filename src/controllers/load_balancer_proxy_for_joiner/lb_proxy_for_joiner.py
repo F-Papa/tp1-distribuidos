@@ -159,17 +159,6 @@ class LoadBalancerProxyForJoiner:
         if msg.get("EOF"):
             eof_received[conn_id_str][queries_str][sender] = True
             
-            for queue_pair in self._filter_queues:
-                prefix = queue_pair["reviews"]
-                queue_to_remove = prefix + str(conn_id)
-                
-                try:
-                    self._messaging.delete_queue(queue_to_remove)
-                    logging.error(f"Queue {queue_to_remove} deleted.")
-                except:
-                    logging.info(f"Queue: {queue_to_remove} already deleted.")
-                
-
             if len(eof_received[conn_id_str][queries_str]) == len(self._filter_queues):
                 for queue in msg.get("forward_to"):
                     transaction_id = self._state.next_outbound_transaction_id(queue)
@@ -182,6 +171,17 @@ class LoadBalancerProxyForJoiner:
                     crash_maybe()
                     self._messaging.send_to_queue(queue, Message(msg_body))
                     self._state.outbound_transaction_committed(queue)
+                
+                for queue_pair in self._filter_queues:
+                    prefix = queue_pair["reviews"]
+                    queue_to_remove = prefix + str(conn_id)
+                    
+                    try:
+                        self._messaging.delete_queue(queue_to_remove)
+                        logging.error(f"Queue {queue_to_remove} deleted.")
+                    except:
+                        logging.info(f"Queue: {queue_to_remove} already deleted.")
+                
             self._state.set("eof_received", eof_received)
 
         self._state.inbound_transaction_committed(sender)
