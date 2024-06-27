@@ -12,6 +12,7 @@ from enum import Enum
 import os
 import logging
 import threading
+from chalk import red, yellow, green, blue, blink, bold, underline as uline
 from src.utils.config_loader import Configuration
 
 class ShuttingDown(Exception):
@@ -275,7 +276,7 @@ class Medic:
                     self._connections[target_id] = sock
                     if self.loop_selector:
                         self.loop_selector.register(sock, selectors.EVENT_READ)
-                    logging.info(f"📶   Connected to {target_id}")
+                    logging.info(green("Connected") + f" to {target_id}")
 
         except socket.timeout:
             logging.error(f"{target_id} timed-out during handshake")
@@ -324,12 +325,12 @@ class Medic:
                     self._connections[received_id] = conn
                     if self.loop_selector:
                         self.loop_selector.register(conn, selectors.EVENT_READ)
-                    logging.info(f"📶   Connected to {received_id}")
+                    logging.info(green("Connected") + f" to {received_id}")
             except Exception as e:
                 logging.error(f"Unexpected error sending Handshake response to {received_id}: {e}")
                 return
         else:
-            logging.info(f"at accept_connection: Received unexpected message from {addr}: {received}")
+            logging.debug(f"at accept_connection: Received unexpected message from {addr}: {received}")
 
 
     def accept_connection_from_smaller_medics(self):
@@ -408,17 +409,16 @@ class Medic:
             sel.unregister(sock)
             self.close_socket(sock)
             if medic == self._leader:
-                logging.info("Lost connection to leader")
                 self.election(initiator_id=self._id)
             return
 
         if is_type(received, Message.COORDINATOR):
             self.set_leader(sender)
             self.send_to(coordinator_ok_msg(), sender)
-            logging.info(f"⭐   Z COORDINATOR: {sender}")
+            logging.info(blue(bold("COORDINATOR")) + f": {sender}")
 
         elif is_type(received, Message.ELECTION):
-            logging.info(f"Election received from: {sender}")
+            logging.info(yellow(bold("Election")) + f": from: {bold(sender)}")
             try:
                 self.send_to(ok_msg(), sender)
                 self.election(initiator_id=sender)
@@ -426,7 +426,7 @@ class Medic:
                 logging.error(f"at loop with {sender}: {e}")
                 self.close_socket(sock)
         else:
-            logging.info(f"at loop: unexpected message from {sender}: {received}")
+            logging.debug(f"at loop: unexpected message from {sender}: {received}")
 
     def loop(self):
         self._udp_sock.bind(("0.0.0.0", CONNECTION_PORT))
@@ -445,7 +445,7 @@ class Medic:
 
                 if not events:
                     if self.is_leader_dead():
-                        logging.error("Leader is dead")
+                        logging.error(red("Leader is dead"))
                         self.election(self._id)
 
                 for key, _ in events:
@@ -471,10 +471,11 @@ class Medic:
 
     #region: Start
     def start(self):
+        logging.info("Started...")
         try:
             self.setup_connections()
             connections = self.succesful_connections()
-            logging.info(f"📶   Connections: {connections}")
+            logging.debug(f"📶   Connections: {connections}")
             self.election(self._id)
         except ShuttingDown:
             return
@@ -531,14 +532,14 @@ class Medic:
             self.set_leader(leader_id)
             self.send_to(coordinator_ok_msg(), leader_id)
 
-            logging.info(f"⭐   Coordinator: {self._leader}")
+            logging.info(blue(bold("COORDINATOR")) + f": {self._leader}")
 
         # I won election
         else:
-            logging.info(f"📣   Announcing Coordinator: {self._id}")
+            logging.debug("Sending " + blue(bold("COORDINATOR")))
             self.announce_coordinator()
             self.wait_for_coordinator_oks()
-            logging.info(f"🌟   Coordinator: {self._id}")
+            logging.info(blue(bold("COORDINATOR")) + f": {self._id}")
             self.set_leader(self._id)
         
         return self._leader
@@ -547,7 +548,6 @@ class Medic:
         self._leader = leader_id
         if leader_id == self._id:
             self._is_leader = True
-            logging.info("Im the leader...")
             if not self._check_thread:
                 controllers_to_check = self.controllers_to_check.copy()
                 controllers_to_check.update(self._other_medics)
@@ -563,10 +563,10 @@ class Medic:
                 self._check_thread.join()
                 self._check_thread = None
                 self._transfering_leader = False
-                logging.info("Check thread Joined")
+                logging.info(yellow("Leadership transfer done"))
 
     def send_election(self):
-        logging.info("Sending elections")
+        logging.info("Sending " + bold(yellow("ELECTION")))
         
         connected_greater_medics = self.filter_connected(self._greater_medics)
 
@@ -577,7 +577,7 @@ class Medic:
                 logging.error(f"Unexpected error sending Election to: {medic_id}: {e}")
 
     def answer_to_elections(self, initiator_id: str):
-        logging.info("Answering to elections")
+        logging.debug("LISTENING for " + bold(yellow("ELECTION")))
 
         sel = selectors.DefaultSelector()  
         self.register_connections(sel, self._smaller_medics)
@@ -595,10 +595,11 @@ class Medic:
                 break
 
             for key, _ in events:
+                logging.debug("Sending " + bold(red("OK")))
                 sock: socket.socket = key.fileobj  # type: ignore
                 self.answer_to_elections_aux(sel, sock, elections_received)
 
-        logging.info(
+        logging.debug(
             f"{len(elections_received)}/{len(self._smaller_medics)} Elections received"
         )
 
@@ -630,7 +631,7 @@ class Medic:
             self.send_to(ok_msg(), sender)
 
         else:
-            logging.error(
+            logging.debug(
                 f"at answer_to_elections: Unexpected message received from {id}: {received}"
             )
 
@@ -663,9 +664,9 @@ class Medic:
                 self.wait_for_coordinator_oks_aux(sel, sock, coord_oks_received)
 
         if len(coord_oks_received) < len(self._smaller_medics):
-            logging.info(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received: {list(coord_oks_received)}")
+            logging.debug(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received: {list(coord_oks_received)}")
         else:
-            logging.info(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received")
+            logging.debug(f"({len(coord_oks_received)}/{len(self._smaller_medics)}) COORDINATOR OKs received")
 
         sel.close()
 
@@ -697,7 +698,7 @@ class Medic:
             self.send_to(coord_msg(), sender)
         
         else:
-            logging.error(
+            logging.debug(
                 f"at listen_for_coordinator_oks: Unexpected message received from {sender}: {received}"
             )
 
@@ -709,7 +710,7 @@ class Medic:
         while len(coord_received) < 1 and not self._shutting_down:
             events = sel.select(timeout=COORDINATOR_TIMEOUT)
             if not events:
-                logging.error("No coordinator received")
+                logging.error(red("No coordinator received"))
                 break
 
             for key, _ in events:
@@ -745,10 +746,10 @@ class Medic:
             return
     
         if is_type(received, Message.COORDINATOR):
-            logging.info(f"Received coordinator from {sender}")
+            logging.info(blue(bold("COORDINATOR")) + f": {sender}")
             coord_received.add(sender)
         else:
-            logging.error(
+            logging.debug(
                 f"at listen_for_coordinator: Unexpected message received from {sender}: {received}"
             )
 
@@ -780,7 +781,7 @@ class Medic:
                 sock: socket.socket = key.fileobj  # type: ignore
                 self.listen_for_oks_aux(sel, sock, oks_received, coord_received)
 
-        logging.info(
+        logging.debug(
             f"{len(oks_received)}/{len(self._greater_medics)} Oks received: {list(oks_received)}"
         )
         sel.close()
@@ -813,7 +814,7 @@ class Medic:
             coord_received.add(sender)
         
         else:
-            logging.error(
+            logging.debug(
                 f"at listen_for_oks: Unexpected message received from {sender}: {received}"
             )
     #endregion
@@ -842,7 +843,7 @@ class Medic:
             
                     sock.close()
                     del self._connections[id]
-                    logging.info(f"❌   Disconnected: {id}")    
+                    logging.info(red("Disconnected") + f" from {id}")    
                     return
 
     def greatest_id(self, medic_ids: Iterable[str]) -> str:
@@ -859,14 +860,17 @@ class Medic:
         return number_to_id[max_key]
 
     def revive_controller(self, controller_id: str):
-        logging.info(f"🩺   Reviving controllers: {controller_id}")
-        container = self.docker_client.containers.get(controller_id)
-        container.start()
+        logging.info(blink(yellow('Reviving') + ': ' + controller_id + '...' ))
+        try:
+            container = self.docker_client.containers.get(controller_id)
+            container.start()
+        except:
+            logging.error(red(f"Controller {controller_id} could not be revived."))
 
     def check_on_controllers(self, controller_ids: Iterable[str]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
-        logging.info("Checking on controllers...")
+        logging.debug("Checking on controllers...")
 
         last_check = time.time()
         dead_controllers = set()
@@ -884,8 +888,11 @@ class Medic:
 
                         if time.time() - self._last_contact_timestamp[id] >= thresh:
                             dead_controllers.add(id)
-
-                logging.info(f"Dead Controllers: {len(dead_controllers)}")
+                
+                if dead_controllers:
+                    logging.info(yellow(f"Dead Controllers") + f": {len(dead_controllers)}")
+                else:
+                    logging.info(green("All controllers are alive"))
 
                 for id in dead_controllers:
                     if self._transfering_leader:
@@ -934,7 +941,7 @@ def controllers_to_check(file_path: str) -> set[str]:
     controllers = set()
     with open(file_path, "r") as f:
         for line in f.readlines():
-            controllers.add(line)
+            controllers.add(line.strip())
     return controllers
 
 def main():
@@ -950,7 +957,7 @@ def main():
     config.validate()
 
     config_logging(config.get("LOGGING_LEVEL"))
-    logging.info(config)
+    logging.debug(config)
 
     ctl_to_check = controllers_to_check("controllers_to_check")
 
