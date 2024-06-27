@@ -97,6 +97,7 @@ class ClientConnection:
         semaphore.acquire()
         logging.info("Acquired")
         self.handle_connection_aux()
+        self.messaging.delete_queue(self.results_queue)
         self.finish()
         semaphore.release()
 
