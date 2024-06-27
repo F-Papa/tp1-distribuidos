@@ -43,7 +43,7 @@ VOTING_DURATION = 8
 LEADER_ANNOUNCEMENT_DURATION = 8
 HEALTHCHECK_INTERVAL_SECONDS = 5
 HEALTHCHECK_TIMEOUT_MEDIC = 25
-HEALTHCHECK_TIMEOUT_CONTROLLER = 10
+HEALTHCHECK_TIMEOUT_CONTROLLER = 20
 VOTING_COOLDOWN = 6
 
 MSG_REDUNDANCY = 1
@@ -140,7 +140,7 @@ def send_bytes(sock: socket.socket, data: bytes):
 class Medic:
     CONTROLLER_TYPE = "medic"
 
-    def __init__(self, controllers_to_check: dict, config: Configuration):
+    def __init__(self, controllers_to_check: set, config: Configuration):
         # dict{nombre_controller: address_controller}
         self._number_of_medics = config.get("NUMBER_OF_MEDICS")
         self._medic_number = config.get("MEDIC_NUMBER")
@@ -156,8 +156,8 @@ class Medic:
             if i < self._medic_number:
                 self._smaller_medics[f"medic{i}"] = f"medic{i}"
 
-        self.controllers_to_check = controllers_to_check.copy()
-        self.controllers_to_check.update(self._other_medics)
+        self.controllers_to_check: set = controllers_to_check.copy()
+        self.controllers_to_check.update(list(self._other_medics.keys()))
 
         self._listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._id = f"{self.CONTROLLER_TYPE}{self._medic_number}"
@@ -930,6 +930,12 @@ def config_logging(level: str):
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+def controllers_to_check(file_path: str) -> set[str]:
+    controllers = set()
+    with open(file_path, "r") as f:
+        for line in f.readlines():
+            controllers.add(line)
+    return controllers
 
 def main():
 
@@ -946,49 +952,10 @@ def main():
     config_logging(config.get("LOGGING_LEVEL"))
     logging.info(config)
 
-    medic = Medic(config=config, controllers_to_check={
-        "title_filter1": "title_filter1",
-        "title_filter2": "title_filter2",
-        "title_filter_proxy": "title_filter_proxy",
-        "category_filter1": "category_filter1",
-        "category_filter_proxy": "category_filter_proxy",
-        "date_filter1": "date_filter1",
-        "date_filter2": "date_filter2",
-        "date_filter_proxy": "date_filter_proxy",
-        "review_counter_proxy": "review_counter_proxy",
-        "review_counter1": "review_counter1",
-        "review_counter2": "review_counter2",
-        "decade_counter1": "decade_counter1",
-        "decade_counter2": "decade_counter2",
-        "decade_counter3": "decade_counter3",
-        "decade_counter_proxy": "decade_counter_proxy",
-        "sentiment_analyzer_proxy": "sentiment_analyzer_proxy",
-        "sentiment_analyzer1": "sentiment_analyzer1",
-        "sentiment_analyzer2": "sentiment_analyzer2",
-        "sentiment_analyzer3": "sentiment_analyzer3",
-        "sentiment_analyzer4": "sentiment_analyzer4",
-        "sentiment_analyzer5": "sentiment_analyzer5",
-        "sentiment_analyzer6": "sentiment_analyzer6",
-        "sentiment_analyzer7": "sentiment_analyzer7",
-        "sentiment_analyzer8": "sentiment_analyzer8",
-        "sentiment_analyzer9": "sentiment_analyzer9",
-        "sentiment_analyzer10": "sentiment_analyzer10",
-        "review_joiner_proxy": "review_joiner_proxy",
-        "review_joiner1": "review_joiner1",
-        "review_joiner2": "review_joiner2",
-        "review_joiner3": "review_joiner3",
-        "sentiment_average_reducer1": "sentiment_average_reducer1",
-        "sentiment_average_reducer2": "sentiment_average_reducer2",
-        "sentiment_averager_proxy": "sentiment_averager_proxy",
-    }
-        
-    )
-    signal.signal(signal.SIGTERM, lambda *_: medic.shutdown())
-    # "title_filter1": "title_filter1", "title_filter2": "title_filter2",
-    #                                              "title_filter_proxy": "title_filter_proxy", "date_filter1": "date_filter1",
-    #                                                "date_filter2": "date_filter2", "date_filter_proxy": "date_filter_proxy",
-    #                                                "category_filter_proxy": "category_filter_proxy", "category_filter1": "category_filter1"}
+    ctl_to_check = controllers_to_check("controllers_to_check")
 
+    medic = Medic(config=config, controllers_to_check=ctl_to_check)
+    signal.signal(signal.SIGTERM, lambda *_: medic.shutdown())
     medic.start()
 
 

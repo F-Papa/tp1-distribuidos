@@ -15,6 +15,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
+      - ./src/controllers/medic/controllers_to_check:/controllers_to_check
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
@@ -32,6 +33,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
+      - ./src/controllers/medic/controllers_to_check:/controllers_to_check
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
@@ -49,6 +51,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
+      - ./src/controllers/medic/controllers_to_check:/controllers_to_check
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
@@ -66,6 +69,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
+      - ./src/controllers/medic/controllers_to_check:/controllers_to_check
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
@@ -83,6 +87,7 @@ services:
     networks:
       - tp1_testing_net
     volumes:
+      - ./src/controllers/medic/controllers_to_check:/controllers_to_check
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src/controllers/medic/config.ini:/config.ini
       - ./src/controllers/medic/medic.py:/medic.py
