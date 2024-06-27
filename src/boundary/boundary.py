@@ -85,10 +85,6 @@ class ClientConnection:
                 pass
             self.conn.close()
             try:
-                self.messaging.delete_queue(self.results_queue)
-            except:
-                pass
-            try:
                 self.messaging.close()
             except:
                 logging.error("Couldn't close messaging")
