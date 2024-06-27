@@ -98,7 +98,7 @@ class Client:
             else:
                 print("Data sent. Waiting for results...")
                 self.__listen_for_results()
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             logging.error(f"Connection to system lost. Shutting down Gracefully.")
         except ShuttingDown:
             pass
