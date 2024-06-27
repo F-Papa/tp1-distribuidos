@@ -65,7 +65,7 @@ class ClientConnection:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:
-            logging.info(
+            logging.debug(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
@@ -74,7 +74,7 @@ class ClientConnection:
 
         elif transaction_id > expected_transaction_id:
             messaging.requeue(msg)
-            logging.info(
+            logging.debug(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
     
@@ -365,10 +365,8 @@ class ClientConnection:
 
 
         message = Message(body)
-        # logging.info(f"Sending {len(batch)} reviews to queue")
         self.messaging.send_to_queue(queue_name, message)
         self._state.outbound_transaction_committed(queue_name)
-        # self.next_transaction_ids[queue_name] += 1
 
     def __parse_decade(self, year: int) -> int:
         return year - (year % 10)
@@ -467,7 +465,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():

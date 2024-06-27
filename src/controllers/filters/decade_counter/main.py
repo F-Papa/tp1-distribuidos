@@ -92,8 +92,6 @@ class DecadeCounter:
         saved_counts = self._state.get("saved_counts")
         saved_counts = self._normalize_counts(saved_counts)
         self._state.set("saved_counts", saved_counts)
-        #logging.debug(f"{saved_counts}")
-
         ongoing_connections = self._state.get("ongoing_connections")
         ongoing_connections = list(ongoing_connections)
         self._state.set("ongoing_connections", ongoing_connections)
@@ -119,7 +117,7 @@ class DecadeCounter:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:
-            logging.info(
+            logging.debug(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
@@ -128,7 +126,7 @@ class DecadeCounter:
 
         elif transaction_id > expected_transaction_id:
             self._messaging.requeue(msg)
-            logging.info(
+            logging.debug(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
@@ -182,7 +180,6 @@ class DecadeCounter:
         ongoing_connections.add(conn_id_str) #es un Set(), si ya exitse no la agrega
 
         if msg.get("EOF"):  #calculate results, send results, send EOF
-            # logging.info(f"EOF received from {conn_id_str}")
             self._send_results(conn_id_str)
             self._send_eof(conn_id_str)
 
@@ -206,8 +203,6 @@ class DecadeCounter:
         self.unacked_msgs.append(msg.delivery_id)
 
         if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
-            
-            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
 
             crash_maybe()
             self._save_state()
@@ -279,7 +274,7 @@ def main():
         to_show = ""
         for conn in state.get("saved_counts").keys():
             to_show += f"{len(state.get('saved_counts')[conn])} authors with decades from conn {conn}\n"
-        logging.info(to_show)
+        logging.debug(to_show)
 
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
 

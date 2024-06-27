@@ -80,7 +80,7 @@ class SentimentAnalyzer:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:
-            logging.info(
+            logging.debug(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
@@ -89,7 +89,7 @@ class SentimentAnalyzer:
 
         elif transaction_id > expected_transaction_id:
             self._messaging.requeue(msg)
-            logging.info(
+            logging.debug(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
@@ -215,7 +215,6 @@ def main():
     )
 
     if os.path.exists(state.file_path):
-        #logging.info("Loading state from file...")
         state.update_from_file()
 
 

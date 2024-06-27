@@ -242,10 +242,6 @@ def config_logging(level: str):
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-        # Hide pika logs
-        pika_logger = logging.getLogger("pika")
-        pika_logger.setLevel(logging.ERROR)
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(

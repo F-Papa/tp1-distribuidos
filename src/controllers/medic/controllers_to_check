@@ -8,7 +8,6 @@ date_filter2
 date_filter_proxy
 review_counter_proxy
 review_counter1
-review_counter2
 decade_counter1
 decade_counter2
 decade_counter3
@@ -20,10 +19,6 @@ sentiment_analyzer3
 sentiment_analyzer4
 sentiment_analyzer5
 sentiment_analyzer6
-sentiment_analyzer7
-sentiment_analyzer8
-sentiment_analyzer9
-sentiment_analyzer10
 review_joiner_proxy
 review_joiner1
 review_joiner2

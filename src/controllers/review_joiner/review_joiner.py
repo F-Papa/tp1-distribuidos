@@ -182,9 +182,9 @@ class ReviewsJoiner:
                 # All books received, start listening for reviews at the reviews queue for this conn_id
                 ongoing_connections[conn_id_str] = {"state": self.RECEIVING_REVIEWS}
                 for k in saved_books.keys():
-                    logging.info("saved_books Key: " + k)
+                    logging.debug("saved_books Key: " + k)
                     for k2 in saved_books[k].keys():
-                        logging.info("saved_books Key2: " + k2 + " " + str(len(saved_books[k][k2])))
+                        logging.debug("saved_books Key2: " + k2 + " " + str(len(saved_books[k][k2])))
 
                 self._set_callback_reviews(conn_id)
         self._state.set("ongoing_connections", ongoing_connections)
@@ -206,9 +206,9 @@ class ReviewsJoiner:
         if (
             self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
-            # logging.info(
-            #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
-            # )
+            logging.debug(
+                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
+            )
             crash_maybe_books()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -293,9 +293,9 @@ class ReviewsJoiner:
         if (
             self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")
         ):
-            # logging.info(
-            #     f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
-            # )
+            logging.debug(
+                f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}"
+            )
             crash_maybe_reviews()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -318,16 +318,15 @@ class ReviewsJoiner:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:
-            logging.info(
+            logging.debug(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
-            # crash_maybe()
             self._messaging.ack_delivery(msg.delivery_id)
 
         elif transaction_id > expected_transaction_id:
             self._messaging.requeue(msg)
-            logging.info(
+            logging.debug(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 

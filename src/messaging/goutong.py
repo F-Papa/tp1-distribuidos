@@ -46,7 +46,6 @@ class Goutong:
         if queue_name not in self.queues_added:
             self.queues_added.add(queue_name)
             self.channel.queue_declare(queue=queue_name)
-            # logging.warning(f"Segind message to undeclared queue: {queue_name}.")
         content_info = [
             f"{key}: {len(str(message.get(key)))} Bytes" for key in message.keys()
         ]
@@ -75,7 +74,6 @@ class Goutong:
             queue=queue_name, on_message_callback=custom_callback, auto_ack=auto_ack
         )
 
-        # logging.debug(f"ID: {consumer_id} | Listening to: {queue_name}")
         self.consumer_ids[queue_name] = consumer_id
 
     def stop_consuming(self, queue_name: str):
@@ -116,7 +114,7 @@ class Goutong:
         self.channel.basic_publish(
             exchange="", routing_key=queue_name, body=message.marshal()
         )
-        logging.info(f"Requeued message {message.get('sender')}#{message.get('transaction_id')} to: {queue_name}")
+        logging.debug(f"Requeued message {message.get('sender')}#{message.get('transaction_id')} to: {queue_name}")
         self.ack_delivery(message.delivery_id)
 
     # def nack_delivery(self, delivery_id: int):

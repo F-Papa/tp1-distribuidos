@@ -106,7 +106,6 @@ class ReviewCounter:
 
 
         if (self.unacked_msg_count > self.unacked_msg_limit or msg.get("EOF")):
-            # logging.info(f"Committing to disk | Unacked Msgs.: {self.unacked_msg_count}")
             crash_maybe()
             self._state.save_to_disk()
             self.time_of_last_commit = time.time()
@@ -215,7 +214,7 @@ class ReviewCounter:
         expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
         if transaction_id < expected_transaction_id:
-            logging.info(
+            logging.debug(
                 f"Received Duplicate Transaction {transaction_id} from {sender}: "
                 + msg.marshal()[:100]
             )
@@ -224,7 +223,7 @@ class ReviewCounter:
 
         elif transaction_id > expected_transaction_id:
             self._messaging.requeue(msg)
-            logging.info(
+            logging.debug(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
 
@@ -282,7 +281,6 @@ def main():
     }
 
     if os.path.exists(state.file_path):
-        #logging.info("Loading state from file...")
         state.update_from_file()
 
     counter = ReviewCounter(config, state, output_queues)
