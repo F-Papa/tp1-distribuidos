@@ -1,8 +1,9 @@
 from collections import defaultdict
 import json
 import logging
-import multiprocessing
+import threading
 import socket
+from threading import Semaphore
 import time
 
 from src.controller_state.controller_state import ControllerState
@@ -16,8 +17,9 @@ Q5_QUEUE = "category_filter_queue"
 
 REVIEWS_QUEUE_PREFIX = "review_joiner_reviews"
 RESULTS_QUEUE_PREFIX = "results_"
-
+MAX_CLIENTS = 3
 BATCH_SIZE_LEN = 8
+BEGIN_MSG = "BEGIN"
 
 counter = 0
 
@@ -35,6 +37,7 @@ class ClientConnection:
         self.conn = conn
         self.conn_id = conn_id
         self.__shutting_down = False
+        self.results_queue = RESULTS_QUEUE_PREFIX + str(self.conn_id)
         self.items_per_batch = items_per_batch
         controller_id = f"{Boundary.CONTROLLER_TYPE}_{conn_id}"
         self.messaging: Goutong = messaging_module(
@@ -74,22 +77,65 @@ class ClientConnection:
             logging.info(
                 f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
             )
+    
+    def finish(self):
+            try:
+                self.conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            self.conn.close()
+            try:
+                self.messaging.delete_queue(self.results_queue)
+            except:
+                pass
+            try:
+                self.messaging.close()
+            except:
+                logging.error("Couldn't close messaging")
 
-    def handle_connection(self):
+    def handle_connection(self, semaphore: Semaphore):
+        semaphore.acquire()
+        logging.info("Acquired")
+        self.handle_connection_aux()
+        self.finish()
+        semaphore.release()
+
+    def handle_connection_aux(self):
+        bytes_sent = 0
+        to_send = BEGIN_MSG.encode()
+        
+        try:
+            sent = self.conn.send(to_send[bytes_sent:])
+            bytes_sent += sent
+            if not sent:
+                raise Exception
+        except:
+            logging.error("Connection {self.conn_id} finished prematurely. No data received")
+            return
+    
+        logging.info(f"Connection {self.conn_id} started")
         # Send books to the messaging server
-        self.__dispatch_books()
+        error_dispatching_books = self.__dispatch_books()
+        if error_dispatching_books:
+            logging.error(f"Connection {self.conn_id} closed prematurely. Flushing Data from system")
+            self._flush_books()
+            self._flush_reviews()
+            return
 
         # Send reviews to the messaging server
-        self.__dispatch_reviews()
+        error_dispatching_reviews = self.__dispatch_reviews()
+        if error_dispatching_reviews:
+            logging.error(f"Connection {self.conn_id} closed prematurely. Flushing Data from system")
+            self._flush_reviews()
+            return  
 
         logging.info(f"[Conn: {self.conn_id}] Finished sending data")
         # Listen for results
-        results_queue = RESULTS_QUEUE_PREFIX + str(self.conn_id)
+        
         self.messaging.set_callback(
-            results_queue, self.forward_results, args=(), auto_ack=True
+            self.results_queue, self.forward_results, args=(), auto_ack=True
         )
         self.messaging.listen()
-        self.conn.close()
 
     def forward_results(self, messaging: Goutong, msg: Message):
         if not self._is_transaction_id_valid(msg):
@@ -120,26 +166,38 @@ class ClientConnection:
         self._state.inbound_transaction_committed(msg.get('sender'))
 
     def __dispatch_books(self):
+        """Sends reviews to the system via queue. Returns True if any error or False otherwise"""
         eof_reached = False
         items_received = []
 
         while not eof_reached:
-            received = b""
+            buffer = b""
 
-            while len(received) < BATCH_SIZE_LEN:
-                received += self.conn.recv(BATCH_SIZE_LEN - len(received))
+            while len(buffer) < BATCH_SIZE_LEN:
+                try:
+                    received = self.conn.recv(BATCH_SIZE_LEN - len(buffer))
+                    buffer += received
+                    if not received:
+                        raise Exception
+                except:
+                    return True
+                
+            expected_length = int.from_bytes(buffer, byteorder="big")
 
-            expected_length = int.from_bytes(received, byteorder="big")
-
-            received = b""
-            
-            
+            buffer = b""
+                       
             # Read next batch
-            while len(received) < expected_length:
-                to_read = expected_length - len(received)
-                received += self.conn.recv(to_read)
+            while len(buffer) < expected_length:
+                try:
+                    to_read = expected_length - len(buffer)
+                    received = self.conn.recv(to_read)
+                    buffer += received
+                    if not received:
+                        raise Exception
+                except:
+                    return True
 
-            decoded = received.decode()
+            decoded = buffer.decode()
             received_data: dict = json.loads(decoded)
 
             eof_reached = received_data.get("EOF")
@@ -152,7 +210,54 @@ class ClientConnection:
 
         # Send the remaining books and an EOF message
         self.__send_batch_books(items_received, True)
+        return False
 
+    def _flush_books(self):
+        msg_body = {
+            "transaction_id": self._state.next_outbound_transaction_id(Q1_3_4_QUEUE),
+            "conn_id": self.conn_id,
+            "data": [],
+            "queries": [1, 3, 4],
+            "EOF": True,
+        }
+
+        self.messaging.send_to_queue(Q1_3_4_QUEUE, Message(msg_body))
+        self._state.outbound_transaction_committed(Q1_3_4_QUEUE)
+
+        msg_body = {
+            "transaction_id": self._state.next_outbound_transaction_id(Q2_QUEUE),
+            "conn_id": self.conn_id,
+            "data": [],
+            "queries": [2],
+            "EOF": True,
+        }  
+        
+        self.messaging.send_to_queue(Q2_QUEUE, Message(msg_body))
+        self._state.outbound_transaction_committed(Q2_QUEUE)
+
+        msg_body = {
+            "transaction_id": self._state.next_outbound_transaction_id(Q5_QUEUE),
+            "conn_id": self.conn_id,
+            "data": [],
+            "queries": [5],
+            "EOF": True,
+        }  
+        
+        self.messaging.send_to_queue(Q5_QUEUE, Message(msg_body))
+        self._state.outbound_transaction_committed(Q5_QUEUE)
+    
+    def _flush_reviews(self):
+        msg_body = {
+            "transaction_id": self._state.next_outbound_transaction_id(REVIEWS_QUEUE_PREFIX),
+            "conn_id": self.conn_id,
+            "data": [],
+            "queries": [5, 3, 4],
+            "EOF": True,
+        }
+
+        self.messaging.send_to_queue(REVIEWS_QUEUE_PREFIX, Message(msg_body))
+        self._state.outbound_transaction_committed(REVIEWS_QUEUE_PREFIX)
+    
     # Encodes a batch of books to the messaging server encoded in the correct format
     def __send_batch_books(self, batch: list, eof_reached: bool):
 
@@ -197,32 +302,48 @@ class ClientConnection:
         # self.next_transaction_ids[Q5_QUEUE] += 1
 
     def __dispatch_reviews(self):
+        """Sends reviews to the system via queue. Returns True if any error or False otherwise"""
         output_queue_name = REVIEWS_QUEUE_PREFIX
         eof_reached = False
         items_received = []
 
         while not eof_reached:
 
-            received = b""
-            while len(received) < BATCH_SIZE_LEN:
-                received += self.conn.recv(BATCH_SIZE_LEN - len(received))
+            buffer = b""
+            while len(buffer) < BATCH_SIZE_LEN:
+                try:
+                    received = self.conn.recv(BATCH_SIZE_LEN - len(buffer))
+                    buffer += received
+                    if not received:
+                        raise Exception
+                except:
+                    return True
 
-            expected_length = int.from_bytes(received, byteorder="big")
+            expected_length = int.from_bytes(buffer, byteorder="big")
 
             # Read next batch
-            received = b""
-            while len(received) < expected_length:
-                to_read = expected_length - len(received)
-                received += self.conn.recv(to_read)
+            buffer = b""
+            while len(buffer) < expected_length:
+                to_read = expected_length - len(buffer)
+                
+                try:
+                    received = self.conn.recv(to_read)
+                    buffer += received
+                    if not received:
+                        raise Exception
+                except:
+                    return True
 
-            decoded = received.decode()
+            decoded = buffer.decode()
             received_data: dict = json.loads(decoded)
 
             for item in received_data["data"]:
-                item["review/score"] = float(item["review/score"])
+                if "review/score" in item:
+                    item["review/score"] = float(item["review/score"])
+                else:
+                    logging.error(f"item: {item}")
 
             items_received.extend(received_data["data"])
-
 
             while len(items_received) >= self.items_per_batch:
                 to_send = items_received[: self.items_per_batch]
@@ -235,6 +356,7 @@ class ClientConnection:
             eof_reached = received_data.get("EOF")
         # Send the remaining books and an EOF message
         self.__send_batch_reviews(items_received, True)
+        return False
 
     def __send_batch_reviews(self, batch: list, eof_reached: bool):
         queue_name = REVIEWS_QUEUE_PREFIX
@@ -305,10 +427,12 @@ class Boundary:
         self.__messaging_host = config.get("MESSAGING_HOST")
         self.items_per_batch = config.get("ITEMS_PER_BATCH")
         self.__messaging_module = messaging_module
+        self.processes: list[threading.Thread] = []
         self.client_connections = {}
 
     # Listen for incoming connections and spawn a new process to handle each connection
     def listen_for_connections(self):
+        semaphore = Semaphore(MAX_CLIENTS)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("", self.server_port))
         sock.listen(self.backlog)
@@ -317,7 +441,12 @@ class Boundary:
 
         while not self.__shutting_down:
             new_sock, _ = sock.accept()
-            logging.info(f"[Conn {self.__conn_id}] Connection accepted")
+
+            for p in self.processes:
+                if not p.is_alive:
+                    p.join()
+
+            logging.info(f"[Connection {self.__conn_id}] on hold")
             new_connection = ClientConnection(
                 new_sock,
                 self.__conn_id,
@@ -327,10 +456,12 @@ class Boundary:
                 self.__messaging_port,
                 state
             )
+
             self.client_connections[self.__conn_id] = new_connection
-            p = multiprocessing.Process(
-                target=new_connection.handle_connection, args=()
+            p = threading.Thread(
+                target=new_connection.handle_connection, args=(semaphore,)
             )
+            self.processes.append(p)
             p.start()
             self.__conn_id += 1
 

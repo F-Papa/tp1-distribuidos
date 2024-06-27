@@ -9,9 +9,11 @@ import common.parsing as parsing
 BOOKS_FILE = "../../data/books_data.csv"
 # REVIEWS_FILE = "../../data/test/ratings_1K.csv"
 REVIEWS_FILE = "../../data/test/Books_rating_reduced.csv"
+REVIEWS_FILE = "../../data/Books_rating.csv"
 
 BATCH_SIZE_LEN = 8
 NUM_OF_QUERIES = 5
+BEGIN_MSG = "BEGIN"
 
 class Client:
 
@@ -42,6 +44,24 @@ class Client:
         files = [BOOKS_FILE, REVIEWS_FILE]
         parsing_func = [parsing.parse_book_line, parsing.parse_review_line]
 
+        print("Connection accepted. Waiting for server...")
+        
+        buffer = b""
+        while len(buffer) < len(BEGIN_MSG):
+            try:
+                recv = self._sock.recv(len(BEGIN_MSG) - len(buffer))
+                buffer += recv
+                if not recv:
+                    raise Exception
+            except:    
+                print("Connection error.")
+                buffer += recv
+        
+        if buffer.decode() != BEGIN_MSG:
+            print("Unkown message received from server.")
+            return
+
+        
         # Send reviews
         for i in range(2):
             lines_sent = 0
