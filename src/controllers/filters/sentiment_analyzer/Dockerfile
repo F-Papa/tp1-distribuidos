@@ -5,6 +5,7 @@ RUN pip install -U textblob
 RUN python -m textblob.download_corpora
 
 COPY ./src/controllers/filters/sentiment_analyzer/main.py ./main.py
+COPY ./src/controllers/common/healthcheck_handler.py ./src/controllers/common/healthcheck_handler.py
 COPY ./src/messaging ./src/messaging
 COPY ./src/exceptions ./src/exceptions
 COPY ./src/utils ./src/utils

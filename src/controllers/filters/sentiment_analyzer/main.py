@@ -1,31 +1,186 @@
+import random
+import sys
+import threading
+from src.controllers.common.healthcheck_handler import HealthcheckHandler
 from src.messaging.goutong import Goutong
 from src.utils.config_loader import Configuration
 import logging
 import signal
 import os
-from textblob import TextBlob # type: ignore
+from textblob import TextBlob  # type: ignore
 
 from src.messaging.message import Message
 from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
+OUTPUT_QUEUE = "sentiment_averager_queue"
 
-FILTER_TYPE = "sentiment_analyzer"
-EOF_QUEUE = "sentiment_analyzer_eof"
-CONTROL_GROUP = "CONTROL"
+def crash_maybe():
+    #pass
+    if random.random() < 0.00017:
+        logging.error("CRASHING..")
+        sys.exit(1)
 
-OUTPUT_QUEUE = "sentiment_average_queue"
+class SentimentAnalyzer: 
+    FILTER_TYPE = "sentiment_analyzer"
 
-shutting_down = False
+    def __init__(
+        self,
+        filter_config: Configuration,
+        state: ControllerState,
+        output_queue: str,
+    ):
+        self._shutting_down = False
+        self._state = state
+        self._config = filter_config
+        self.controller_name = self.FILTER_TYPE + str(
+            filter_config.get("FILTER_NUMBER")
+        )
+        self.input_queue_name = self.controller_name
+        self._proxy_queue = f"{self.FILTER_TYPE}_proxy"
+        self._output_queue = output_queue
+        self._messaging = Goutong(sender_id=self.controller_name)
+
+    @classmethod
+    def default_state(
+        cls, controller_id: str, file_path: str, temp_file_path: str
+    ) -> ControllerState:
+        return ControllerState(
+            controller_id=controller_id,
+            file_path=file_path,
+            temp_file_path=temp_file_path,
+            extra_fields={},
+        )
+    
+    def start(self):
+        # Main Flow
+        try:
+            if not self._shutting_down:
+                self._messaging.set_callback(
+                    self.input_queue_name,
+                    self._callback_sentiment_analyzer,
+                    auto_ack=False,
+                )
+                self._messaging.listen()
+        except ShuttingDown:
+            pass
+
+        finally:
+            logging.info("Shutting Down.")
+            self._messaging.close()
+            self._state.save_to_disk()
+    
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+    
+    def input_queue(self):
+        return self.input_queue_name
+
+    def output_queue(self):
+        return self._output_queue
+
+    def _handle_invalid_transaction_id(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
+
+        if transaction_id < expected_transaction_id:
+            logging.info(
+                f"Received Duplicate Transaction {transaction_id} from {sender}: "
+                + msg.marshal()[:100]
+            )
+            # crash_maybe()
+            self._messaging.ack_delivery(msg.delivery_id)
+
+        elif transaction_id > expected_transaction_id:
+            self._messaging.requeue(msg)
+            logging.info(
+                f"Requeueing out of order {transaction_id}, expected {str(expected_transaction_id)}"
+            )
 
 
-# Graceful Shutdown
-def sigterm_handler(messaging: Goutong):
-    global shutting_down
-    logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-    shutting_down = True
-    raise ShuttingDown
+    def _is_transaction_id_valid(self, msg: Message):
+        transaction_id = msg.get("transaction_id")
+        sender = msg.get("sender")
+        expected_transaction_id = self._state.next_inbound_transaction_id(sender)
 
+        return transaction_id == expected_transaction_id
+
+
+    def _callback_sentiment_analyzer(self, _: Goutong, msg: Message):
+        sender = msg.get("sender")
+        transaction_id = msg.get("transaction_id")
+        conn_id = msg.get("conn_id")
+        queries = msg.get("queries")
+
+        # Duplicate transaction
+        if not self._is_transaction_id_valid(msg):
+            self._handle_invalid_transaction_id(msg)
+            return
+
+        # Send Analyzed Reviews
+        if filtered_books := self._analyze_reviews(msg.get("data")):
+            transaction_id = self._state.next_outbound_transaction_id(
+                self._proxy_queue
+            )
+
+            msg_content = {
+                "transaction_id": transaction_id,
+                "conn_id": conn_id,
+                "queries": queries,
+                "data": filtered_books,
+                "forward_to": [self.output_queue()],
+            }
+            crash_maybe()
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
+
+        # Send End of File
+        if msg.get("EOF"):
+            transaction_id = self._state.next_outbound_transaction_id(
+                self._proxy_queue
+            )
+
+            msg_content = {
+                "transaction_id": transaction_id,
+                "conn_id": conn_id,
+                "EOF": True,
+                "forward_to": [self.output_queue()],
+                "queries": [5],
+            }
+
+            crash_maybe()
+            self._messaging.send_to_queue(self._proxy_queue, Message(msg_content))
+            self._state.outbound_transaction_committed(self._proxy_queue)
+
+        self._state.inbound_transaction_committed(sender)
+        crash_maybe()
+        self._state.save_to_disk()
+        crash_maybe()
+        self._messaging.ack_delivery(msg.delivery_id)
+
+    def _analyze_reviews(self, reviews: list):
+        analyzed_reviews = []
+        if not reviews:
+            return analyzed_reviews
+
+        for review in reviews:
+            review_text = review["review/text"]
+            sentiment = self._analyze_sentiment(review_text)
+            analyzed_reviews.append({"title": review["title"], "sentiment": sentiment})
+
+        logging.debug(f"Analyzed {len(analyzed_reviews)} reviews")
+        return analyzed_reviews
+
+    def _analyze_sentiment(self, text: str):
+        blob = TextBlob(text)
+        sentiment = blob.sentiment.polarity  # type: ignore
+        return sentiment
+    
+    def controller_id(self):
+        return self.controller_name
 
 def config_logging(level: str):
 
@@ -58,186 +213,32 @@ def main():
     logging.info(filter_config)
 
     # Load State
-    controller_id = f"{FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
+    controller_id = f"{SentimentAnalyzer.FILTER_TYPE}_{filter_config.get('FILTER_NUMBER')}"
 
-    extra_fields = {
-        "reviews_received": [],
-        "conn_id": 0,
-        "queries": [],
-        "EOF": False,
-    }
-
-    state = ControllerState(
+    state = SentimentAnalyzer.default_state(
         controller_id=controller_id,
         file_path=f"state/{controller_id}.json",
         temp_file_path=f"state/{controller_id}.tmp",
-        extra_fields=extra_fields,
     )
 
     if os.path.exists(state.file_path):
+        #logging.info("Loading state from file...")
         state.update_from_file()
 
-    messaging = Goutong()
 
-    # Set up queues
-    input_queue_name = FILTER_TYPE + str(filter_config.get("FILTER_NUMBER"))
-
-
-    # messaging.add_broadcast_group(CONTROL_GROUP, [control_queue_name])
-    # messaging.set_callback(control_queue_name, callback_control, auto_ack=True)
-
-    signal.signal(signal.SIGTERM, lambda sig, frame: sigterm_handler(messaging))
-
-    # Main Flow
-    try:
-        if not state.committed and not shutting_down:
-            handle_uncommited_transactions(messaging, state)
-        while not shutting_down:
-            main_loop(messaging, input_queue_name, state)
-    except ShuttingDown:
-        pass
-
-    finally:
-        logging.info("Shutting Down.")
-        messaging.close()
-        state.save_to_disk()
-
-
-def handle_uncommited_transactions(messaging: Goutong, state: ControllerState):
-    logging.debug("Handling possible pending commit")
-    if state.get("reviews_received"):
-        # logging.debug(f"ESTADO:{state}")
-        to_send = analyze_reviews(state.get("reviews_received"))
-        _send_batch(
-            messaging=messaging,
-            batch=to_send,
-            conn_id=state.get("conn_id"),
-            transaction_id=state.id_for_next_transaction(),
-        )
-    if state.get("EOF"):
-        _send_EOF(
-            messaging=messaging,
-            conn_id=state.get("conn_id"),
-            transaction_id=state.id_for_next_transaction() + "_EOF",
-        )
-    state.mark_transaction_committed()
-
-
-def main_loop(messaging: Goutong, input_queue_name: str, state: ControllerState):
-    messaging.set_callback(
-        input_queue_name, callback_filter, auto_ack=False, args=(state,)
+    sentiment_analyzer = SentimentAnalyzer(
+        filter_config=filter_config,
+        state=state,
+        output_queue=OUTPUT_QUEUE,
     )
-    logging.debug(f"Escucho queue {input_queue_name}")
-    messaging.listen()
 
-    transaction_id = state.id_for_next_transaction()
+    signal.signal(signal.SIGTERM, lambda sig, frame: sentiment_analyzer.shutdown())
+    controller_thread = threading.Thread(target=sentiment_analyzer.start)
+    controller_thread.start()
 
-    if state.get("reviews_received"):
-        logging.debug("ANALIZO")
-        to_send = analyze_reviews(state.get("reviews_received"))
-        _send_batch(
-            messaging=messaging,
-            batch=to_send,
-            conn_id=state.get("conn_id"),
-            transaction_id=state.id_for_next_transaction(),
-        )
-        logging.debug("Mande al SIG")
-
-    if state.get("EOF"):
-        _send_EOF(
-            messaging,
-            state.get("conn_id"),
-            transaction_id=state.id_for_next_transaction() + "_EOF",
-        )
-
-    state.mark_transaction_committed()
-
-
-def callback_control(messaging: Goutong, msg: Message):
-    global shutting_down
-    if msg.has_key("ShutDown"):
-        shutting_down = True
-        raise ShuttingDown
-
-
-def _send_EOF(messaging: Goutong, conn_id: int, transaction_id: str):
-    msg = Message(
-        {
-            "transaction_id": transaction_id,
-            "conn_id": conn_id,
-            "queries": [5],
-            "EOF": True,
-            "forward_to": [OUTPUT_QUEUE],
-        }
-    )
-    messaging.send_to_queue(EOF_QUEUE, msg)
-    logging.debug(f"Sent EOF to: {EOF_QUEUE}")
-
-
-def _analyze_sentiment(text: str):
-    blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity  # type: ignore
-    return sentiment
-
-
-def callback_filter(messaging: Goutong, msg: Message, state: ControllerState):
-    transaction_id = msg.get("transaction_id")
-    logging.debug(
-        f"RECIBO MENSAJE CON ID {transaction_id} STATE: {state.transactions_received} "
-    )
-    # Ignore duplicate transactions
-    if transaction_id in state.transactions_received:
-        messaging.ack_delivery(msg.delivery_id)
-        logging.info(
-            f"Received Duplicate Transaction {msg.get('transaction_id')}: "
-            + msg.marshal()[:100]
-        )
-        return
-
-    # Add new data to state
-    eof = msg.has_key("EOF")
-    reviews_received = msg.get("data") if msg.has_key("data") else []
-    conn_id = msg.get("conn_id")
-    queries = msg.get("queries")
-
-    state.set("reviews_received", reviews_received)
-    state.set("conn_id", conn_id)
-    state.set("queries", queries)
-    state.set("EOF", eof)
-    state.mark_transaction_received(transaction_id)
-    state.save_to_disk()
-
-    # Acknowledge message now that it's saved
-    logging.debug(f"HAGO ACK {msg.delivery_id} ")
-    messaging.ack_delivery(msg.delivery_id)
-    logging.debug(f"no escucho mas queue {msg.queue_name}")
-    messaging.stop_consuming(msg.queue_name)
-
-
-def analyze_reviews(reviews: list):
-    analyzed_reviews = []
-
-    for review in reviews:
-        review_text = review["review/text"]
-        sentiment = _analyze_sentiment(review_text)
-        analyzed_reviews.append({"title": review["title"], "sentiment": sentiment})
-
-    logging.debug(f"Analyzed {len(analyzed_reviews)} reviews")
-    return analyzed_reviews
-
-
-def _send_batch(messaging: Goutong, batch: list, conn_id: int, transaction_id: str):
-    msg = Message(
-        {
-            "transaction_id": transaction_id,
-            "conn_id": conn_id,
-            "queries": [5],
-            "data": batch,
-        }
-    )
-    messaging.send_to_queue(OUTPUT_QUEUE, msg)
-    logging.debug(f"Sent Data to: {OUTPUT_QUEUE}")
-
+    # HEALTCHECK HANDLING
+    healthcheck_handler = HealthcheckHandler(sentiment_analyzer)
+    healthcheck_handler.start()
 
 if __name__ == "__main__":
     main()

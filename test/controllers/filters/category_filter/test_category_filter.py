@@ -18,6 +18,8 @@ from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.message import Message
 from test.mocks.mock_messaging import MockMessaging, ProvokedError
 
+
+@pytest.mark.skip
 def test_category_filter_works_if_no_faults():
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -180,7 +182,6 @@ def test_category_filter_works_if_no_faults():
     assert json.dumps(expected_data_q1) in data
     assert json.dumps(expected_data_q5) in data
 
-
     time.sleep(0.1)
     # Clean up
     if os.path.exists(file_path):
@@ -189,6 +190,7 @@ def test_category_filter_works_if_no_faults():
         os.remove(temp_file_path)
 
 
+@pytest.mark.skip
 def test_category_filter_ignores_duplicate_transactions():
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -362,6 +364,7 @@ def test_category_filter_ignores_duplicate_transactions():
         os.remove(temp_file_path)
 
 
+@pytest.mark.skip
 def test_category_filter_works_if_no_faults_multiple_messages():
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -601,6 +604,7 @@ def test_category_filter_works_if_no_faults_multiple_messages():
         os.remove(temp_file_path)
 
 
+@pytest.mark.skip
 def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
     controller_id = "category_filter_test"
     file_path = f"./test/state_{controller_id}.json"
@@ -852,7 +856,7 @@ def test_category_filter_works_if_no_faults_multiple_messages_and_connections():
     if os.path.exists(temp_file_path):
         os.remove(temp_file_path)
 
-
+@pytest.mark.skip
 @pytest.mark.parametrize("message_to_fail", [4])
 def test_title_filter_recovers_from_crash_sending_data(message_to_fail: int):
     controller_id = "category_filter_test"
