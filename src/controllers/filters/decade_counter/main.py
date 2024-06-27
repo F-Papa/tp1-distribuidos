@@ -65,6 +65,11 @@ class DecadeCounter:
             extra_fields=extra_fields,
         )
     
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+
     # Devuelve las saved_counts pero con los Set() de decadas casteados a lista
     def _normalize_counts(self, saved_counts):
         normalized_counts = {
@@ -283,6 +288,8 @@ def main():
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
 
     decade_counter = DecadeCounter(filter_config, state, output_queues)
+    signal.signal(signal.SIGTERM, lambda sig, frame: decade_counter.shutdown())
+
     controller_thread = threading.Thread(target=decade_counter.start)
     controller_thread.start()
 

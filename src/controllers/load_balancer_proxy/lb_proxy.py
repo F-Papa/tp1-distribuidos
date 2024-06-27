@@ -63,6 +63,11 @@ class LoadBalancerProxy:
     def controller_id(self):
         return self.controller_name
 
+    def shutdown(self):
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        raise ShuttingDown
+
     def start(self):
         try:
             if not self.shutting_down:
@@ -80,7 +85,7 @@ class LoadBalancerProxy:
                 self._messaging.listen()
 
         except ShuttingDown:
-            logging.debug("Shutting Down Message Received Via Broadcast")
+            logging.debug("Graceful Shutdown Initiated")
 
         self._messaging.close()
         logging.info("Shutting Down.")
@@ -285,11 +290,6 @@ class LoadBalancerProxy:
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-        self.shutting_down = True
-
-
 def config_logging(level: str):
 
     level = getattr(logging, level)
@@ -335,9 +335,11 @@ def main():
 
     load_balancer = LoadBalancerProxy(config, state)
 
+    signal.signal(signal.SIGTERM, lambda sig, frame: load_balancer.shutdown())
 
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
+
 
     # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(load_balancer)

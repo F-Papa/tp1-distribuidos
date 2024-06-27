@@ -83,7 +83,7 @@ class LoadBalancerProxyForJoiner:
                 self._messaging.listen()
 
         except ShuttingDown:
-            logging.debug("Shutting Down Message Received Via Broadcast")
+            logging.debug("Initiating Graceful Shutdown")
 
         self._messaging.close()
         logging.info("Shutting Down.")
@@ -282,9 +282,10 @@ class LoadBalancerProxyForJoiner:
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
+    def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
-        self.shutting_down = True
+        self._shutting_down = True
+        raise ShuttingDown
 
 
 def config_logging(level: str):
@@ -330,6 +331,8 @@ def main():
     load_balancer = LoadBalancerProxyForJoiner(barrier_config, state)
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
+
+    signal.signal(signal.SIGTERM, lambda sig, frame: load_balancer.shutdown())
 
     # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(load_balancer)

@@ -14,6 +14,7 @@ from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 from src.utils.config_loader import Configuration
 import random
+import signal
 
 OUTPUT_Q5 = "sentiment_analyzer_queue"
 OUTPUT_Q3_4 = "review_counter_queue"
@@ -418,10 +419,12 @@ def main():
         (5,): {"name": OUTPUT_Q5, "is_prefix": False},
     }
 
+
     joiner = ReviewsJoiner(config, state, output_queues)
     controller_thread = threading.Thread(target=joiner.start)
     controller_thread.start()
 
+    signal.signal(signal.SIGTERM, lambda sig, frame: joiner.shutdown())
     # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(joiner)
     healthcheck_handler.start()
