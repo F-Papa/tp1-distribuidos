@@ -181,10 +181,6 @@ class ReviewsJoiner:
             if ongoing_connections[conn_id_str]["EOFs"] == self.BOOKS_EOF_EXPECTED:
                 # All books received, start listening for reviews at the reviews queue for this conn_id
                 ongoing_connections[conn_id_str] = {"state": self.RECEIVING_REVIEWS}
-                for k in saved_books.keys():
-                    logging.debug("saved_books Key: " + k)
-                    for k2 in saved_books[k].keys():
-                        logging.debug("saved_books Key2: " + k2 + " " + str(len(saved_books[k][k2])))
 
                 self._set_callback_reviews(conn_id)
         self._state.set("ongoing_connections", ongoing_connections)
