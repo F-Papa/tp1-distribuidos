@@ -3,17 +3,96 @@ import json
 import logging
 import os
 import socket
+import sys
+import threading
+import time
 import common.parsing as parsing
+import chalk
 
 # BOOKS_FILE = "../../data/test/books_data11.csv"
 BOOKS_FILE = "../../data/books_data.csv"
 # REVIEWS_FILE = "../../data/test/ratings_1K.csv"
 REVIEWS_FILE = "../../data/test/Books_rating_reduced.csv"
-REVIEWS_FILE = "../../data/Books_rating.csv"
+# REVIEWS_FILE = "../../data/Books_rating.csv"
 
 BATCH_SIZE_LEN = 8
 NUM_OF_QUERIES = 5
 BEGIN_MSG = "BEGIN"
+
+
+class CLI():
+
+    def __init__(self):
+        self.start_time = None
+        
+    def print_info(self, ):
+        yellow = chalk.yellow
+        bold = chalk.bold
+        uline = chalk.underline
+        print(f"{bold(uline('Amazon Books Analyzer'))}")
+        print()
+        print(f"{bold('Query 1')}: {yellow('Books')} from the 'Computers' category published between 2000 and 2023 with 'distributed' in their title.")
+        print(f"{bold('Query 2')}: {yellow('Authors')} who have published books in at least 10 different decades.")
+        print(f"{bold('Query 3')}: {yellow('Title')} and {yellow('authors')} of books published in the 90's with at least 500 reviews.")
+        print(f"{bold('Query 4')}: 10 best rated {yellow('books')} published in the 90's with at least 500 reviews.")
+        print(f"{bold('Query 5')}: {yellow('Books')} from the 'Fiction' category among the 90th quantile of average review sentiment.")
+
+
+    def show_results_file(self):
+        print()
+        print("Results can be found inside the directory named 'results'.")
+        
+
+    def print_credits(self, ):
+        bold = chalk.bold
+        uline = chalk.underline
+        print()
+        print(f"{bold(uline('Authors'))}:  Franco Papa and Andrés Moyano")
+        print(f"2024, Faculty of Engineering, Univesity of Buenos Aires")
+
+    def on_hold(self, ):
+        green = chalk.green
+        bold = chalk.bold
+        print()
+        print(f"{green(bold('Connected'))} succesfully.")
+        print(f"You are on hold...", end='', flush=True)
+
+    def sending_books(self, ):
+        self.start_time = time.time()
+        print("\b"*1000, end="", flush=True)
+        print("Sending books...   ", end="", flush=True)
+
+    def sending_reviews(self, ):
+        print("\b"*1000, end="", flush=True)
+        print("Sending Reviews...", end="", flush=True)
+
+    def waiting_for_results(self, ):
+        print("\b"*1000, end="", flush=True)
+        print("Waiting for results...", end="", flush=True)
+
+    def query_results(self, number: int, num_of_results: int):
+        bold = chalk.bold
+        seconds = time.time() - self.start_time # type: ignore
+        hours = seconds // 3600
+        seconds %= 3600
+        minutes = seconds // 60
+        seconds %= 60
+    
+    # Format with leading zeros
+        hours_str = str(int(hours)).zfill(2)
+        minutes_str = str(int(minutes)).zfill(2)
+        seconds_str = str(int(seconds)).zfill(2)
+
+
+        print("\b"*1000, end="", flush=True)
+        print(bold(f"Query {number}:"), end='')
+        print(f" {num_of_results} results. ({hours_str}:{minutes_str}:{seconds_str})")
+    
+    def error(self, text: str):
+        bold = chalk.bold
+        red = chalk.red
+        yellow = chalk.red
+        print(f"\n{red(bold('ERROR'))}: {yellow(text)}")
 
 class Client:
 
@@ -35,16 +114,17 @@ class Client:
             with open(f"results/query_{i+1}.txt", "w") as file:
                 pass
 
-    def run(self):
+    def run(self, cli: CLI):
         # Connect
 
-        print("CWD:", os.getcwd())
+        cli.print_info()
+
+        cli.on_hold()
 
         batch = []
         files = [BOOKS_FILE, REVIEWS_FILE]
         parsing_func = [parsing.parse_book_line, parsing.parse_review_line]
 
-        print("Connection accepted. Waiting for server...")
         
         buffer = b""
         while len(buffer) < len(BEGIN_MSG):
@@ -54,18 +134,18 @@ class Client:
                 if not recv:
                     raise Exception
             except:    
-                print("Connection error.")
-                buffer += recv
+                cli.error("Connection failed.")
+                return
         
         if buffer.decode() != BEGIN_MSG:
-            print("Unkown message received from server.")
+            cli.error('Unknown message received.')
             return
 
-        
+        sending = [cli.sending_books, cli.sending_reviews]
         # Send reviews
         for i in range(2):
             lines_sent = 0
-            print(f"Sending {files[i]}")
+            sending[i]()
             with open(files[i], "r") as file:
                 reader = csv.DictReader(file)
                 for line in reader:
@@ -78,15 +158,18 @@ class Client:
                 # Send EOF and remaining batch if any
                 self.__send_batch(batch, True)
                 batch.clear()
-                print(f"Sent {lines_sent} lines from {files[i]}")
-        print("Data sent. Waiting for results...")
-        self.__listen_for_results()
 
-    def __listen_for_results(self):
+        print()
+        self.__listen_for_results(cli)
+        cli.show_results_file()
+        cli.print_credits()
+
+    def __listen_for_results(self, cli: CLI):
         eof_count = 0
         num_of_results = {i+1: 0 for i in range(NUM_OF_QUERIES)}
 
         while eof_count < NUM_OF_QUERIES:
+            cli.waiting_for_results()
             response = b""
             while len(response) < BATCH_SIZE_LEN:
                 response += self._sock.recv(BATCH_SIZE_LEN)
@@ -109,7 +192,7 @@ class Client:
             if "EOF" in response:
                 for number in queries:
                     eof_count += 1
-                    print(f"Query {number} finished: {num_of_results[number]} results")
+                    cli.query_results(number, num_of_results[number])
                 
 
     def __send_batch(self, lines, eof=False):
@@ -141,7 +224,6 @@ def config_logging(level: str):
         pika_logger = logging.getLogger("pika")
         pika_logger.setLevel(logging.ERROR)
 
-
 if __name__ == "__main__":
 
     config = {
@@ -152,6 +234,9 @@ if __name__ == "__main__":
     }
 
     config_logging(config["LOGGING_LEVEL"])
-
+    
     client = Client(config["ITEMS_PER_BATCH"], config["MESSAGING_HOST"], config["MESSAGING_PORT"])
-    client.run()
+    client.run(CLI())
+
+
+

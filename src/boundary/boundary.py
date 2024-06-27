@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import logging
+import multiprocessing
 import threading
 import socket
 from threading import Semaphore
@@ -20,7 +21,7 @@ RESULTS_QUEUE_PREFIX = "results_"
 MAX_CLIENTS = 3
 BATCH_SIZE_LEN = 8
 BEGIN_MSG = "BEGIN"
-
+NUM_OF_QUERIES=5
 counter = 0
 
 class ClientConnection:
@@ -45,7 +46,6 @@ class ClientConnection:
             host=messaging_host,
             port=messaging_port,
         )
-        self.next_transaction_ids = defaultdict(lambda: 1)
 
         self.EOFs_received = 0
         self.reviews = b""
@@ -91,7 +91,6 @@ class ClientConnection:
 
     def handle_connection(self, semaphore: Semaphore):
         semaphore.acquire()
-        logging.info("Acquired")
         self.handle_connection_aux()
         self.messaging.delete_queue(self.results_queue)
         self.finish()
@@ -110,7 +109,7 @@ class ClientConnection:
             logging.error("Connection {self.conn_id} finished prematurely. No data received")
             return
     
-        logging.info(f"Connection {self.conn_id} started")
+        logging.info(f"[Conn: {self.conn_id}] Started Sending Data")
         # Send books to the messaging server
         error_dispatching_books = self.__dispatch_books()
         if error_dispatching_books:
@@ -134,24 +133,15 @@ class ClientConnection:
         )
         self.messaging.listen()
 
+        logging.info(f"[Conn: {self.conn_id}] Finished")
+
     def forward_results(self, messaging: Goutong, msg: Message):
         if not self._is_transaction_id_valid(msg):
             self._handle_invalid_transaction_id(messaging, msg)
             return
 
         if msg.has_key("EOF"):
-            to_show = {
-                "transaction_id": msg.get("transaction_id"),
-                "conn_id": self.conn_id,
-                "EOF": msg.get("EOF"),
-                "queries": msg.get("queries"),
-                "sender": msg.get("sender"),
-                "data": str(msg.get("data"))[:20],
-            }
-            logging.info(f"EOF Received: {to_show}")
-            # queries = msg.get("queries")
-            # for q in queries:
-            #     logging.info(f"[Conn: {self.conn_id}] Received EOF for query {q}")
+            self.EOFs_received +=1
 
         encoded_msg = msg.marshal().encode("utf-8")
         length = len(encoded_msg).to_bytes(BATCH_SIZE_LEN, byteorder="big")
@@ -162,6 +152,8 @@ class ClientConnection:
             bytes_sent += self.conn.send(to_send[bytes_sent:])
         self._state.inbound_transaction_committed(msg.get('sender'))
 
+        if self.EOFs_received == NUM_OF_QUERIES:
+            self.messaging.stop_consuming(msg.queue_name)
     def __dispatch_books(self):
         """Sends reviews to the system via queue. Returns True if any error or False otherwise"""
         eof_reached = False
@@ -368,7 +360,6 @@ class ClientConnection:
         counter += len(batch)
         
         if eof_reached:
-            logging.info(f"Sending EOF to {queue_name} | Total reviews: {counter}")
             body["EOF"] = True
 
 
@@ -434,16 +425,17 @@ class Boundary:
         sock.bind(("", self.server_port))
         sock.listen(self.backlog)
         controller_id = f"boundary{self.__conn_id}"
-        state = ControllerState(controller_id, "", "", {})
+        
 
         while not self.__shutting_down:
+            state = ControllerState(controller_id, "", "", {})
             new_sock, _ = sock.accept()
 
             for p in self.processes:
                 if not p.is_alive:
                     p.join()
 
-            logging.info(f"[Connection {self.__conn_id}] on hold")
+            logging.info(f"[Connection {self.__conn_id}] On hold")
             new_connection = ClientConnection(
                 new_sock,
                 self.__conn_id,
