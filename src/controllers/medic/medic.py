@@ -30,7 +30,7 @@ CONNECTION_TIMEOUT = 10 #5
 HANDSHAKE_TIMEOUT = 20 #5
 SETUP_TIMEOUT = 7 #15
 TIMEOUT = 4
-OK_TIMEOUT = 4 #
+OK_TIMEOUT = CONNECTION_TIMEOUT*CONNECTION_RETRIES #
 ELECTION_TIMEOUT = 2 #4
 RESOLUTION_APROX_TIMEOUT = 4
 LEADER_TIMEOUT = 60
@@ -241,9 +241,9 @@ class Medic:
                 sock.connect((id, CONNECTION_PORT))
                 return sock
             except socket.gaierror:
-                # Hostname could not be resolved to an address
-                logging.error(f"at connect_to_other ({id}): Error resolving name")
-                continue
+                # medic_id could not be resolved to an address by the name server
+                logging.error(f"({id}): ")
+                break
             except OSError as e:
                 if e.errno in expected_errors:
                     continue
@@ -300,7 +300,7 @@ class Medic:
         """Listen for a TCP conection and respond to the handshake. If it is successful it will save it
         in the state, otherwise it will be closed"""
         
-        sock.settimeout(CONNECTION_TIMEOUT*CONNECTION_RETRIES)
+        sock.settimeout(CONNECTION_TIMEOUT)
         conn, addr = sock.accept()
         try:
             received = recv_bytes(conn, INT_ENCODING_LENGTH*2)
