@@ -7,12 +7,7 @@ import signal
 import time
 import common.parsing as parsing
 import chalk
-
-# BOOKS_FILE = "../../data/test/books_data11.csv"
-BOOKS_FILE = "../../data/books_data.csv"
-# REVIEWS_FILE = "../../data/test/ratings_1K.csv"
-REVIEWS_FILE = "../../data/test/Books_rating_reduced.csv"
-# REVIEWS_FILE = "../../data/Books_rating.csv"
+import argparse
 
 BATCH_SIZE_LEN = 8
 NUM_OF_QUERIES = 5
@@ -41,8 +36,8 @@ class CLI():
         print(f"{bold('Query 5')}: {yellow('Books')} from the 'Fiction' category among the 90th quantile of average review sentiment.")
 
 
-    def show_results_file(self):
-        print("Results can be found inside the directory named 'results'.")
+    def show_results_file(self, directory):
+        print(f"\nResults can be found inside the directory: '{directory}'.")
         
 
     def print_credits(self, ):
@@ -98,8 +93,11 @@ class CLI():
 
 class Client:
     def __init__(
-        self, items_per_batch: int, server_host: str, server_port: int
+        self, items_per_batch: int, server_host: str, server_port: int, books_file: str, reviews_file: str, results_dir: str
     ) -> None:
+        self.__books_file = books_file
+        self.__results_dir = results_dir
+        self.__reviews_file = reviews_file
         self.__items_per_batch = items_per_batch
         self.__server_host = server_host
         self.__server_port = server_port
@@ -109,11 +107,11 @@ class Client:
         self._shutting_down = False
 
         # Create directories for results
-        if not os.path.exists("results"):
-            os.makedirs("results")
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
 
         for i in range(NUM_OF_QUERIES):
-            with open(f"results/query_{i+1}.txt", "w") as file:
+            with open(self.__results_dir + f"/query_{i+1}.txt", "w"):
                 pass
 
     def shutdown(self):
@@ -127,7 +125,7 @@ class Client:
         try:
             # Connect
             batch = []
-            files = [BOOKS_FILE, REVIEWS_FILE]
+            files = [self.__books_file, self.__reviews_file]
             parsing_func = [parsing.parse_book_line, parsing.parse_review_line]
 
             cli.on_hold()
@@ -186,7 +184,6 @@ class Client:
                 pass
             self._sock.close()
 
-        print()
         cli.print_credits()
 
     def __listen_for_results(self, cli: CLI):
@@ -209,7 +206,7 @@ class Client:
 
             if "data" in response:
                 for number in queries:
-                    with open(f"results/query_{number}.txt", "a") as file:
+                    with open(self.__results_dir + f"/query_{number}.txt", "a") as file:
                             for line in response["data"]:
                                 file.write(json.dumps(line) + "\n")
                                 num_of_results[number] += 1
@@ -218,7 +215,7 @@ class Client:
                 for number in queries:
                     eof_count += 1
                     cli.query_results(number, num_of_results[number])
-        cli.show_results_file()                
+        cli.show_results_file(self.__results_dir)                
 
     def __send_batch(self, lines, eof=False):
 
@@ -251,6 +248,17 @@ def config_logging(level: str):
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser(
+        prog="Amazon Books Analyzer", 
+        description="The program connects to a system that runs 5 different queries on the books and review provided by the client.",
+        epilog="Authors: Franco Papa & Andrés Moyano. Faculty of Engineering, University of Buenos Aires. 2024"
+    )
+
+    parser.add_argument('-b', '--books', action="store", required=True, help="CSV File to read books from")
+    parser.add_argument('--reviews', action="store", required=True, help="CSV File to read reviews from")
+    parser.add_argument('--results', action="store", default="results", help="Directory to save the results. Default is './results'")
+    args = parser.parse_args()
+
     config = {
         "LOGGING_LEVEL": "INFO",
         "ITEMS_PER_BATCH": 5000,
@@ -259,8 +267,7 @@ if __name__ == "__main__":
     }
 
     config_logging(config["LOGGING_LEVEL"])
-    
-    client = Client(config["ITEMS_PER_BATCH"], config["MESSAGING_HOST"], config["MESSAGING_PORT"])
+    client = Client(config["ITEMS_PER_BATCH"], config["MESSAGING_HOST"], config["MESSAGING_PORT"], args.books, args.reviews, args.results)
     signal.signal(signal.SIGTERM, lambda sig, frame: client.shutdown())
 
     client.run(CLI())
