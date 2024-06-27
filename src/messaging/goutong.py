@@ -7,7 +7,7 @@ import logging
 import pika
 from typing import Callable, Optional
 from .message import Message
-
+from pika.exceptions import AMQPConnectionError, AMQPChannelError
 
 class Goutong:
     def __init__(self, sender_id: str, host: str = "rabbit", port: int = 5672):
@@ -18,6 +18,7 @@ class Goutong:
         )
         self.channel = self.connection.channel()
         self.consumer_ids = {}
+        self.shutting_down = False
 
     # def add_queues(self, *args):
     #     self.queues_added.update(args)
@@ -28,7 +29,11 @@ class Goutong:
         self.channel.queue_delete(queue_name)
 
     def listen(self):
-        self.channel.start_consuming()
+        try:
+            self.channel.start_consuming()
+        except (AMQPConnectionError, AMQPChannelError, IndexError):
+            if self.shutting_down:
+                pass
 
     def send_to_queue(self, queue_name: str, message: Message, flow_id: Optional[str] =None):
         
@@ -87,7 +92,12 @@ class Goutong:
             self.channel.queue_bind(exchange=group_name, queue=queue_name)
 
     def close(self):
-        self.channel.close()
+        self.shutting_down = True
+        try:
+            self.channel.close()
+        except Exception as e:
+            # Could be in a ChannelError state
+            pass
         if self.connection.is_open:
             try:
                 self.connection.close()

@@ -14,7 +14,6 @@ import os
 from src.controller_state.controller_state import ControllerState
 
 from src.utils.config_loader import Configuration
-from src.exceptions.shutting_down import ShuttingDown
 
 UPPER_Q1 = 2023
 LOWER_Q1 = 2000
@@ -83,19 +82,15 @@ class DateFilter:
     def start(self):
         # Main Flow
         try:
-            if not self._shutting_down:
-                self._messaging.set_callback(
-                    self._input_queue, self.callback_filter, auto_ack=False
-                )
-                self._messaging.listen()
-
-        except ShuttingDown:
-            pass
-
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._state.save_to_disk()
+            self._messaging.set_callback(
+                self._input_queue, self.callback_filter, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     @classmethod
     def default_state(
@@ -110,9 +105,8 @@ class DateFilter:
         )
 
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
 
     def input_queue(self):
         return self._input_queue
@@ -286,7 +280,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -327,13 +321,12 @@ def main():
         output_q3_4_prefix=OUTPUT_Q3_4_PREFIX,
     )
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: filter.shutdown())
     
     controller_thread = threading.Thread(target=filter.start)
-    controller_thread.start()
-
-    # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(filter)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+    
+    controller_thread.start()
     healthcheck_handler.start()
 
 

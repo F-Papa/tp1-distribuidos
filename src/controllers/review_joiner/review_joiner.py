@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -9,7 +10,6 @@ import pika
 import pika.exceptions
 from src.controller_state.controller_state import ControllerState
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
-from src.exceptions.shutting_down import ShuttingDown
 from src.messaging.goutong import Goutong
 from src.messaging.message import Message
 from src.utils.config_loader import Configuration
@@ -114,11 +114,11 @@ class ReviewsJoiner:
 
                 self._messaging.listen()
 
-        except ShuttingDown:
-            pass
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     # region: Query methods
     def books_queue(self):
@@ -305,9 +305,8 @@ class ReviewsJoiner:
 
     # region: Command methods
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
 
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
@@ -373,7 +372,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -415,11 +414,11 @@ def main():
     }
 
     joiner = ReviewsJoiner(config, state, output_queues)
+    healthcheck_handler = HealthcheckHandler(joiner)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+
     controller_thread = threading.Thread(target=joiner.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(joiner)
     healthcheck_handler.start()
 
 

@@ -15,8 +15,6 @@ from src.controller_state.controller_state import ControllerState
 
 
 from src.messaging.message import Message
-from src.exceptions.shutting_down import ShuttingDown
-
 
 
 EOF_QUEUE = "category_filter_eof"
@@ -96,18 +94,15 @@ class CategoryFilter:
     def start(self):
         # Main Flow
         try:
-            while not self._shutting_down:
-                self._messaging.set_callback(
-                    self._input_queue, self.callback_filter, auto_ack=False
-                )
-                self._messaging.listen()
-        except ShuttingDown:
-            pass
-
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._state.save_to_disk()
+            self._messaging.set_callback(
+                self._input_queue, self.callback_filter, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     def input_queue(self):
         return self._input_queue
@@ -131,9 +126,8 @@ class CategoryFilter:
 
     # Graceful Shutdown
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
 
 
     def _handle_invalid_transaction_id(self, msg: Message):
@@ -275,7 +269,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -315,13 +309,12 @@ def main():
         output_queue_q5_prefix=OUTPUT_Q5_PREFIX,
     )
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: category_filter.shutdown())
 
     controller_thread = threading.Thread(target=category_filter.start)
-    controller_thread.start()
-
-    # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(category_filter)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+
+    controller_thread.start()
     healthcheck_handler.start()
 
 

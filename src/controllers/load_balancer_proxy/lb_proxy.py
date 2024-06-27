@@ -17,7 +17,6 @@ import signal
 
 from src.messaging.message import Message
 from src.messaging.goutong import Goutong
-from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
 total = 0
@@ -65,24 +64,20 @@ class LoadBalancerProxy:
 
     def start(self):
         try:
-            if not self.shutting_down:
-                # Set callbacks
-                for queue in self._input_queues_lb:
-                    self._messaging.set_callback(
+            for queue in self._input_queues_lb:
+                self._messaging.set_callback(
                         queue, self._msg_from_other_cluster, auto_ack=False
                     )
-                
-                if self._is_proxy:
-                    self._messaging.set_callback(
-                        self._input_queue_proxy, self._msg_from_controllers, auto_ack=False
-                    )
+            if self._is_proxy:
+                self._messaging.set_callback(
+                    self._input_queue_proxy, self._msg_from_controllers, auto_ack=False
+                )
+            self._messaging.listen()
 
-                self._messaging.listen()
-
-        except ShuttingDown:
-            logging.debug("Shutting Down Message Received Via Broadcast")
-
-        self._messaging.close()
+        except:
+            if self.shutting_down:
+                pass
+        self._state.save_to_disk()
         logging.info("Shutting Down.")
 
     def filter_queues(self) -> list[str]:
@@ -285,9 +280,9 @@ class LoadBalancerProxy:
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+    def shutdown(self):
         self.shutting_down = True
+        self._messaging.close()
 
 
 def config_logging(level: str):
@@ -303,7 +298,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -334,13 +329,11 @@ def main():
     logging.info(config)
 
     load_balancer = LoadBalancerProxy(config, state)
-
+    healthcheck_handler = HealthcheckHandler(load_balancer)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
 
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(load_balancer)
     healthcheck_handler.start()
 
 

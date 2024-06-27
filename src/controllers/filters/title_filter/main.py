@@ -6,7 +6,6 @@ import sys
 import time
 from src.controller_state.controller_state import ControllerState
 from src.messaging.goutong import Goutong
-from src.exceptions.shutting_down import ShuttingDown
 from src.controllers.common.healthcheck_handler import HealthcheckHandler
 import logging
 import signal
@@ -73,20 +72,15 @@ class TitleFilter:
     def start(self):
         # Main Flow
         try:
-            if not self._shutting_down:
-                self._messaging.set_callback(
-                    self.input_queue_name,
-                    self._callback_title_filter,
-                    auto_ack=False,
-                )
-                self._messaging.listen()
-        except ShuttingDown:
-            pass
-
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._state.save_to_disk()
+            self._messaging.set_callback(
+                self.input_queue_name, self._callback_title_filter, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     # MAIN FUNCTIONALITY
     @classmethod
@@ -112,9 +106,8 @@ class TitleFilter:
         return filtered_data
 
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
 
     def input_queue(self):
         return self.input_queue_name
@@ -215,7 +208,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -253,13 +246,11 @@ def main():
         output_queue=OUTPUT_Q1,
     )
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: title_filter.shutdown())
+    healthcheck_handler = HealthcheckHandler(title_filter)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
 
     controller_thread = threading.Thread(target=title_filter.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(title_filter)
     healthcheck_handler.start()
 
 

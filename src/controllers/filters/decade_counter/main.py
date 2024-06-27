@@ -15,7 +15,6 @@ import sys
 import random
 
 from src.utils.config_loader import Configuration
-from src.exceptions.shutting_down import ShuttingDown
 
 INPUT_QUEUE_PREFIX = "decade_counter"
 FILTER_TYPE = "decade_counter"
@@ -65,6 +64,10 @@ class DecadeCounter:
             extra_fields=extra_fields,
         )
     
+    def shutdown(self):
+        self._shutting_down = True
+        self._messaging.close()
+
     # Devuelve las saved_counts pero con los Set() de decadas casteados a lista
     def _normalize_counts(self, saved_counts):
         normalized_counts = {
@@ -224,17 +227,15 @@ class DecadeCounter:
     def start(self):
         logging.info("Starting Decade Counter")
         try:
-            if not self._shutting_down:
-                self._messaging.set_callback(
-                    self._input_queue, self._callback_filter, auto_ack=False
-                )
-                self._messaging.listen()
-        except ShuttingDown:
-            pass
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._save_state()
+            self._messaging.set_callback(
+                self._input_queue, self._callback_filter, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._save_state()
 
 def config_logging(level: str):
 
@@ -249,7 +250,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 def main():
     required = {
@@ -283,11 +284,11 @@ def main():
     output_queues = {(2,): {"name": OUTPUT_QUEUE_PREFIX, "is_prefix": True},}
 
     decade_counter = DecadeCounter(filter_config, state, output_queues)
+    healthcheck_handler = HealthcheckHandler(decade_counter)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+
     controller_thread = threading.Thread(target=decade_counter.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(decade_counter)
     healthcheck_handler.start()
 
 if __name__ == "__main__":
