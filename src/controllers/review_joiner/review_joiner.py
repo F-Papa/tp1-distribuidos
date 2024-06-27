@@ -421,10 +421,11 @@ def main():
 
 
     joiner = ReviewsJoiner(config, state, output_queues)
+    signal.signal(signal.SIGTERM, lambda sig, frame: joiner.shutdown())
+    
     controller_thread = threading.Thread(target=joiner.start)
     controller_thread.start()
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: joiner.shutdown())
     # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(joiner)
     healthcheck_handler.start()
