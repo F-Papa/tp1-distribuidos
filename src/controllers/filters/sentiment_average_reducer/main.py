@@ -13,7 +13,6 @@ import json
 import os
 
 from src.utils.config_loader import Configuration
-from src.exceptions.shutting_down import ShuttingDown
 
 def crash_maybe():
     pass
@@ -147,19 +146,15 @@ class SentimentAverager:
     def start(self):
         logging.info("Starting Review Counter")
         try:
-            if not self._shutting_down:
-                self._messaging.set_callback(
-                    self.input_queue(), self.reviews_callback, auto_ack=False
-                )
-
-                self._messaging.listen()
-
-        except ShuttingDown:
-            pass
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-
+            self._messaging.set_callback(
+                self.input_queue(), self.reviews_callback, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     def _send_results(self, conn_id: int):
         queries = (5,)
@@ -192,9 +187,8 @@ class SentimentAverager:
         self._state.outbound_transaction_committed(output_queue)
 
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
 
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
@@ -231,7 +225,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 def main():
     required = {
@@ -271,14 +265,11 @@ def main():
         state.update_from_file()
     
     counter = SentimentAverager(config, state, output_queues)
-
-    signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
+    healthcheck_handler = HealthcheckHandler(counter)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
     
     controller_thread = threading.Thread(target=counter.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(counter)
     healthcheck_handler.start()
 
 if __name__ == "__main__":

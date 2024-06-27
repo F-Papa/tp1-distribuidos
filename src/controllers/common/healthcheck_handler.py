@@ -2,7 +2,7 @@ import socket
 import threading
 import logging
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 
 class Message(Enum):
@@ -18,22 +18,41 @@ class HealthcheckHandler:
         controller
     ):
         self.controller = controller
+        self._shutting_down = False
+        self._sock: Any = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(('0.0.0.0', self.CONNECTION_PORT))
 
     def start(self):
-        while True:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.bind(('0.0.0.0', self.CONNECTION_PORT))
-                received, addr = s.recvfrom(1024)
-                if self.is_type(received, Message.HEALTHCHECK):
+        while not self._shutting_down:
+            try:
+                received, addr = self._sock.recvfrom(1024)
+                if self.is_type(received, Message.HEALTHCHECK) and not self._shutting_down:
                     medic_id = self.sender_id(received)
                     if not medic_id:
                         logging.error(f"Received 👨‍⚕️ healthcheck from unknown medic")
-                    if len(threading.enumerate()) == 2: # Check if main Thread is alive
+                    if len(threading.enumerate()) == 2: # Check if controller Thread is alive
                         response = self.im_alive_msg()
-                        s.sendto(response, (medic_id, self.CONNECTION_PORT))
-                        #logging.debug(f"Sent 🤑 IM_ALIVE response to {medic_id}")
+                        if not self._shutting_down:
+                            self._sock.sendto(response, (medic_id, self.CONNECTION_PORT))
                     else:
-                        exit(1)
+                        exit(0)
+            except Exception:
+                if self._shutting_down:
+                    pass
+        if self._sock:
+            self._sock.close()        
+            
+    def shutdown(self):     
+        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+        self._shutting_down = True
+        self.controller.shutdown()
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+            self._sock.close()
+            self._sock = None
+        except OSError:
+            pass
+
 
     def decode_int(self, bytes: bytes) -> int:
         return int.from_bytes(bytes, "big")

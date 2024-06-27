@@ -10,7 +10,6 @@ import os
 from textblob import TextBlob  # type: ignore
 
 from src.messaging.message import Message
-from src.exceptions.shutting_down import ShuttingDown
 from src.controller_state.controller_state import ControllerState
 
 OUTPUT_QUEUE = "sentiment_averager_queue"
@@ -55,25 +54,19 @@ class SentimentAnalyzer:
     def start(self):
         # Main Flow
         try:
-            if not self._shutting_down:
-                self._messaging.set_callback(
-                    self.input_queue_name,
-                    self._callback_sentiment_analyzer,
-                    auto_ack=False,
-                )
-                self._messaging.listen()
-        except ShuttingDown:
-            pass
-
-        finally:
-            logging.info("Shutting Down.")
-            self._messaging.close()
-            self._state.save_to_disk()
+            self._messaging.set_callback(
+                self.input_queue_name, self._callback_sentiment_analyzer, auto_ack=False
+            )
+            self._messaging.listen()
+        except:
+            if self._shutting_down:
+                pass
+        logging.info("Shutting Down.")
+        self._state.save_to_disk()
     
     def shutdown(self):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
-        raise ShuttingDown
+        self._messaging.close()
     
     def input_queue(self):
         return self.input_queue_name
@@ -195,7 +188,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -232,12 +225,11 @@ def main():
         output_queue=OUTPUT_QUEUE,
     )
 
-    signal.signal(signal.SIGTERM, lambda sig, frame: sentiment_analyzer.shutdown())
     controller_thread = threading.Thread(target=sentiment_analyzer.start)
-    controller_thread.start()
-
-    # HEALTCHECK HANDLING
     healthcheck_handler = HealthcheckHandler(sentiment_analyzer)
+
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+    controller_thread.start()
     healthcheck_handler.start()
 
 if __name__ == "__main__":

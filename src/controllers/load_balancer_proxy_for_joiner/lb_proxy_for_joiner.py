@@ -63,7 +63,6 @@ class LoadBalancerProxyForJoiner:
     def start(self):
         try:
             if not self.shutting_down:
-                # Set callbacks
                 self._messaging.set_callback(
                     self._input_queue_books,
                     self._msg_from_other_cluster,
@@ -82,11 +81,11 @@ class LoadBalancerProxyForJoiner:
 
                 self._messaging.listen()
 
-        except ShuttingDown:
-            logging.debug("Shutting Down Message Received Via Broadcast")
-
-        self._messaging.close()
+        except:
+            if self.shutting_down:
+                pass
         logging.info("Shutting Down.")
+        self._state.save_to_disk()
 
     def filter_queues(self) -> list[str]:
         return self._filter_queues
@@ -282,10 +281,9 @@ class LoadBalancerProxyForJoiner:
             self._messaging.send_to_queue(queue, Message(msg_body))
             self._state.outbound_transaction_committed(queue)
 
-    def shutdown(self, messaging: Goutong):
-        logging.info("SIGTERM received. Initiating Graceful Shutdown.")
+    def shutdown(self):
         self.shutting_down = True
-
+        self._messaging.close()
 
 def config_logging(level: str):
 
@@ -300,7 +298,7 @@ def config_logging(level: str):
 
     # Hide pika logs
     pika_logger = logging.getLogger("pika")
-    pika_logger.setLevel(logging.ERROR)
+    pika_logger.setLevel(logging.CRITICAL)
 
 
 def main():
@@ -328,11 +326,11 @@ def main():
 
     logging.info(barrier_config)
     load_balancer = LoadBalancerProxyForJoiner(barrier_config, state)
+    healthcheck_handler = HealthcheckHandler(load_balancer)
+    signal.signal(signal.SIGTERM, lambda sig, frame: healthcheck_handler.shutdown())
+
     controller_thread = threading.Thread(target=load_balancer.start)
     controller_thread.start()
-
-    # HEALTCHECK HANDLING
-    healthcheck_handler = HealthcheckHandler(load_balancer)
     healthcheck_handler.start()
 
 
