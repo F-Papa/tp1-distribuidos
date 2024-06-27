@@ -434,9 +434,9 @@ class Boundary:
         sock.bind(("", self.server_port))
         sock.listen(self.backlog)
         controller_id = f"boundary{self.__conn_id}"
-        state = ControllerState(controller_id, "", "", {})
 
         while not self.__shutting_down:
+            state = ControllerState(controller_id, "", "", {})
             new_sock, _ = sock.accept()
 
             for p in self.processes:
