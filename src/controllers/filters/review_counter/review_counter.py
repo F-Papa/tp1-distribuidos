@@ -22,9 +22,9 @@ def crash_maybe():
         os._exit(1)
 
 
-class SentimentAverager:
+class ReviewCounter:
 
-    CONTROLLER_NAME = "sentiment_averager"
+    CONTROLLER_NAME = "review_counter"
 
     def __init__(
         self,
@@ -34,14 +34,14 @@ class SentimentAverager:
         output_queues: dict,
     ):
         self._filter_number = config.get("FILTER_NUMBER")
-        self._controller_id = f"{self.CONTROLLER_NAME}{self._filter_number}"
-        self.quantile = config.get("QUANTILE")
+        self.n_best = config.get("N_BEST")
+        self.threshold = config.get("REVIEW_THRESHOLD")
         self._messaging = messaging
         self._state = state
         self._output_queues = output_queues
         self._shutting_down = False
+        self._controller_id = f"{self.CONTROLLER_NAME}{self._filter_number}"
         self._input_queue = self._controller_id
-
         self.unacked_msg_limit = config.get("UNACKED_MSG_LIMIT")
         self.unacked_time_limit_in_seconds = config.get("UNACKED_TIME_LIMIT_IN_SECONDS")
         self.unacked_msgs = []
@@ -86,10 +86,11 @@ class SentimentAverager:
                     saved_reviews[conn_id_str][review["title"]] = {
                         "sum": 0,
                         "count": 0,
+                        "authors": review["authors"],
                     }
 
                 saved_reviews[conn_id_str][review["title"]]["sum"] += review[
-                    "sentiment"
+                    "review/score"
                 ]
                 saved_reviews[conn_id_str][review["title"]]["count"] += 1
         self._state.set("saved_reviews", saved_reviews)
@@ -111,6 +112,12 @@ class SentimentAverager:
     # endregion
 
     # region: Query methods
+    def controller_id(self):
+        return self._controller_id
+
+    def is_shutting_down(self):
+        return self._shutting_down
+
     def input_queue(self) -> str:
         return self._input_queue
 
@@ -160,6 +167,7 @@ class SentimentAverager:
 
     def start(self):
         logging.info("Starting Review Counter")
+
         threading.Thread(
             target=healthcheck_handler,
             args=(self,),
@@ -179,49 +187,56 @@ class SentimentAverager:
             self._messaging.close()
 
     def _send_results(self, conn_id: int):
-        queries = (5,)
+        queries = (3, 4)
         saved_reviews = self._state.get("saved_reviews")
         conn_id_str = str(conn_id)
 
-        q5_candidates = []
+        q3_results = []
+        q4_candidates = []
 
         for title, review in saved_reviews[conn_id_str].items():
             sum = review["sum"]
             count = review["count"]
-            q5_candidates.append({"title": title, "average": sum / count})
+            authors = review["authors"]
 
-        q5_candidates.sort(key=lambda x: x["average"], reverse=True)
-        top_quantile_count = int(len(q5_candidates) / (100 - self.quantile))
-        q5_results = list(
-            map(
-                lambda x: {x["title"]: x["average"]}, q5_candidates[:top_quantile_count]
-            )
+            if count >= self.threshold:
+                q3_results.append({"title": title, "authors": authors})
+                q4_candidates.append({"title": title, "average": sum / count})
+
+        q4_candidates.sort(key=lambda x: x["average"], reverse=True)
+        q4_results = list(
+            map(lambda x: {x["title"]: x["average"]}, q4_candidates[: self.n_best])
         )
 
         output_queue = self.output_queue_name(queries, conn_id)
-
-        q5_transaction_id = self._state.next_outbound_transaction_id(output_queue)
-        msg_q5_body = {
-            "queries": [5],
+        q3_transaction_id = self._state.next_outbound_transaction_id(output_queue)
+        msg_q3_body = {
+            "queries": [3],
             "conn_id": conn_id,
-            "transaction_id": q5_transaction_id,
-            "data": q5_results,
+            "transaction_id": q3_transaction_id,
+            "data": q3_results,
             "EOF": True,
         }
 
-        self._messaging.send_to_queue(output_queue, Message(msg_q5_body))
+        self._messaging.send_to_queue(output_queue, Message(msg_q3_body))
+        self._state.outbound_transaction_committed(output_queue)
+
+        q4_transaction_id = self._state.next_outbound_transaction_id(output_queue)
+        msg_q4_body = {
+            "queries": [4],
+            "conn_id": conn_id,
+            "transaction_id": q4_transaction_id,
+            "data": q4_results,
+            "EOF": True,
+        }
+
+        self._messaging.send_to_queue(output_queue, Message(msg_q4_body))
         self._state.outbound_transaction_committed(output_queue)
 
     def shutdown(self):
         logging.info("SIGTERM received. Initiating Graceful Shutdown.")
         self._shutting_down = True
         raise ShuttingDown
-
-    def controller_id(self):
-        return self._controller_id
-
-    def is_shutting_down(self):
-        return self._shutting_down
 
     def _handle_invalid_transaction_id(self, msg: Message):
         transaction_id = msg.get("transaction_id")
@@ -265,7 +280,8 @@ def main():
         "LOGGING_LEVEL": str,
         "MESSAGING_HOST": str,
         "MESSAGING_PORT": int,
-        "QUANTILE": float,
+        "REVIEW_THRESHOLD": int,
+        "N_BEST": int,
         "FILTER_NUMBER": int,
         "UNACKED_MSG_LIMIT": int,
         "UNACKED_TIME_LIMIT_IN_SECONDS": int,
@@ -278,21 +294,21 @@ def main():
     config_logging(config.get("LOGGING_LEVEL"))
     logging.info(config)
 
-    controller_id = f"{SentimentAverager.CONTROLLER_NAME}_{config.get('FILTER_NUMBER')}"
+    controller_id = f"{ReviewCounter.CONTROLLER_NAME}_{config.get('FILTER_NUMBER')}"
     state_file_path = f"state/{controller_id}.json"
     temp_file_path = f"state/{controller_id}.tmp"
 
-    state = SentimentAverager.default_state(
-        controller_id=SentimentAverager.CONTROLLER_NAME,
+    state = ReviewCounter.default_state(
+        controller_id=ReviewCounter.CONTROLLER_NAME,
         file_path=state_file_path,
         temp_file_path=temp_file_path,
     )
 
     output_queues = {
-        (5,): {"name": "results_", "is_prefix": True},
+        (3, 4): {"name": "results_", "is_prefix": True},
     }
     messaging = Goutong(sender_id=controller_id)
-    counter = SentimentAverager(config, messaging, state, output_queues)
+    counter = ReviewCounter(config, messaging, state, output_queues)
 
     signal.signal(signal.SIGTERM, lambda sig, frame: counter.shutdown())
     counter.start()

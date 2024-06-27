@@ -8,9 +8,9 @@ import common.parsing as parsing
 # BOOKS_FILE = "../../data/test/books_data11.csv"
 BOOKS_FILE = "../../data/books_data.csv"
 # REVIEWS_FILE = "../../data/test/ratings_1K.csv"
-REVIEWS_FILE = "../../data/Books_rating.csv"
+REVIEWS_FILE = "../../data/test/Books_rating_reduced.csv"
 
-BATCH_SIZE_LEN = 4
+BATCH_SIZE_LEN = 8
 NUM_OF_QUERIES = 5
 
 class Client:
@@ -44,10 +44,12 @@ class Client:
 
         # Send reviews
         for i in range(2):
+            lines_sent = 0
             print(f"Sending {files[i]}")
             with open(files[i], "r") as file:
                 reader = csv.DictReader(file)
                 for line in reader:
+                    lines_sent += 1
                     batch.append(parsing_func[i](line))
                     if len(batch) == self.__items_per_batch:
                         self.__send_batch(batch, False)
@@ -56,7 +58,7 @@ class Client:
                 # Send EOF and remaining batch if any
                 self.__send_batch(batch, True)
                 batch.clear()
-        
+                print(f"Sent {lines_sent} lines from {files[i]}")
         print("Data sent. Waiting for results...")
         self.__listen_for_results()
 

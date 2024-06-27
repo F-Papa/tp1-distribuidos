@@ -2,12 +2,12 @@ FROM python:3.9.7-slim
 
 RUN pip install pika
 
-COPY ./src/controllers/filters/decade_counter/main.py ./main.py
+COPY ./src/controllers/review_joiner/review_joiner.py ./review_joiner.py
 COPY ./src/messaging ./src/messaging
 COPY ./src/exceptions ./src/exceptions
 COPY ./src/utils ./src/utils
 COPY ./src/controller_state ./src/controller_state
 COPY ./src/controllers/common ./src/controllers/common
 
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["python", "review_joiner.py"]
 # ENTRYPOINT ["/bin/sh"]
