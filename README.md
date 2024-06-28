@@ -4,7 +4,7 @@
 
 The system in question is a distributed system that processes large data sets corresponding to books and their reviews from Amazon, simulating the results obtained by a web scraper. Join, Filter, Count, and Reduce operations are performed on this data. The connection to the 'border' of the system is made with a client via TCP and the two sets of data are sent to it by this means. The results are delivered once they are ready through the already opened connection and are stored in the directory specified by the user.
 
-Queries range from the top rated books from the 90s to those under the "Fiction" category whose average sentiment is best.
+Queries range from the top rated books from the 90s to those under the "Fiction" category whose average sentiment is among the 90th quantile.
 
 ## Instructions
 
