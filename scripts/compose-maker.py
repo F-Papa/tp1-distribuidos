@@ -12,15 +12,15 @@ Uso:
     > python3 scripts/compose-maker.py
 """
 
-TITLE_FILTER_COUNT = 3
-DATE_FILTER_COUNT = 2
+TITLE_FILTER_COUNT = 5
+DATE_FILTER_COUNT = 3
 CATEGORY_FILTER_COUNT = 4
-DECADE_COUNTER_COUNT = 3
+DECADE_COUNTER_COUNT = 4
 REVIEW_JOINER_COUNT = 3
-REVIEW_COUNTER_COUNT = 3
-SENTIMENT_ANALYZER_COUNT = 6
+REVIEW_COUNTER_COUNT = 1
+SENTIMENT_ANALYZER_COUNT = 4
 SENTIMENT_AVERAGER_COUNT = 2
-MEDIC_COUNT = 4
+MEDIC_COUNT = 2
 ITEMS_PER_BATCH = 700
 BARRIER_LOGGING_LEVEL = "INFO"
 
@@ -403,7 +403,7 @@ if __name__ == "__main__":
           for i in range(1, DECADE_COUNTER_COUNT + 1):
               f.write(decade_counter_service_text(i))
               f.write("\n")
-              m.write(f"review_counter{i}\n")
+              m.write(f"decade_counter{i}\n")
 
           # Sentiment Analyzer
           f.write(
