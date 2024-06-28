@@ -26,7 +26,7 @@ OUTPUT_Q1_PREFIX = "results_"
 OUTPUT_Q5_PREFIX = "review_joiner_books"
 
 def crash_maybe():
-    if random.random() < 0.0005:
+    if random.random() < 0.0005 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         sys.exit(1)
 
