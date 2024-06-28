@@ -25,8 +25,8 @@ FILTER_TYPE = "review_joiner"
 CONTROLLER_ID = "review_joiner_proxy"
 
 
-def crash_maybe(): #402254
-    if random.random() < 0.00001:
+def crash_maybe():
+    if random.random() < 0.00001 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         exit(1)
 

@@ -23,7 +23,7 @@ OUTPUT_QUEUE_PREFIX = "results_"
 
 
 def crash_maybe():
-    if random.random() < 0.00015:
+    if random.random() < 0.00015 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         sys.exit(1)
 

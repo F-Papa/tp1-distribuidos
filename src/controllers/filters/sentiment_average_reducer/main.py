@@ -16,7 +16,7 @@ from src.utils.config_loader import Configuration
 
 def crash_maybe():
     pass
-    if random.random() < 0.0001:
+    if random.random() < 0.0001 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         sys.exit(1)
 

@@ -19,7 +19,7 @@ OUTPUT_Q1 = "category_filter_queue"
 
 
 def crash_maybe():
-    if random.random() < 0.00004:
+    if random.random() < 0.00004 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         sys.exit(1)
 

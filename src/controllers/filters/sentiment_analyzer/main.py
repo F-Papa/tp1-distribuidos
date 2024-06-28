@@ -16,7 +16,7 @@ OUTPUT_QUEUE = "sentiment_averager_queue"
 
 def crash_maybe():
     #pass
-    if random.random() < 0.00017:
+    if random.random() < 0.00017 and os.environ.get("SIM_CRASH"):
         logging.error("CRASHING..")
         sys.exit(1)
 

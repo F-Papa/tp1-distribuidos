@@ -23,7 +23,7 @@ total = 0
 
 def crash_maybe():
     #pass
-    if random.random() < 0.000001:
+    if random.random() < 0.000001 and os.environ.get("SIM_CRASH"):
        logging.error("CRASHING..")
        sys.exit(1)
 

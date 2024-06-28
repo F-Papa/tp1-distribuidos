@@ -22,12 +22,12 @@ total_books = 0
 
 
 def crash_maybe_reviews():
-    if random.random() < 0.00007:
+    if random.random() < 0.00007 and os.environ.get("SIM_CRASH"):
        logging.error("CRASHING REVIEWS..")
        sys.exit(1)
 
 def crash_maybe_books():
-    if random.random() < 0.00007:#0.00025:
+    if random.random() < 0.00007  and os.environ.get("SIM_CRASH"):
        logging.error("CRASHING BOOKS..")
        sys.exit(1)
 
