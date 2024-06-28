@@ -20,13 +20,7 @@ Queries range from the top rated books from the 90s to those under the "Fiction"
 > $ make filters-build 
 
 4) Run the System
-> $ make filters-up
-
-5) Build the boundary
-> $ make boundary-build 
-
-4) Run the Boundary
-> $ make boundary-up
+> $ make filters-reset
 
 ### Connecting to the system
 
