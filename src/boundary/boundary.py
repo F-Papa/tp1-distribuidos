@@ -18,7 +18,6 @@ Q5_QUEUE = "category_filter_queue"
 
 REVIEWS_QUEUE_PREFIX = "review_joiner_reviews"
 RESULTS_QUEUE_PREFIX = "results_"
-MAX_CLIENTS = 3
 BATCH_SIZE_LEN = 8
 BEGIN_MSG = "BEGIN"
 NUM_OF_QUERIES=5
@@ -415,10 +414,11 @@ class Boundary:
         self.__messaging_module = messaging_module
         self.processes: list[threading.Thread] = []
         self.client_connections = {}
+        self.max_clients = config.get("MAX_CLIENTS")
 
     # Listen for incoming connections and spawn a new process to handle each connection
     def listen_for_connections(self):
-        semaphore = Semaphore(MAX_CLIENTS)
+        semaphore = Semaphore(self.max_clients)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("", self.server_port))
         sock.listen(self.backlog)
@@ -477,6 +477,7 @@ def main():
         "SERVER_PORT": int,
         "MESSAGING_HOST": str,
         "MESSAGING_PORT": int,
+        "MAX_CLIENTS": int
     }
 
     config = Configuration.from_file(required, "config.ini")
